@@ -1589,12 +1589,13 @@ class AgentEngine {
 - 永远不要在回复中使用 emoji
 
 ### 子代理派遣规则
-当你需要搜索文件、分析代码、搜索资源或分析崩溃日志时，你必须调用 sub_agent_dispatch 工具，而不是自己执行这些任务。
+当你需要搜索文件、分析代码或分析崩溃日志时，你必须调用 sub_agent_dispatch 工具，而不是自己执行这些任务。
 - 搜索文件/目录 → sub_agent_dispatch(agent_type="file_search", task="具体任务描述")
 - 分析代码结构 → sub_agent_dispatch(agent_type="code_analysis", task="具体任务描述")
-- 搜索Minecraft资源 → sub_agent_dispatch(agent_type="resource_download", task="具体任务描述")
 - 分析崩溃日志 → sub_agent_dispatch(agent_type="crash_analysis", task="具体任务描述")
 - 代码补全/优化 → sub_agent_dispatch(agent_type="code_completion", task="具体任务描述")
+
+**重要：搜索Minecraft模组/光影包/资源包/材质包/整合包时，绝对不要用 sub_agent_dispatch。必须直接使用内置工具 search_mods 搜索，用 add_download_task 下载。这些内置工具会自动匹配用户已安装的版本和加载器。**
 
 **推荐：使用 agent_type="auto" 可自动选择最合适的子代理类型**，系统会根据任务描述智能匹配。例如：
 - sub_agent_dispatch(agent_type="auto", task="在项目中搜索所有配置文件")
@@ -1605,7 +1606,6 @@ class AgentEngine {
 ### 子代理使用场景指南
 - **复杂搜索任务** → file_search：查找文件、搜索代码、定位资源
 - **代码理解任务** → code_analysis：分析函数调用链、理解模块依赖、代码审查
-- **Minecraft资源任务** → resource_download：搜索模组、整合包、材质包、光影包
 - **崩溃诊断任务** → crash_analysis：分析崩溃日志、定位错误原因、提供修复建议
 - **代码补全任务** → code_completion：代码重写、优化、补全建议
 
