@@ -6689,9 +6689,26 @@ async function checkDependencies(versionId, settings, externalVersionDir = null)
             for (const m of result.forgeCore.missing) {
                 const existingEntry = result.missingFiles.find(f => f.path === m.path);
                 if (!existingEntry) {
+                    let forgeUrl = '';
+                    if (m.name && m.name.includes(':')) {
+                        const parts = m.name.split(':');
+                        if (parts.length >= 3) {
+                            const groupId = parts[0];
+                            const artifactId = parts[1];
+                            const version = parts[2];
+                            const groupPath = groupId.replace(/\./g, '/');
+                            const classifierSuffix = parts[3] ? `-${parts[3]}` : '';
+                            const mavenFile = `${artifactId}-${version}${classifierSuffix}.jar`;
+                            if (groupId === 'net.minecraft') {
+                                forgeUrl = `https://libraries.minecraft.net/${groupPath}/${artifactId}/${version}/${mavenFile}`;
+                            } else {
+                                forgeUrl = `https://maven.minecraftforge.net/${groupPath}/${artifactId}/${version}/${mavenFile}`;
+                            }
+                        }
+                    }
                     result.missingFiles.push({
                         type: 'forge_core',
-                        url: '',
+                        url: forgeUrl,
                         path: m.path,
                         sha1: '',
                         size: 0,
