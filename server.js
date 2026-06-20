@@ -13799,12 +13799,14 @@ async function installForge(gameVersion, forgeVersion, onProgress = null, mirror
     }
 
     const mcMajor = parseInt(gameVersion.split('.')[0]);
+    // [CRITICAL - 2026-06-20] 不要把 Forge 版本路由到 installNeoForge！
+    // Forge 和 NeoForge 的版本号体系完全不同（Forge: 64.0.10, NeoForge: 26.2.0），
+    // 错误路由会导致 NeoForge 安装器 URL 不存在，下载失败。
+    // 只有当 forgeVersion 字符串明确包含 "neoforge" 或 "neoforged" 时才路由到 NeoForge。
+    // Forge Maven 上确实存在 MC 26+ 的版本（如 26.1.2-64.0.10），必须走 Forge 安装路径。
     if (mcMajor >= 20 && forgeVersion.split('.').length >= 3) {
         const isNeoForgeInstall = forgeVersion.includes('neoforge') || forgeVersion.includes('neoforged');
         if (isNeoForgeInstall) {
-            return await installNeoForge(gameVersion, forgeVersion, onProgress);
-        }
-        if (mcMajor >= 26) {
             return await installNeoForge(gameVersion, forgeVersion, onProgress);
         }
     }
