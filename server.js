@@ -10990,6 +10990,9 @@ function buildLaunchArguments(versionJson, settings, account, versionId, customG
         if (!jvmArgs.some(a => a.includes('minecraft.client.jar'))) {
             jvmArgs.push(`-Dminecraft.client.jar=${mainJarPath}`);
         }
+        if (!jvmArgs.some(a => a.includes('earlyLoadingWindow'))) {
+            jvmArgs.push('-Dfml.earlyLoadingWindow=false');
+        }
     }
 
     // JPMS module flags (--add-exports/--add-opens) only work on Java 9+
