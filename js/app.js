@@ -1139,11 +1139,11 @@ function dismissSupportModal() {
 }
 
 var ANNOUNCEMENT_CONTENT = {
-    version: '1.3.1',
-    title: 'VersePC v1.3.1 测试版公告',
+    version: '1.3.2',
+    title: 'VersePC v1.3.2 测试版公告',
     body: `
         <div class="announcement-section">
-            <p>各位小伙伴们，这次更新修复了 NeoForge 核心库缺失和皮肤查看器加载卡住的问题，请更新测试！</p>
+            <p>各位小伙伴们，这次更新修复了 NeoForge 安装流程和外部版本启动的问题，请更新测试！</p>
         </div>
 
         <div class="announcement-section">
@@ -1159,7 +1159,10 @@ var ANNOUNCEMENT_CONTENT = {
                 <li>修复 NeoForge 版本被误判为缺少 Forge 文件</li>
                 <li>修复 NeoForge 核心 JAR 文件名检测错误（缺少 -universal 后缀）</li>
                 <li>修复 Forge 26.x 启动时 SRG/extra 文件版本不匹配误报</li>
+                <li>修复 NeoForge 安装时核心 jar 和 patched jar 缺失未自动补全</li>
+                <li>修复外部版本（如 HMCL）首次启动后被误判为"错误版本"</li>
                 <li>NeoForge 核心库缺失时启动自动补下载</li>
+                <li>NeoForge 安装完成后自动校验核心 jar 和 patched jar，缺失则补下载</li>
             </ul>
         </div>
 
