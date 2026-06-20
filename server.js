@@ -171,10 +171,36 @@ setInterval(() => {
 
 // 确保目录存在（优化版，减少 existsSync 调用）
 const dirCache = new Set();
-// [CRITICAL] 此函数在 mkdirSync 前清理路径中与目录同名的文件（如 libraries/net 是文件）。
-// 这是修复 ENOTDIR: not a directory, mkdir 错误的核心逻辑。
-// 2026-06 整合包导入（剑与王国等）时因之前下载失败在 libraries/ 下留下了 0 字节文件导致 ENOTDIR。
-// [AI-AUTOGEN-WARNING] 请勿删除此处的文件清理循环，否则整合包导入会再次崩溃。
+/*
+[CRITICAL] ensureDir — ENOTDIR 修复
+======================================
+【问题原理】
+  Node.js 的 fs.mkdirSync(path, {recursive: true}) 在创建嵌套目录时，会逐级检查路径中
+  每个组件是否为目录。如果路径中某个组件已经是一个"同名文件"（不是目录），就会抛出
+  ENOTDIR: not a directory, mkdir 'xxx' 错误。
+
+  在我们的场景中，下载库文件时如果中途失败（网络中断、磁盘满等），可能会在 libraries/
+  目录下创建一个 0 字节的文件（例如 libraries/net、libraries/com 等），而不是目录。
+  后续所有需要在这些路径下创建子目录的操作都会失败——包括整合包导入和模组安装。
+
+【典型复现场景】
+  1. 用户之前安装某个模组加载器时下载中断，在 C:\Users\xxx\.versepc\libraries\net 留下了一个 0 字节文件
+  2. 用户导入整合包（如"剑与王国"），整合包需要下载 Fabric Loader 的库文件到 libraries/net/fabricmc/...
+  3. fs.mkdirSync('...libraries/net/fabricmc/...', {recursive: true}) 失败，因为 libraries/net 是文件不是目录
+  4. 整合包导入报错 ENOTDIR，进度条卡在 0%
+
+【修复原理】
+  在调用 fs.mkdirSync 之前，先遍历目标路径的每一级组件（如 libraries、libraries/net、libraries/net/fabricmc...），
+  检查每个组件是否为"文件"（不是目录）。如果是文件就先删除它，然后再创建目录。
+  这样即使之前有残留的 0 字节文件，也不会阻塞目录创建。
+
+【AI-AUTOGEN-WARNING】
+  请勿删除此处的 for 循环文件清理逻辑。仅删除 mkdirSync 前的检查会导致：
+  - 所有整合包导入失败（ENOTDIR）
+  - 所有模组库文件下载失败
+  - Fabric/Forge/NeoForge 安装失败
+  这个 bug 无法通过其他方式修复（不能假设 libraries/ 下永远只有目录）。
+*/
 function ensureDir(filePath) {
     const dir = path.dirname(filePath);
     if (dirCache.has(dir)) return;
@@ -194,7 +220,8 @@ function ensureDir(filePath) {
     dirCache.add(dir);
 }
 
-// [CRITICAL] asyncEnsureDir - 与 ensureDir 同理，清理路径中的文件冲突再创建目录。
+// [CRITICAL] asyncEnsureDir — 异步版本，原理同 ensureDir。
+// 此函数在 fs.promises.mkdir 前遍历路径组件，删除与目录同名的文件。
 // [AI-AUTOGEN-WARNING] 请勿删除此处的文件清理逻辑，原因同 ensureDir。
 async function asyncEnsureDir(filePath) {
     const dir = path.dirname(filePath);
@@ -4466,8 +4493,9 @@ const NO_CHUNK_HOSTS = ['github.com', 'raw.githubusercontent.com', 'githubuserco
 
 async function downloadFileH2(url, destPath, options = {}) {
     const { onProgress = null, timeout = 600000, abortSignal = null } = options;
-    // [CRITICAL] 清理路径中与目录同名的文件（修复 ENOTDIR: not a directory, mkdir）。
-    // [AI-AUTOGEN-WARNING] 请勿删除此处的文件清理块，原因同 ensureDir。
+    // [CRITICAL] H2下载前清理路径中与目录同名的文件。
+    // 此函数不调用 ensureDir，需要自行处理 ENOTDIR 问题（同 ensureDir 的原理）。
+    // [AI-AUTOGEN-WARNING] 请勿删除此处的文件清理块。
     const dir = path.dirname(destPath);
     try {
         const parts = dir.split(path.sep);
@@ -4598,8 +4626,9 @@ async function downloadFileChunked(url, destPath, options = {}) {
     const { retries = 3, onProgress = null, sha1 = null, timeout = 120000, mirrors = null, abortSignal = null, agent: customAgent = null, maxChunks: optMaxChunks = null } = options;
     const minChunkSize = 512 * 1024;
     const CHUNK_THRESHOLD = 1 * 1024 * 1024;
-    // [CRITICAL] 清理路径中与目录同名的文件（修复 ENOTDIR: not a directory, mkdir）。
-    // [AI-AUTOGEN-WARNING] 请勿删除此处的文件清理块，原因同 ensureDir。
+    // [CRITICAL] 分块下载前清理路径中与目录同名的文件。
+    // 此函数不调用 ensureDir，需要自行处理 ENOTDIR 问题（同 ensureDir 的原理）。
+    // [AI-AUTOGEN-WARNING] 请勿删除此处的文件清理块。
     {
         const d = path.dirname(destPath);
         try {
@@ -5147,8 +5176,9 @@ function getMirrorUrl(originalUrl) {
 }
 
 async function downloadPCLStyle(urls, destPath, { onProgress = null, maxChunks = 16, abortSignal = null, stallTimeout = 45000 } = {}) {
-    // [CRITICAL] 清理路径中与目录同名的文件（修复 ENOTDIR: not a directory, mkdir）。
-    // [AI-AUTOGEN-WARNING] 请勿删除此处的文件清理块，原因同 ensureDir。
+    // [CRITICAL] PCL式下载前清理路径中与目录同名的文件。
+    // 此函数不调用 ensureDir，需要自行处理 ENOTDIR 问题（同 ensureDir 的原理）。
+    // [AI-AUTOGEN-WARNING] 请勿删除此处的文件清理块。
     {
         const d = path.dirname(destPath);
         try {
@@ -6184,11 +6214,35 @@ async function checkDependencies(versionId, settings, externalVersionDir = null)
                 l.name.includes('net.minecraftforge') || l.name.includes('fancymodloader') ||
                 l.name.includes('net.neoforged') || l.name.includes('fabric-loader')
             ));
-            // [CRITICAL] 外部版本（来自 HMCL 等启动器）的 Forge/NeoForge 版本 JSON
-            // 已包含完整的 mainClass 和库文件，即使缺少前置版本也能正常启动。
-            // 如果此处不豁免，外部版本首次启动后会被误判为"错误版本"。
-            // 与版本列表扫描（_scanVersionDir 中的 isVersionAvailable）逻辑保持一致。
-            // [AI-AUTOGEN-WARNING] 请勿删除此豁免逻辑，否则外部导入的 Forge 版本启动会报错。
+            /*
+            [CRITICAL] 外部版本 depCheck 豁免
+            ====================================
+            【问题原理】
+              depCheck（启动前依赖检查）会检查版本 JSON 的 inheritsFrom 字段，
+              确认前置版本（parent version）存在且有 JAR 文件。这是为了防止用户
+              删除了基础版本后启动整合包导致崩溃。
+
+              但外部导入的 Forge/NeoForge 版本（来自 HMCL 等启动器）情况特殊：
+              它们的版本 JSON 可能有 inheritsFrom 指向一个在 VersePC 中不存在的版本，
+              但实际上这些 JSON 已经包含了完整的 mainClass 和所有库文件（PCL2式合并），
+              即使没有前置版本也能正常启动。
+
+              如果此处不豁免，外部版本首次启动后会被误判为"错误版本"——
+              版本列表中不会显示该版本，用户无法启动。
+
+            【豁免条件】
+              仅当以下条件全部满足时豁免：
+              1. externalVersionDir 不为空（说明是外部导入的版本）
+              2. 版本 JSON 包含 mainClass 或 Forge/NeoForge/Fabric 库（说明是自包含的）
+
+            【与 _scanVersionDir 的一致性】
+              版本列表扫描代码（_scanVersionDir 中的 isVersionAvailable）已经有相同的豁免逻辑：
+              如果外部版本 JSON 有 mainClass 或 Forge libs，即使 inheritsFrom 指向不存在的版本，
+              也会被标记为可用。此处 depCheck 必须保持一致，否则版本列表显示可用但启动时报错。
+
+            [AI-AUTOGEN-WARNING] 请勿删除此豁免逻辑。删除后外部导入的 Forge/NeoForge 版本
+            首次启动后会被标记为"错误版本"，从版本列表中消失。
+            */
             const isSelfSufficient = externalVersionDir && (hasMainClass || hasForgeLibs);
             if (!isSelfSufficient) {
                 result.parentVersion.ok = false;
@@ -11075,10 +11129,40 @@ function buildLaunchArguments(versionJson, settings, account, versionId, customG
         if (!jvmArgs.some(a => a.includes('minecraft.client.jar'))) {
             jvmArgs.push(`-Dminecraft.client.jar=${mainJarPath}`);
         }
-        // [CRITICAL] 禁用 Forge/NeoForge 早期加载窗口，防止双窗口问题。
-        // 新版 Forge（26.x）的 earlydisplay 模块会创建红色加载窗口，
-        // 正常情况下主窗口出现后应自动关闭，但某些情况下不会关闭导致两个窗口。
-        // [AI-AUTOGEN-WARNING] 请勿删除此参数，否则 Forge 启动会出现双窗口。
+        /*
+        [CRITICAL] 禁用 Forge/NeoForge 早期加载窗口（Early Loading Screen）
+        ====================================================================
+        【问题原理】
+          新版 Forge（26.x）和 NeoForge 引入了 "Early Loading Screen" 功能：
+          游戏启动时，Forge 的 earlydisplay 模块会先创建一个红色/灰色的加载窗口，
+          显示模组加载进度，然后等 Minecraft 主窗口创建后再切换过去。
+
+          正常流程：
+            1. JVM 启动 → earlydisplay 创建红色加载窗口
+            2. Minecraft 初始化 → 创建主游戏窗口
+            3. earlydisplay 检测到主窗口 → 自动关闭加载窗口
+            4. 用户只看到一个游戏窗口
+
+          异常流程（某些硬件/驱动/版本组合下）：
+            1. JVM 启动 → earlydisplay 创建红色加载窗口
+            2. Minecraft 初始化 → 创建主游戏窗口
+            3. earlydisplay 未检测到主窗口 → 加载窗口不关闭
+            4. 用户看到两个窗口：一个红色加载窗口 + 一个正常游戏窗口
+
+          红色窗口没有 MOJANG logo，只有纯色背景，这是早期加载阶段的画面。
+          它不会影响游戏功能，但用户体验很差。
+
+        【修复原理】
+          -Dfml.earlyLoadingWindow=false 是 Forge/NeoForge 支持的 JVM 参数，
+          告诉 earlydisplay 模块不要创建早期加载窗口，直接等主窗口出现。
+          这样从一开始就只有一个窗口。
+
+        【注意】
+          这个参数由 Forge/NeoForge 的 BootstrapLauncher 解析，
+          不是 Minecraft 原生参数。它只在 Forge/NeoForge 环境下生效。
+
+        [AI-AUTOGEN-WARNING] 请勿删除此 JVM 参数，否则 Forge/NeoForge 启动会出现双窗口。
+        */
         if (!jvmArgs.some(a => a.includes('earlyLoadingWindow'))) {
             jvmArgs.push('-Dfml.earlyLoadingWindow=false');
         }
@@ -13330,10 +13414,40 @@ async function installFabric(gameVersion, loaderVersion, onProgress = null) {
                     if (!isJarIntact(libPath)) {
                         const mavenBaseUrl = lib.url || 'https://maven.fabricmc.net/';
                         const downloadUrl = `${mavenBaseUrl}${mavenGroupPath}/${name}/${ver}/${jarName}`;
-                        // [CRITICAL] Fabric 元数据中 org.ow2.asm 等库的 URL 指向 maven.fabricmc.net，
-                        // 但这些库实际不在 Fabric Maven 上，需要回退到 Maven Central。
-                        // 2026-06 Fabulously Optimized 整合包导入时因 ASM 库全部下载失败导致启动崩溃。
-                        // [AI-AUTOGEN-WARNING] 请勿删除 altUrls 逻辑，否则 Fabric 整合包导入会缺少 ASM 等关键库。
+                        /*
+                        [CRITICAL] Fabric 库文件多下载源回退
+                        ====================================
+                        【问题原理】
+                          Fabric Loader 的元数据（从 meta.fabricmc.net 获取）为每个库文件指定了
+                          下载 URL。大多数 Fabric 自有库（如 fabric-loader、sponge-mixin）确实在
+                          maven.fabricmc.net 上，但第三方依赖库（如 org.ow2.asm:asm 系列）虽然
+                          元数据中 URL 指向 maven.fabricmc.net，实际上并不在该服务器上。
+
+                          这是 Fabric 元数据的一个已知问题：它把所有库的默认 URL 统一设为
+                          maven.fabricmc.net，但实际上 asm、guava 等库只在 Maven Central 上。
+
+                          结果：如果不添加备用源，Fabric 安装过程中所有 asm 库都会下载 404，
+                          导致整合包安装后无法启动（缺少关键依赖）。
+
+                        【受影响的库】
+                          - org.ow2.asm:asm
+                          - org.ow2.asm:asm-analysis
+                          - org.ow2.asm:asm-commons
+                          - org.ow2.asm:asm-tree
+                          - org.ow2.asm:asm-util
+                          以及可能的其他第三方依赖库。
+
+                        【修复原理】
+                          为每个库文件准备一个 altUrls 列表：
+                          1. 主 URL（Fabric 元数据指定的，通常是 maven.fabricmc.net）
+                          2. Maven Central（repo1.maven.org/maven2/）—— 所有 Java 库都在这里
+                          3. Fabric Maven（maven.fabricmc.net）—— 如果主 URL 是其他源
+
+                          下载时先尝试主 URL，失败后自动尝试备用源。
+
+                        [AI-AUTOGEN-WARNING] 请勿删除 altUrls 逻辑和下方的 urlsToTry 回退循环，
+                        否则 Fabric 整合包（如 Fabulously Optimized）导入后会因缺少 ASM 库而崩溃。
+                        */
                         const altUrls = [];
                         if (mavenBaseUrl !== 'https://repo1.maven.org/maven2/') {
                             altUrls.push(`https://repo1.maven.org/maven2/${mavenGroupPath}/${name}/${ver}/${jarName}`);
@@ -13874,11 +13988,31 @@ async function installForge(gameVersion, forgeVersion, onProgress = null, mirror
         forgeVersion = forgeVersion.slice(gameVersion.length + 1);
     }
 
-    // [CRITICAL] mcMajor 必须取 split('.')[0]，不是 [1]！
-    // 对于 "26.2"，split('.')=["26","2"]，取 [0]=26，取 [1]=2（错误！）
-    // 之前因为这个错误，MC 26+ 的 Forge 版本全部走了 installForge 而非 installNeoForge，
-    // 导致安装后版本 JSON 全是原版内容（mainClass 不对、没有 Forge 库）。
-    // [AI-AUTOGEN-WARNING] 请勿修改此处的 [0]，否则 MC 26+ 版本安装会再次全面失败。
+    /*
+    [CRITICAL] mcMajor 计算 —— 必须取 split('.')[0]
+    ================================================
+    【问题原理】
+      gameVersion 的格式是 "主版本.次版本"，如 "26.2"（MC 1.26.2 的简写）。
+      split('.') 得到数组 ["26", "2"]，其中 [0]="26" 是主版本号，[1]="2" 是次版本号。
+
+      代码需要判断 MC 版本是否 >= 20（即 1.20+），以决定是否需要路由到 NeoForge 安装器。
+      如果取 [1]，"26.2" 得到 mcMajor=2，2 >= 20 为 false，NeoForge 路由永远不会触发。
+      如果取 [0]，"26.2" 得到 mcMajor=26，26 >= 20 为 true，NeoForge 路由正常工作。
+
+    【历史Bug】
+      原代码用的是 parseInt(gameVersion.split('.')[1])，导致：
+      - MC 26.2 的 Forge 65.0.02/65.0.03 安装器被当作旧版 Forge 处理
+      - installForge 调用 forge-installer.js，该脚本无法解析 NeoForge 格式的安装器
+      - 安装后版本 JSON 全是原版内容：mainClass 是 net.minecraft.client.main.Main（应为 NeoForge 的），
+        没有任何 Forge/NeoForge 库文件，没有 install_profile.json
+      - 用户启动后看到的是原版 Minecraft，不是 Forge 版本
+
+    【修复】
+      改为 parseInt(gameVersion.split('.')[0])，对 "26.2" 得到 26。
+
+    [AI-AUTOGEN-WARNING] 请勿将 [0] 改为 [1] 或其他索引。如果需要修改 mcMajor 的计算方式，
+    请确保对 "26.2" 得到 >= 20 的值，对 "1.20.1" 得到 >= 20 的值。
+    */
     const mcMajor = parseInt(gameVersion.split('.')[0]);
     // [CRITICAL - 2026-06-20] 不要把 Forge 版本路由到 installNeoForge！
     // Forge 和 NeoForge 的版本号体系完全不同（Forge: 64.0.10, NeoForge: 26.2.0），
