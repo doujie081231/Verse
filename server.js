@@ -17459,13 +17459,15 @@ async function _importMrpack(zip, manifestEntry, filePath, progress, targetVersi
                 try {
                     if (fileSize > 10 * 1024 * 1024) {
                         await downloadFileChunked(tryUrl, destPath, {
-                            onProgress: _modOnProgress, retries: 1, timeout: _modTimeout,
+                            onProgress: _modOnProgress, retries: 2, timeout: _modTimeout,
                             abortSignal, agent: _modAgent
                         });
                     } else {
+                        // [CRITICAL - 2026-06-21] retries必须>=2！之前是0，下载失败一次就放弃导致大量mod丢失。
+                        // PCL会多次重试，VersePC也应该如此。stallTimeout从60s增加到120s适应慢网络。
                         await _dlSingle(tryUrl, destPath, {
-                            onProgress: _modOnProgress, retries: 0, abortSignal,
-                            timeout: _modTimeout, stallTimeout: 60000, agent: _modAgent
+                            onProgress: _modOnProgress, retries: 3, abortSignal,
+                            timeout: _modTimeout, stallTimeout: 120000, agent: _modAgent
                         });
                     }
                     if (isJarIntact(destPath)) {
