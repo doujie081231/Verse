@@ -17862,6 +17862,17 @@ async function _importMrpack(zip, manifestEntry, filePath, progress, targetVersi
     }
 
     progress('done', `整合包 "${packName}" 导入完成！`, 100);
+    // [CRITICAL - 2026-06-21] mod下载失败时不能返回success:true！
+    // 之前mod下载失败后仍然返回成功，导致用户看到"下载成功"但游戏启动就崩溃。
+    // 现在根据失败比例决定：超过10%或超过5个mod失败则返回失败，让用户重试。
+    const failThreshold = Math.max(5, Math.floor(filesList.length * 0.1));
+    if (failCount > 0 && failCount >= failThreshold) {
+        const failedModNames = modFiles.filter(m => m.status === 'failed').map(m => m.name).join(', ');
+        const errorMsg = `${failCount}/${filesList.length} 个Mod下载失败（阈值${failThreshold}），整合包不完整无法正常运行。失败的Mod: ${failedModNames}。请检查网络后重试。`;
+        console.error(`[mrpack] 导入失败: ${errorMsg}`);
+        cleanupVersionChain(versionId);
+        return { success: false, versionId, error: errorMsg, failedMods: modFiles.filter(m => m.status === 'failed') };
+    }
     if (failCount > 0) {
         const failedModNames = modFiles.filter(m => m.status === 'failed').map(m => m.name).join(', ');
         const warningMsg = `${failCount}/${filesList.length} 个Mod下载失败: ${failedModNames}。请在内部浏览器中手动下载缺失的Mod，或检查网络后重试。`;
