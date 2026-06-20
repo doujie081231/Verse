@@ -4460,7 +4460,20 @@ const NO_CHUNK_HOSTS = ['github.com', 'raw.githubusercontent.com', 'githubuserco
 
 async function downloadFileH2(url, destPath, options = {}) {
     const { onProgress = null, timeout = 600000, abortSignal = null } = options;
-    await fs.promises.mkdir(path.dirname(destPath), { recursive: true });
+    const dir = path.dirname(destPath);
+    try {
+        const parts = dir.split(path.sep);
+        for (let i = 1; i <= parts.length; i++) {
+            const partial = parts.slice(0, i).join(path.sep);
+            if (partial) {
+                try {
+                    const st = await fs.promises.stat(partial);
+                    if (!st.isDirectory()) await fs.promises.unlink(partial);
+                } catch (_) {}
+            }
+        }
+    } catch (_) {}
+    await fs.promises.mkdir(dir, { recursive: true });
 
     const _pclAgent = new https.Agent({
         keepAlive: true,
@@ -4577,7 +4590,15 @@ async function downloadFileChunked(url, destPath, options = {}) {
     const { retries = 3, onProgress = null, sha1 = null, timeout = 120000, mirrors = null, abortSignal = null, agent: customAgent = null, maxChunks: optMaxChunks = null } = options;
     const minChunkSize = 512 * 1024;
     const CHUNK_THRESHOLD = 1 * 1024 * 1024;
-    await fs.promises.mkdir(path.dirname(destPath), { recursive: true });
+    {
+        const d = path.dirname(destPath);
+        try {
+            for (const p of d.split(path.sep).map((_, i, a) => a.slice(0, i + 1).join(path.sep))) {
+                if (p) { try { const s = await fs.promises.stat(p); if (!s.isDirectory()) await fs.promises.unlink(p); } catch (_) {} }
+            }
+        } catch (_) {}
+        await fs.promises.mkdir(d, { recursive: true });
+    }
 
     const allUrls = mirrors ? [url, ...mirrors.filter(m => m !== url)] : getMirrorUrls(url);
     const _agent = customAgent || undefined;
@@ -5116,7 +5137,15 @@ function getMirrorUrl(originalUrl) {
 }
 
 async function downloadPCLStyle(urls, destPath, { onProgress = null, maxChunks = 16, abortSignal = null, stallTimeout = 45000 } = {}) {
-    await fs.promises.mkdir(path.dirname(destPath), { recursive: true }).catch(() => {});
+    {
+        const d = path.dirname(destPath);
+        try {
+            for (const p of d.split(path.sep).map((_, i, a) => a.slice(0, i + 1).join(path.sep))) {
+                if (p) { try { const s = await fs.promises.stat(p); if (!s.isDirectory()) await fs.promises.unlink(p); } catch (_) {} }
+            }
+        } catch (_) {}
+        await fs.promises.mkdir(d, { recursive: true }).catch(() => {});
+    }
     const cleanTemp = async (base) => {
         try { if (fs.existsSync(base)) await fs.promises.unlink(base); } catch (_) {}
         for (let i = 0; i < 100; i++) { try { await fs.promises.unlink(`${base}.c${i}`); } catch (_) {} }
@@ -16882,13 +16911,12 @@ async function _importMrpack(zip, manifestEntry, filePath, progress, targetVersi
             if (versionJson.arguments?.jvm) {
                 versionJson.arguments.jvm = deduplicateJvmArgs(versionJson.arguments.jvm);
             }
-            try {
-        const finalJson = JSON.parse(fs.readFileSync(path.join(versionDir, `${versionId}.json`), 'utf-8'));
-        fs.writeFileSync(path.join(versionDir, `${versionId}.json`), JSON.stringify(finalJson, null, 2));
-        console.log(`[NeoForge] Final version JSON written, libs=${(finalJson.libraries||[]).length}`);
-    } catch (_) {}
+            // [CRITICAL - 2026-06-21] 整合包版本JSON必须直接写入mergedJson，不能从文件重新读取！
+            // 之前有段NeoForge的修复代码被错误复制到这里，导致版本JSON被覆盖为空内容。
+            // 如果这里读取文件再写入，文件里的JSON可能是之前创建的空版本（没有libraries），导致整合包不出现在版本列表。
+            fs.writeFileSync(path.join(versionDir, `${versionId}.json`), JSON.stringify(versionJson, null, 2));
             _invalidateResolvedJsonCache(versionId);
-            console.log(`[mrpack] 创建版本JSON: ${versionId}.json (PCL2式合并, 无inheritsFrom)`);
+            console.log(`[mrpack] 创建版本JSON: ${versionId}.json (PCL2式合并, 无inheritsFrom, libs=${(versionJson.libraries||[]).length})`);
             try {
                 const vanillaJar = path.join(VERSIONS_DIR, mcVersion || '', `${mcVersion}.jar`);
                 const targetJar = path.join(versionDir, `${versionId}.jar`);
