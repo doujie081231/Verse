@@ -1338,6 +1338,8 @@ async function ensureTerracottaInstalled() {
     const pkgName = `terracotta-${TERRACOTTA_VERSION}-${arch}-pkg.tar.gz`;
     const exeName = isWin ? 'terracotta.exe' : 'terracotta';
     const TERRACOTTA_URLS = [
+        `https://gitee.com/burningtnt/Terracotta/releases/download/v${TERRACOTTA_VERSION}/${pkgName}`,
+        `https://cnb.cool/HMCL-Terracotta/Terracotta/-/releases/download/v${TERRACOTTA_VERSION}/${pkgName}`,
         `https://cdn.jsdelivr.net/gh/burningtnt/Terracotta@v${TERRACOTTA_VERSION}/${pkgName}`,
         `https://ghfast.top/https://github.com/burningtnt/Terracotta/releases/download/v${TERRACOTTA_VERSION}/${pkgName}`,
         `https://mirror.ghproxy.com/https://github.com/burningtnt/Terracotta/releases/download/v${TERRACOTTA_VERSION}/${pkgName}`,
@@ -1442,16 +1444,10 @@ async function fetchTerracottaPublicNodes(forceRefresh = false) {
     if (!terracottaPublicNodes || terracottaPublicNodes.length === 0) {
         terracottaPublicNodes = [
             'https://etnode.zkitefly.eu.org/node1',
-            'https://etnode.zkitefly.eu.org/node2',
-            'tcp://public.easytier.cn:11010',
-            'udp://public.easytier.cn:11010',
-            'tcp://easytier.1-hub.com:11010',
-            'udp://easytier.1-hub.com:11010',
-            'tcp://public.easytier.io:11010',
-            'udp://public.easytier.io:11010'
+            'https://etnode.zkitefly.eu.org/node2'
         ];
         terracottaPublicNodesExpiry = Date.now() + 600000;
-        console.log('[Terracotta] 使用硬编码默认公共节点 (8个)');
+        console.log('[Terracotta] 使用默认公共节点 (2个)');
     }
     return terracottaPublicNodes;
 }
@@ -6861,7 +6857,7 @@ async function downloadMissingDependencies(missingFiles, onProgress, versionJson
     const CONCURRENT_DOWNLOADS = maxThreads || parseInt(settings.maxThreads, 10) || 64;
     const PRELOAD_QUEUE_SIZE = CONCURRENT_DOWNLOADS * 2;
 
-    DownloadManager.connectionLimit = Math.max(CONCURRENT_DOWNLOADS * 4, 64);
+    DownloadManager.connectionLimit = Math.min(Math.max(CONCURRENT_DOWNLOADS * 4, 64), 128);
     DownloadManager.reset();
     DownloadManager.totalFiles = allFiles.length;
 
@@ -16896,7 +16892,7 @@ async function _importMrpack(zip, manifestEntry, filePath, progress, targetVersi
     const PARALLEL_MODS = Math.min(parseInt(settings.maxThreads, 10) || 64, 64);
     const _modAgent = new https.Agent({ keepAlive: true, keepAliveMsecs: 60000, maxSockets: PARALLEL_MODS * 4 + 16, maxFreeSockets: PARALLEL_MODS * 2 + 8, timeout: 120000 });
     const _prevConnLimit = DownloadManager.connectionLimit;
-    DownloadManager.connectionLimit = Math.max(PARALLEL_MODS * 4, 64);
+    DownloadManager.connectionLimit = Math.min(Math.max(PARALLEL_MODS * 4, 64), 128);
     let lastProgUpdate = 0;
     let lastReportedPct = 0;
     let smoothPct = 0;

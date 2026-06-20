@@ -435,6 +435,8 @@ async function createWindow() {
         windowY = Math.floor((screenHeight - windowHeight) / 2);
     }
 
+    const isMac = process.platform === 'darwin';
+
     mainWindow = new BrowserWindow({
         width: windowWidth,
         height: windowHeight,
@@ -443,6 +445,7 @@ async function createWindow() {
         minWidth: 800,
         minHeight: 450,
         frame: false,
+        ...(isMac ? { titleBarStyle: 'hiddenInset' } : {}),
         show: false,
         backgroundColor: bgColor,
         title: 'VersePC - Minecraft Launcher',
@@ -1023,7 +1026,7 @@ ipcMain.handle('activate-verify', async (event, code) => {
         const c = (code || '').trim().toUpperCase();
         if (!c) return { success: false, message: '请输入激活码' };
         const codeParts = c.split('-');
-        if (codeParts.length !== 2) return { success: false, message: '激活码格式无效' };
+        if (codeParts.length < 2 || codeParts.length > 3) return { success: false, message: '激活码格式无效' };
 
         const appVersion = app.getVersion();
         const result = validateActivationCode(c, machineId, appVersion);

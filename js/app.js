@@ -7248,7 +7248,10 @@ async function initSkinViewer(skinUrl) {
         let skinModel = (_currentDetailAccount?.skinModel === 'slim') ? 'slim' : 'default';
         if (skinUrl) {
             try {
-                const probe = await fetch(skinUrl.replace(/&_=\d+/, ''), { method: 'HEAD' });
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 5000);
+                const probe = await fetch(skinUrl.replace(/&_=\d+/, ''), { method: 'HEAD', signal: controller.signal });
+                clearTimeout(timeoutId);
                 const headerModel = probe.headers.get('X-Skin-Model');
                 if (headerModel === 'slim' || headerModel === 'default') skinModel = headerModel;
             } catch (e) {}
@@ -9105,7 +9108,11 @@ function setupWindowControls() {
     const windowModeCheckbox = document.getElementById('setting-window-mode');
     const exitLauncherBtn = document.getElementById('exit-launcher-btn');
 
-    if (windowControls) windowControls.style.display = 'flex';
+    const isMac = window.electronAPI?.platform === 'darwin';
+    if (isMac) {
+        document.body.classList.add('is-mac');
+    }
+    if (windowControls && !isMac) windowControls.style.display = 'flex';
 
     const winBtnMinimize = document.getElementById('win-btn-minimize');
     if (winBtnMinimize) winBtnMinimize.addEventListener('click', () => {
@@ -9205,7 +9212,7 @@ function updateWindowButtons() {
     const maximizeBtn = document.getElementById('win-btn-maximize');
     const restoreBtn = document.getElementById('win-btn-restore');
 
-    if (!controls) return;
+    if (!controls || window.electronAPI?.platform === 'darwin') return;
 
     controls.style.display = 'flex';
     if (isWindowMode) {
