@@ -171,6 +171,10 @@ setInterval(() => {
 
 // 确保目录存在（优化版，减少 existsSync 调用）
 const dirCache = new Set();
+// [CRITICAL] 此函数在 mkdirSync 前清理路径中与目录同名的文件（如 libraries/net 是文件）。
+// 这是修复 ENOTDIR: not a directory, mkdir 错误的核心逻辑。
+// 2026-06 整合包导入（剑与王国等）时因之前下载失败在 libraries/ 下留下了 0 字节文件导致 ENOTDIR。
+// [AI-AUTOGEN-WARNING] 请勿删除此处的文件清理循环，否则整合包导入会再次崩溃。
 function ensureDir(filePath) {
     const dir = path.dirname(filePath);
     if (dirCache.has(dir)) return;
@@ -190,6 +194,8 @@ function ensureDir(filePath) {
     dirCache.add(dir);
 }
 
+// [CRITICAL] asyncEnsureDir - 与 ensureDir 同理，清理路径中的文件冲突再创建目录。
+// [AI-AUTOGEN-WARNING] 请勿删除此处的文件清理逻辑，原因同 ensureDir。
 async function asyncEnsureDir(filePath) {
     const dir = path.dirname(filePath);
     if (dirCache.has(dir)) return;
@@ -4460,6 +4466,8 @@ const NO_CHUNK_HOSTS = ['github.com', 'raw.githubusercontent.com', 'githubuserco
 
 async function downloadFileH2(url, destPath, options = {}) {
     const { onProgress = null, timeout = 600000, abortSignal = null } = options;
+    // [CRITICAL] 清理路径中与目录同名的文件（修复 ENOTDIR: not a directory, mkdir）。
+    // [AI-AUTOGEN-WARNING] 请勿删除此处的文件清理块，原因同 ensureDir。
     const dir = path.dirname(destPath);
     try {
         const parts = dir.split(path.sep);
@@ -4590,6 +4598,8 @@ async function downloadFileChunked(url, destPath, options = {}) {
     const { retries = 3, onProgress = null, sha1 = null, timeout = 120000, mirrors = null, abortSignal = null, agent: customAgent = null, maxChunks: optMaxChunks = null } = options;
     const minChunkSize = 512 * 1024;
     const CHUNK_THRESHOLD = 1 * 1024 * 1024;
+    // [CRITICAL] 清理路径中与目录同名的文件（修复 ENOTDIR: not a directory, mkdir）。
+    // [AI-AUTOGEN-WARNING] 请勿删除此处的文件清理块，原因同 ensureDir。
     {
         const d = path.dirname(destPath);
         try {
@@ -5137,6 +5147,8 @@ function getMirrorUrl(originalUrl) {
 }
 
 async function downloadPCLStyle(urls, destPath, { onProgress = null, maxChunks = 16, abortSignal = null, stallTimeout = 45000 } = {}) {
+    // [CRITICAL] 清理路径中与目录同名的文件（修复 ENOTDIR: not a directory, mkdir）。
+    // [AI-AUTOGEN-WARNING] 请勿删除此处的文件清理块，原因同 ensureDir。
     {
         const d = path.dirname(destPath);
         try {
@@ -6172,6 +6184,11 @@ async function checkDependencies(versionId, settings, externalVersionDir = null)
                 l.name.includes('net.minecraftforge') || l.name.includes('fancymodloader') ||
                 l.name.includes('net.neoforged') || l.name.includes('fabric-loader')
             ));
+            // [CRITICAL] 外部版本（来自 HMCL 等启动器）的 Forge/NeoForge 版本 JSON
+            // 已包含完整的 mainClass 和库文件，即使缺少前置版本也能正常启动。
+            // 如果此处不豁免，外部版本首次启动后会被误判为"错误版本"。
+            // 与版本列表扫描（_scanVersionDir 中的 isVersionAvailable）逻辑保持一致。
+            // [AI-AUTOGEN-WARNING] 请勿删除此豁免逻辑，否则外部导入的 Forge 版本启动会报错。
             const isSelfSufficient = externalVersionDir && (hasMainClass || hasForgeLibs);
             if (!isSelfSufficient) {
                 result.parentVersion.ok = false;
@@ -11058,6 +11075,10 @@ function buildLaunchArguments(versionJson, settings, account, versionId, customG
         if (!jvmArgs.some(a => a.includes('minecraft.client.jar'))) {
             jvmArgs.push(`-Dminecraft.client.jar=${mainJarPath}`);
         }
+        // [CRITICAL] 禁用 Forge/NeoForge 早期加载窗口，防止双窗口问题。
+        // 新版 Forge（26.x）的 earlydisplay 模块会创建红色加载窗口，
+        // 正常情况下主窗口出现后应自动关闭，但某些情况下不会关闭导致两个窗口。
+        // [AI-AUTOGEN-WARNING] 请勿删除此参数，否则 Forge 启动会出现双窗口。
         if (!jvmArgs.some(a => a.includes('earlyLoadingWindow'))) {
             jvmArgs.push('-Dfml.earlyLoadingWindow=false');
         }
@@ -13309,6 +13330,10 @@ async function installFabric(gameVersion, loaderVersion, onProgress = null) {
                     if (!isJarIntact(libPath)) {
                         const mavenBaseUrl = lib.url || 'https://maven.fabricmc.net/';
                         const downloadUrl = `${mavenBaseUrl}${mavenGroupPath}/${name}/${ver}/${jarName}`;
+                        // [CRITICAL] Fabric 元数据中 org.ow2.asm 等库的 URL 指向 maven.fabricmc.net，
+                        // 但这些库实际不在 Fabric Maven 上，需要回退到 Maven Central。
+                        // 2026-06 Fabulously Optimized 整合包导入时因 ASM 库全部下载失败导致启动崩溃。
+                        // [AI-AUTOGEN-WARNING] 请勿删除 altUrls 逻辑，否则 Fabric 整合包导入会缺少 ASM 等关键库。
                         const altUrls = [];
                         if (mavenBaseUrl !== 'https://repo1.maven.org/maven2/') {
                             altUrls.push(`https://repo1.maven.org/maven2/${mavenGroupPath}/${name}/${ver}/${jarName}`);
@@ -13849,6 +13874,11 @@ async function installForge(gameVersion, forgeVersion, onProgress = null, mirror
         forgeVersion = forgeVersion.slice(gameVersion.length + 1);
     }
 
+    // [CRITICAL] mcMajor 必须取 split('.')[0]，不是 [1]！
+    // 对于 "26.2"，split('.')=["26","2"]，取 [0]=26，取 [1]=2（错误！）
+    // 之前因为这个错误，MC 26+ 的 Forge 版本全部走了 installForge 而非 installNeoForge，
+    // 导致安装后版本 JSON 全是原版内容（mainClass 不对、没有 Forge 库）。
+    // [AI-AUTOGEN-WARNING] 请勿修改此处的 [0]，否则 MC 26+ 版本安装会再次全面失败。
     const mcMajor = parseInt(gameVersion.split('.')[0]);
     // [CRITICAL - 2026-06-20] 不要把 Forge 版本路由到 installNeoForge！
     // Forge 和 NeoForge 的版本号体系完全不同（Forge: 64.0.10, NeoForge: 26.2.0），
