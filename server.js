@@ -14444,6 +14444,10 @@ async function installNeoForge(gameVersion, neoVersion, onProgress = null) {
             versionJsonData.arguments.game = ['--launchTarget', 'neoforgeclient', '--fml.neoForgeVersion', neoVersion, '--fml.mcVersion', gameVersion];
         }
 
+        // [CRITICAL FIX - 2026-06-20] inheritsFrom 必须从 versionId 提取纯MC版本号（如 "26.2"），
+        // 不能直接用 gameVersion 参数！因为 gameVersion 可能被前端传入 "26.2-forge-65.0.0" 这样的值，
+        // 导致 inheritsFrom 指向错误的基础版本，NeoForge 启动时 AccessTransformerEngine 找不到方法。
+        // 如果此段代码被修改导致 NeoForge 启动报 NoSuchMethodError，请优先检查 inheritsFrom 的值。
         const mcVerFromId = versionId.match(/^(\d+\.\d+(?:\.\d+)?)/);
         const cleanMcVer = mcVerFromId ? mcVerFromId[1] : gameVersion.split('.')[0] + '.' + (gameVersion.split('.')[1] || '0');
         const versionJson = {
@@ -14634,6 +14638,9 @@ async function installNeoForge(gameVersion, neoVersion, onProgress = null) {
 
         try { fs.unlinkSync(installerPath); } catch (_) {}
 
+        // [CRITICAL FIX - 2026-06-20] 必须从文件重新读取最终版本 JSON，不能用上面的 versionJson 对象直接写入！
+        // 因为 mergeNeoForgeLoaderToVersion 等后续函数可能已经修改了文件中的 JSON，
+        // 但这里的 versionJson 变量还是旧的引用，直接写入会覆盖掉那些修改。
         try {
             const finalJson = JSON.parse(fs.readFileSync(path.join(versionDir, `${versionId}.json`), 'utf-8'));
             fs.writeFileSync(path.join(versionDir, `${versionId}.json`), JSON.stringify(finalJson, null, 2));
@@ -14971,6 +14978,10 @@ async function mergeNeoForgeLoaderToVersion(versionId, gameVersion, neoVersion, 
     const jsonPath = path.join(versionDir, `${versionId}.json`);
     const versionJson = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
 
+    // [CRITICAL FIX - 2026-06-20] 同样从 versionId 提取纯净的 MC 版本号。
+    // 这个函数在 installNeoForge 之后被调用，负责合并 install_profile.json 中的运行时库。
+    // 如果 inheritsFrom 写错（如 "26.2-forge-65.0.0"），launcher 会继承错误的基础版本，
+    // 导致 NeoForge 的 access-transformers、earlydisplay 等关键库缺失，启动直接崩溃。
     const correctGameVersion = gameVersion.match(/^\d+\.\d+/) ? gameVersion.split('.')[0] + '.' + gameVersion.split('.').slice(1).find(p => /^\d+$/.test(p) && parseInt(p) < 100) || gameVersion.split('.')[0] + '.' + (gameVersion.split('.')[1] || '0') : gameVersion;
     const mcVerMatch = versionId.match(/^(\d+\.\d+(?:\.\d+)?)/);
     const mcVer = mcVerMatch ? mcVerMatch[1] : (versionJson.inheritsFrom && versionJson.inheritsFrom.match(/^\d+\.\d+/) ? versionJson.inheritsFrom : correctGameVersion);
@@ -15098,6 +15109,10 @@ async function mergeNeoForgeLoaderToVersion(versionId, gameVersion, neoVersion, 
         }
     }
 
+    // [CRITICAL FIX - 2026-06-20] 将 install_profile.json 中的运行时库合并到版本 JSON 的 libraries 中。
+    // NeoForge 的关键运行时库（如 net.neoforged:accesstransformers, earlydisplay, asm 等）
+    // 只存在于 install_profile.json 的 libraries 里，不会自动出现在版本 JSON 中。
+    // 如果删掉这段合并逻辑，NeoForge 启动时会报 NoSuchMethodError: AccessTransformerEngine.newEngine()
     if (profileLibs.length > 0) {
         const existingLibNames = new Set((versionJson.libraries || []).map(l => l.name).filter(Boolean));
         let added = 0;
