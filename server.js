@@ -14632,13 +14632,11 @@ async function installNeoForge(gameVersion, neoVersion, onProgress = null) {
 
         try { fs.unlinkSync(installerPath); } catch (_) {}
 
-        const vJsonPath = path.join(versionDir, `${versionId}.json`);
         try {
-            fs.writeFileSync(vJsonPath, JSON.stringify(versionJson, null, 2));
-            console.log(`[NeoForge] Wrote version JSON: ${vJsonPath}`);
-        } catch (writeErr) {
-            console.error(`[NeoForge] Failed to write version JSON:`, writeErr.message);
-        }
+            const finalJson = JSON.parse(fs.readFileSync(path.join(versionDir, `${versionId}.json`), 'utf-8'));
+            fs.writeFileSync(path.join(versionDir, `${versionId}.json`), JSON.stringify(finalJson, null, 2));
+            console.log(`[NeoForge] Final version JSON written, libs=${(finalJson.libraries||[]).length}`);
+        } catch (_) {}
 
         if (onProgress) onProgress(1, 'NeoForge 安装完成');
         return { success: true, versionId: versionId, libsMissing: neoLibFailures };
@@ -15092,6 +15090,20 @@ async function mergeNeoForgeLoaderToVersion(versionId, gameVersion, neoVersion, 
                 existingJvm.add(jvmArg);
             }
         }
+    }
+
+    if (profileLibs.length > 0) {
+        const existingLibNames = new Set((versionJson.libraries || []).map(l => l.name).filter(Boolean));
+        let added = 0;
+        for (const lib of profileLibs) {
+            if (lib.name && !existingLibNames.has(lib.name)) {
+                versionJson.libraries = versionJson.libraries || [];
+                versionJson.libraries.push(lib);
+                existingLibNames.add(lib.name);
+                added++;
+            }
+        }
+        console.log(`[NeoForge] 合并 install_profile 库: +${added}, total=${versionJson.libraries.length}`);
     }
 
     if (onProgress) onProgress(0.5, '下载 NeoForge 库文件...');
