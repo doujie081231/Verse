@@ -112,3 +112,14 @@ obfuscate-activation.js
 obfuscate-config.json
 push-to-github.js
 upload-to-github.js
+knowledge-graph.js
+mcp-client.js
+memory-manager.js
+parallel-agent.js
+sandbox.js
+self-evolution.js
+session-manager.js
+skill-manager.js
+snapshot-manager.js
+workflow-engine.js
+hooks-manager.js
