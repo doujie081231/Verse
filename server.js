@@ -5881,12 +5881,15 @@ function selectJavaForVersion(versionId, settings, versionJson = null, externalV
 
     console.log(`[Java] 快速扫描完成，找到 ${candidates.length} 个候选Java`);
 
+    let systemJava = [];
+    let bundledJava = [];
+
     if (candidates.some(j => j.majorVersion >= requiredVersion && j.majorVersion <= maxVersion)) {
         console.log(`[Java] 快速扫描已找到满足要求的Java，跳过系统扫描`);
     } else {
         console.log(`[Java] 快速扫描未找到，执行系统扫描...`);
-        const systemJava = detectSystemJava();
-        const bundledJava = detectBundledJava();
+        systemJava = detectSystemJava();
+        bundledJava = detectBundledJava();
         console.log(`[Java] 系统扫描: bundled=${bundledJava.length}, system=${systemJava.length}`);
         for (const j of [...bundledJava, ...systemJava]) {
             const norm = j.path.toLowerCase().replace(/\\/g, '/');
