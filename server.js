@@ -6637,6 +6637,14 @@ async function checkDependencies(versionId, settings, externalVersionDir = null)
         const isNeoForgeVersion = (versionJson.libraries || []).some(l => l.name && (l.name.startsWith('net.neoforged:neoforge:') || l.name.startsWith('net.neoforged.fancymodloader:')));
         const hasNeoForgeLibs = (versionJson.libraries || []).some(l => l.name && l.name.startsWith('net.neoforged'));
 
+        // [CRITICAL - 2026-06-21] MC 26+ 新版 Forge 格式检测
+        // MC 26.2 + Forge 65.0.0 使用全新格式：Forge 核心嵌入在版本 JAR 中（39MB），
+        // 不再有独立的 fmlcore、client-srg、client-extra 文件。
+        // 特征：mainClass 是 net.minecraft.client.main.Main（不是 BootstrapLauncher），
+        //       gameArgs 中没有 --fml.forgeVersion，libraries 中没有 net.minecraftforge 库。
+        // 此时应跳过核心文件检查，因为版本 JAR 已包含所有 Forge 核心代码。
+        // [AI-AUTOGEN-WARNING] 不要删除 isNewForgeFormat 检测逻辑，否则 MC 26+ Forge 版本
+        // 会因 DepCheck 误报核心库缺失而无法启动。
         const gameArgs = versionJson.arguments?.game || [];
         const hasFmlArgs = gameArgs.some(a => typeof a === 'string' && (a === '--fml.forgeVersion' || a === '--fml.mcVersion'));
         const hasBootstrapMain = (versionJson.mainClass || '').includes('bootstraplauncher') || (versionJson.mainClass || '').includes('BootstrapLauncher') || (versionJson.mainClass || '').includes('cpw.mods');
@@ -8787,6 +8795,30 @@ async function downloadJavaAsync(majorVersion, sessionId, sessionFile, mirrorInd
 }
 
 
+/*
+ * [CRITICAL FUNCTION - READ BEFORE MODIFYING]
+ * ============================================
+ * configureJavaEnv — 配置 Java 系统环境变量（PATH / JAVA_HOME / 用户 PATH）
+ *
+ * 【实现方式】
+ *   使用 PowerShell [Environment]::SetEnvironmentVariable 修改系统级环境变量。
+ *   每个操作独立 try/catch，单步失败不影响其他步骤。
+ *
+ * 【为什么用 execAsync 而不是 execSync？】
+ *   execSync 会阻塞 Node.js 主进程（事件循环冻结），导致：
+ *   - UI 冻结 10-30 秒（每个 PowerShell 调用 10-15 秒超时）
+ *   - 多个轮询请求堆积，完成后同时触发重复 toast 通知
+ *   改用 execAsync 后，异步非阻塞，UI 保持流畅。
+ *
+ * 【为什么加 -NoProfile？】
+ *   PowerShell 默认加载用户配置文件（profile），可能包含大量脚本，启动慢。
+ *   -NoProfile 跳过 profile 加载，显著加速每次调用。
+ *
+ * [AI-AUTOGEN-WARNING]
+ *   - 不要把 execAsync 改回 execSync，会导致 UI 冻结
+ *   - 不要删除 -NoProfile 参数
+ *   - 不要删除独立 try/catch，每个环境变量操作必须独立处理错误
+ */
 function configureJavaEnv(javaHome, majorVersion) {
     if (process.platform !== 'win32') {
         console.log('[JavaEnv] 非Windows平台，跳过系统环境变量配置');
@@ -14000,6 +14032,44 @@ async function runForgeInstallerJar(installerJarPath, mcDir, onProgress = null, 
 
 
 
+/*
+ * [CRITICAL FUNCTION - READ BEFORE MODIFYING]
+ * ============================================
+ * installForge — 安装 Forge 模组加载器
+ *
+ * 【参数说明】
+ *   gameVersion     - MC 版本号，如 "26.2", "1.20.1"
+ *   forgeVersion    - Forge 版本号，如 "65.0.0", "47.3.0"
+ *   onProgress      - 进度回调 (percent, message)
+ *   mirrorBaseUrl   - 镜像源 URL，null 则用 BMCLAPI
+ *   targetVersionId - 【关键参数】目标版本目录名，如 "26.2-Forge-65.0.0"
+ *                     如果不传，默认用小写 "26.2-forge-65.0.0"
+ *
+ * 【为什么需要 targetVersionId？】
+ *   下载页面创建版本目录时用大写 Forge（如 "26.2-Forge-65.0.0"），但本函数内部
+ *   默认用小写 forge（如 "26.2-forge-65.0.0"）。在 Windows NTFS 上：
+ *   - 目录名大小写不敏感 → 两个路径指向同一目录
+ *   - 但文件名中的大小写差异会导致 JSON/JAR 文件名不同
+ *   - performInstallation 先写入原版 JSON（mainClass=net.minecraft.client.main.Main）
+ *   - forge-installer.js 写入 Forge JSON（mainClass=net.minecraftforge.bootstrap.ForgeBootstrap）
+ *   - 由于文件名大小写不同，写入时序混乱，最终文件内容可能是原版的
+ *   - 结果：用户启动 Forge 版本却看到原版 MC
+ *
+ *   修复方案：由调用方传入 targetVersionId，确保 installForge 写入的文件路径
+ *   与 performInstallation 创建的版本目录完全一致。
+ *
+ * 【调用方式】
+ *   1. performInstallation（下载页面）：必须传 targetVersionId = versionId
+ *      → 例：installForge("26.2", "65.0.0", progress, null, "26.2-Forge-65.0.0")
+ *   2. 修复/重装场景：可以不传 targetVersionId，用默认小写格式
+ *      → 例：installForge("26.2", "65.0.0", progress)
+ *
+ * [AI-AUTOGEN-WARNING]
+ *   - 不要删除 targetVersionId 参数
+ *   - 不要把 performInstallation 中的 installForge 调用改为不传 targetVersionId
+ *   - 不要修改 versionId 的默认值格式（小写 forge）
+ *   - 修改前请理解 Windows NTFS 大小写不敏感的文件系统特性
+ */
 async function installForge(gameVersion, forgeVersion, onProgress = null, mirrorBaseUrl = null, targetVersionId = null) {
     if (forgeVersion && forgeVersion.startsWith(gameVersion + '-')) {
         forgeVersion = forgeVersion.slice(gameVersion.length + 1);
@@ -14043,6 +14113,8 @@ async function installForge(gameVersion, forgeVersion, onProgress = null, mirror
         }
     }
 
+    // [CRITICAL - 2026-06-21] targetVersionId 防止大小写不一致导致 Forge 启动为原版
+    // 详见函数顶部注释。不要删除 targetVersionId，不要修改默认值格式。
     const versionId = targetVersionId || `${gameVersion}-forge-${forgeVersion}`;
     const versionStr = `${gameVersion}-${forgeVersion}`;
 
@@ -16296,6 +16368,13 @@ async function performInstallation(sessionId, versionDetails) {
                 if (loaderType === 'fabric') {
                     await mergeFabricLoaderToVersion(versionId, gameVersion, loaderVersion, loaderProgress);
                 } else if (loaderType === 'forge') {
+                    // [CRITICAL - 2026-06-21] 必须传 versionId 作为 targetVersionId！
+                    // download 页面创建的版本目录用大写 Forge（如 "26.2-Forge-65.0.0"），
+                    // installForge 默认用小写 forge（如 "26.2-forge-65.0.0"）。
+                    // Windows NTFS 大小写不敏感，目录相同但文件名不同，会导致 JSON 被覆盖为原版。
+                    // 传入 versionId 确保 installForge 写入正确的文件路径。
+                    // 详见 installForge 函数顶部注释。
+                    // [AI-AUTOGEN-WARNING] 不要删除 ", null, versionId"，否则 Forge 版本会启动为原版。
                     loaderResult = await installForge(gameVersion, loaderVersion, (p, msg) => {
                         if (session.status === 'cancelled') return;
                         session.progress = Math.min(94 + p * 4, 98);
@@ -23289,6 +23368,12 @@ async function handleAPI(pathname, req, res, parsedUrl) {
                 let details = await getVersionDetails(versionUrl);
                 
                 if (loaderInfo && loaderInfo.type && loaderInfo.version) {
+                    // [CRITICAL - 2026-06-21] loaderSuffix 首字母大写（如 "Forge"），生成的版本ID
+                    // 如 "26.2-Forge-65.0.0"。此格式必须与 performInstallation 中
+                    // installForge 调用时传入的 versionId 一致，否则 Windows NTFS 上
+                    // 会因大小写不敏感导致文件覆盖冲突，Forge 版本启动为原版。
+                    // 详见 installForge 函数顶部注释。
+                    // [AI-AUTOGEN-WARNING] 不要修改 loaderSuffix 的大小写格式。
                     const loaderSuffix = loaderInfo.type === 'neoforge' ? 'NeoForge' : 
                                         loaderInfo.type.charAt(0).toUpperCase() + loaderInfo.type.slice(1);
                     const defaultName = `${details.id}-${loaderSuffix}-${loaderInfo.version}`;
