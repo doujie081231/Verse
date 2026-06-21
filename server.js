@@ -24010,22 +24010,26 @@ async function handleAPI(pathname, req, res, parsedUrl) {
                 }
 
                 if (isOfflineAccount) {
-                    let offlineHead = null;
+                    let offlineData = null;
+                    let isFullSkin = false;
                     try {
                         const accounts = loadAccounts();
                         const acc = accounts.find(a => (a.uuid || '').replace(/-/g, '') === cleanUuid);
                         if (acc && acc.skinFile) {
                             const skinPath = resolveSkinPath(acc.skinFile);
                             if (skinPath) {
-                                const skinBuf = fs.readFileSync(skinPath);
-                                offlineHead = await cropSkinToHeadWithSharp(skinBuf);
+                                offlineData = fs.readFileSync(skinPath);
+                                isFullSkin = true;
                             }
                         }
                     } catch (e) {}
-                    if (!offlineHead) offlineHead = await getSteveHeadLocal();
-                    if (offlineHead) {
-                        AVATAR_CACHE.set(cacheKey, { data: offlineHead, contentType: 'image/png', time: Date.now() });
-                        serveImage(offlineHead, 'image/png');
+                    if (!offlineData) {
+                        offlineData = await getSteveHeadLocal();
+                        isFullSkin = false;
+                    }
+                    if (offlineData) {
+                        AVATAR_CACHE.set(cacheKey, { data: offlineData, contentType: 'image/png', time: Date.now() });
+                        serveImage(offlineData, 'image/png', isFullSkin);
                     } else {
                         res.writeHead(302, { Location: '/img/steve_head.png' });
                         res.end();
