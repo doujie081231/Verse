@@ -13988,7 +13988,7 @@ async function runForgeInstallerJar(installerJarPath, mcDir, onProgress = null, 
 
 
 
-async function installForge(gameVersion, forgeVersion, onProgress = null, mirrorBaseUrl = null) {
+async function installForge(gameVersion, forgeVersion, onProgress = null, mirrorBaseUrl = null, targetVersionId = null) {
     if (forgeVersion && forgeVersion.startsWith(gameVersion + '-')) {
         forgeVersion = forgeVersion.slice(gameVersion.length + 1);
     }
@@ -14031,7 +14031,7 @@ async function installForge(gameVersion, forgeVersion, onProgress = null, mirror
         }
     }
 
-    const versionId = `${gameVersion}-forge-${forgeVersion}`;
+    const versionId = targetVersionId || `${gameVersion}-forge-${forgeVersion}`;
     const versionStr = `${gameVersion}-${forgeVersion}`;
 
     const baseResult = await ensureBaseVersionInstalled(gameVersion);
@@ -16265,7 +16265,7 @@ async function performInstallation(sessionId, versionDetails) {
                         if (session.status === 'cancelled') return;
                         session.progress = Math.min(94 + p * 4, 98);
                         session.message = msg || `正在安装Forge ${loaderVersion}...`;
-                    });
+                    }, null, versionId);
                     if (loaderResult.success && loaderResult.versionId) {
                         const versionJsonPath = path.join(VERSIONS_DIR, versionId, `${versionId}.json`);
                         if (fs.existsSync(versionJsonPath)) {
