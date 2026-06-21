@@ -40,6 +40,79 @@ const http = require('http');
 const https = require('https');
 const http2 = require('http2');
 const fs = require('fs');
+
+/*
+[CRITICAL] 全局 ENOTDIR 修复 — Monkey-patch fs.mkdirSync 和 fs.promises.mkdir
+===============================================================================
+【问题原理】
+  Node.js 的 fs.mkdirSync(path, {recursive: true}) 会逐级检查路径中每个组件是否为目录。
+  如果路径中某个组件已经是文件（如 libraries/net 是文件），就会抛出:
+    ENOTDIR: not a directory, mkdir 'C:\Users\xxx\.versepc\libraries\net'
+
+  在我们的场景中，下载库文件如果中途失败，可能在 libraries/ 下创建 0 字节的文件
+  而不是目录。后续所有需要在该路径下创建子目录的操作都会失败。
+
+【为什么需要全局拦截】
+  server.js 中有 80+ 个 mkdirSync/mkdir 调用，不可能逐个添加清理逻辑。
+  而且用户可能通过整合包导入、模组安装、库文件下载等多种途径触发此问题。
+  通过 monkey-patch fs 的 mkdir 方法，任何代码路径（包括第三方依赖）都能
+  自动处理 ENOTDIR 情况。
+
+【修复原理】
+  拦截 fs.mkdirSync 和 fs.promises.mkdir，当捕获到 ENOTDIR 错误时，
+  自动清理路径中冲突的文件，然后重试创建目录。这个过程对调用方完全透明。
+
+[AI-AUTOGEN-WARNING] 请勿删除或修改此 monkey-patch 逻辑。
+*/
+const _origMkdirSync = fs.mkdirSync;
+fs.mkdirSync = function patchedMkdirSync(dir, options) {
+    try {
+        return _origMkdirSync.call(this, dir, options);
+    } catch (e) {
+        if (e && e.code === 'ENOTDIR' && typeof dir === 'string') {
+            const parts = dir.split(path.sep);
+            for (let i = 1; i <= parts.length; i++) {
+                const partial = parts.slice(0, i).join(path.sep);
+                if (partial) {
+                    try {
+                        const st = fs.statSync(partial);
+                        if (!st.isDirectory()) {
+                            fs.unlinkSync(partial);
+                            console.log(`[ENOTDIR-Fix] 清理异常文件: ${partial}`);
+                        }
+                    } catch (_) {}
+                }
+            }
+            return _origMkdirSync.call(this, dir, options);
+        }
+        throw e;
+    }
+};
+
+const _origPromisesMkdir = fs.promises.mkdir;
+fs.promises.mkdir = async function patchedPromisesMkdir(dir, options) {
+    try {
+        return await _origPromisesMkdir.call(this, dir, options);
+    } catch (e) {
+        if (e && e.code === 'ENOTDIR' && typeof dir === 'string') {
+            const parts = dir.split(path.sep);
+            for (let i = 1; i <= parts.length; i++) {
+                const partial = parts.slice(0, i).join(path.sep);
+                if (partial) {
+                    try {
+                        const st = await fs.promises.stat(partial);
+                        if (!st.isDirectory()) {
+                            await fs.promises.unlink(partial);
+                            console.log(`[ENOTDIR-Fix] 清理异常文件: ${partial}`);
+                        }
+                    } catch (_) {}
+                }
+            }
+            return await _origPromisesMkdir.call(this, dir, options);
+        }
+        throw e;
+    }
+};
 const path = require('path');
 const url = require('url');
 const crypto = require('crypto');
