@@ -14307,7 +14307,7 @@ async function installForge(gameVersion, forgeVersion, onProgress = null, mirror
         const relativePath = entry.replace('maven/', '');
         const destPath = path.join(LIBRARIES_DIR, relativePath);
         const dir = path.dirname(destPath);
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        ensureDir(destPath);
         if (fs.existsSync(destPath)) {
             const stat = fs.statSync(destPath);
             if (stat.isDirectory()) {
@@ -14328,7 +14328,7 @@ async function installForge(gameVersion, forgeVersion, onProgress = null, mirror
     ip.data.BINPATCH = ip.data.BINPATCH || { client: '', server: '' };
 
     const forgeVersionPath = path.join(LIBRARIES_DIR, 'net', 'minecraftforge', 'forge', versionStr);
-    if (!fs.existsSync(forgeVersionPath)) fs.mkdirSync(forgeVersionPath, { recursive: true });
+    ensureDir(path.join(forgeVersionPath, 'dummy'));
 
     if (zip.getEntry('data/client.lzma')) {
         const clientLzmaPath = path.join(forgeVersionPath, `forge-${versionStr}-clientdata.lzma`);
