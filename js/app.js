@@ -7043,18 +7043,38 @@ async function loadAccounts() {
             }).join('');
             
             container.querySelectorAll('.account-avatar-img').forEach(img => {
-                img.onload = function() {
-                    const w = this.naturalWidth || this.width;
-                    const h = this.naturalHeight || this.height;
-                    const isFullSkin = (w === 64 && h === 32) || w === 128 || w === 256;
-                    if (isFullSkin) {
-                        const cropped = cropSkinHeadCanvas(this, 64);
-                        if (cropped) {
-                            this.onload = null;
-                            this.src = cropped;
-                        }
-                    }
-                };
+                const avatarSrc = img.src;
+                if (avatarSrc && avatarSrc.includes('/api/avatar')) {
+                    img.removeAttribute('src');
+                    fetch(avatarSrc).then(resp => {
+                        const isFullSkin = resp.headers.get('X-Is-Full-Skin') === 'true';
+                        return resp.blob().then(blob => ({ blob, isFullSkin }));
+                    }).then(({ blob, isFullSkin }) => {
+                        const objUrl = URL.createObjectURL(blob);
+                        img.onload = function() {
+                            if (isFullSkin) {
+                                const cropped = cropSkinHeadCanvas(this, 64);
+                                if (cropped) { this.onload = null; this.src = cropped; URL.revokeObjectURL(objUrl); return; }
+                            }
+                            URL.revokeObjectURL(objUrl);
+                        };
+                        img.src = objUrl;
+                    }).catch(() => {
+                        img.src = avatarSrc;
+                        img.onerror = function() {
+                            const avatarDiv = this.parentElement;
+                            if (avatarDiv) {
+                                this.style.display = 'none';
+                                setTimeout(() => {
+                                    const retryImg = document.createElement('img');
+                                    retryImg.src = avatarSrc.split('&_=')[0] + '&_=' + Date.now();
+                                    retryImg.className = 'account-avatar-img';
+                                    retryImg.onload = function() { avatarDiv.innerHTML = ''; avatarDiv.appendChild(retryImg); };
+                                }, 2000);
+                            }
+                        };
+                    });
+                }
                 img.onerror = function() {
                     const avatarDiv = this.parentElement;
                     if (avatarDiv) {
@@ -7220,6 +7240,7 @@ async function loadAccounts() {
                     };
                     launchAvatar.appendChild(img2);
                 });
+            }
         } else {
             const homeAvatar = document.getElementById('home-avatar');
             homeAvatar.innerHTML = '<img src="img/icon.png" alt="" class="account-avatar-img">';
