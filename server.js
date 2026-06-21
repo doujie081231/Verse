@@ -277,15 +277,20 @@ const dirCache = new Set();
 function ensureDir(filePath) {
     const dir = path.dirname(filePath);
     if (dirCache.has(dir)) return;
-    if (!fs.existsSync(dir)) {
+    let dirExists = false;
+    try {
+        dirExists = fs.existsSync(dir) && fs.statSync(dir).isDirectory();
+    } catch (_) {}
+    if (!dirExists) {
         const parts = dir.split(path.sep);
         for (let i = 1; i <= parts.length; i++) {
             const partial = parts.slice(0, i).join(path.sep);
-            if (partial && fs.existsSync(partial)) {
-                const stat = fs.statSync(partial);
-                if (!stat.isDirectory()) {
-                    try { fs.unlinkSync(partial); } catch (_) {}
-                }
+            if (partial) {
+                try {
+                    if (fs.existsSync(partial) && !fs.statSync(partial).isDirectory()) {
+                        fs.unlinkSync(partial);
+                    }
+                } catch (_) {}
             }
         }
         fs.mkdirSync(dir, { recursive: true });
@@ -299,19 +304,26 @@ function ensureDir(filePath) {
 async function asyncEnsureDir(filePath) {
     const dir = path.dirname(filePath);
     if (dirCache.has(dir)) return;
-    const parts = dir.split(path.sep);
-    for (let i = 1; i <= parts.length; i++) {
-        const partial = parts.slice(0, i).join(path.sep);
-        if (partial) {
-            try {
-                const stat = await fs.promises.stat(partial);
-                if (!stat.isDirectory()) {
-                    await fs.promises.unlink(partial);
-                }
-            } catch (_) {}
+    let dirExists = false;
+    try {
+        const st = await fs.promises.stat(dir);
+        dirExists = st.isDirectory();
+    } catch (_) {}
+    if (!dirExists) {
+        const parts = dir.split(path.sep);
+        for (let i = 1; i <= parts.length; i++) {
+            const partial = parts.slice(0, i).join(path.sep);
+            if (partial) {
+                try {
+                    const stat = await fs.promises.stat(partial);
+                    if (!stat.isDirectory()) {
+                        await fs.promises.unlink(partial);
+                    }
+                } catch (_) {}
+            }
         }
+        await fs.promises.mkdir(dir, { recursive: true });
     }
-    await fs.promises.mkdir(dir, { recursive: true });
     dirCache.add(dir);
 }
 
