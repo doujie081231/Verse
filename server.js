@@ -8945,13 +8945,16 @@ function detectBundledJava() {
         .map(d => d.name);
 
     for (const javaDirName of javaDirs) {
-        findJavaInDir(path.join(JAVA_DIR, javaDirName), 4);
+        // [CRITICAL - 2026-06-21] macOS的Java运行时结构是 jre.bundle/Contents/Home/bin/java，
+        // 比Windows/Linux多2层（.bundle和Contents/Home），所以maxDepth必须>=6。
+        // 之前是4，导致macOS上下载了Java但检测不到，游戏启动失败。
+        findJavaInDir(path.join(JAVA_DIR, javaDirName), 6);
     }
 
     // 也搜索 runtime 目录（Minecraft 官方 Java 运行时安装位置）
     const runtimeDir = path.join(DATA_DIR, 'runtime');
     if (fs.existsSync(runtimeDir)) {
-        findJavaInDir(runtimeDir, 4);
+        findJavaInDir(runtimeDir, 6);
     }
 
     return results;
