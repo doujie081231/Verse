@@ -332,6 +332,13 @@ module.exports = {
         });
 
         // ====================================================================
+        // /api/lan/port
+        // ====================================================================
+        registerRoute('GET', '/api/lan/port', async (req, res, parsedUrl) => {
+            sendJSON(res, { success: true, port: ctx.sessions.detectedLanPort });
+        });
+
+        // ====================================================================
         // /api/easytier/status
         // ====================================================================
         registerRoute('GET', '/api/easytier/status', async (req, res, parsedUrl) => {
@@ -396,7 +403,7 @@ module.exports = {
         // ====================================================================
         // /api/easytier/stop
         // ====================================================================
-        registerRoute('GET', '/api/easytier/stop', async (req, res, parsedUrl) => {
+        registerRoute('POST', '/api/easytier/stop', async (req, res, parsedUrl) => {
             terracotta.stopTerracotta();
             sendJSON(res, { success: true });
         });
@@ -486,7 +493,7 @@ module.exports = {
         // ====================================================================
         // /api/easytier/download
         // ====================================================================
-        registerRoute('GET', '/api/easytier/download', async (req, res, parsedUrl) => {
+        registerRoute('POST', '/api/easytier/download', async (req, res, parsedUrl) => {
             try {
                 const etDir = path.join(DATA_DIR, 'easytier');
                 if (!fs.existsSync(etDir)) fs.mkdirSync(etDir, { recursive: true });
