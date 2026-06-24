@@ -212,7 +212,7 @@ module.exports = {
         // ====================================================================
         // /api/launch/cancel
         // ====================================================================
-        registerRoute('GET', '/api/launch/cancel', async (req, res, parsedUrl) => {
+        registerRoute('POST', '/api/launch/cancel', async (req, res, parsedUrl) => {
             global._versepc_launching = false;
             for (const [sid, inst] of ctx.sessions.gameInstances) {
                 try { inst.process.kill(); } catch (e) {}
