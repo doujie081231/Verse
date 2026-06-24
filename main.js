@@ -218,6 +218,10 @@ if (process.platform === 'win32') {
 // 窗口配置文件路径和缓存
 const CONFIG_PATH = path.join(require('os').homedir(), '.versepc', 'window-config.json');
 const STORE_PATH = path.join(require('os').homedir(), '.versepc', 'app-store.json');
+// Activation schema version - bumping this invalidates all activations recorded
+// under the previous schema, forcing users to re-activate. Used to ensure users
+// covered by an override update lose their previously activated state.
+const ACTIVATION_SCHEMA_VERSION = 2;
 let windowConfigCache = null;     // 配置缓存对象
 let windowConfigCacheTime = 0;    // 缓存时间戳
 const CONFIG_CACHE_DURATION = 1000; // 缓存有效期（1秒）
@@ -1009,9 +1013,34 @@ ipcMain.handle('activate-verify', async (event, code) => {
     try {
         const crypto = require('crypto');
         const os = require('os');
-        let activationModule;
-        try { activationModule = require('./activation.obfuscated.js'); } catch (e) { activationModule = require('./activation'); }
-        const { validateActivationCode } = activationModule;
+        const requestJson = (url, body) => new Promise((resolve, reject) => {
+            try {
+                const { net } = require('electron');
+                const req = net.request({ url, method: 'POST' });
+                const payload = JSON.stringify(body);
+                req.setHeader('Content-Type', 'application/json');
+                req.setHeader('User-Agent', 'VersePC/' + app.getVersion());
+                req.on('response', (res) => {
+                    let text = '';
+                    res.on('data', (chunk) => { text += chunk.toString(); });
+                    res.on('end', () => {
+                        try {
+                            if ((res.headers?.['content-type'] || '').indexOf('application/json') === -1) {
+                                return reject(new Error('服务端返回非JSON(' + res.statusCode + ')'));
+                            }
+                            resolve(JSON.parse(text || '{}'));
+                        } catch (e) {
+                            reject(new Error('解析服务端响应失败'));
+                        }
+                    });
+                });
+                req.on('error', (err) => reject(err));
+                req.write(payload);
+                req.end();
+            } catch (err) {
+                reject(err);
+            }
+        });
 
         const parts = [];
         try { parts.push(os.hostname()); } catch (e) {}
@@ -1032,33 +1061,60 @@ ipcMain.handle('activate-verify', async (event, code) => {
         } catch (e) {}
         const machineId = crypto.createHash('sha256').update(parts.join('|')).digest('hex').toUpperCase().substring(0, 16);
 
-        const c = (code || '').trim().toUpperCase();
+        let c = (code || '').trim().toUpperCase();
         if (!c) return { success: false, message: '请输入激活码' };
-        const codeParts = c.split('-');
-        if (codeParts.length < 2 || codeParts.length > 3) return { success: false, message: '激活码格式无效' };
+        const codeMatch = c.match(/(VU-[A-F0-9]{6,12})/i);
+        if (codeMatch) c = codeMatch[1].toUpperCase();
+        if (!c.startsWith('VU-')) return { success: false, message: '旧版激活码已失效，请前往官网申请新密钥\nhttps://verselauncher.cn/community' };
 
-        const appVersion = app.getVersion();
-        const result = validateActivationCode(c, machineId, appVersion);
+        const baseUrl = 'https://www.verselauncher.cn';
+        const endpoints = [baseUrl + '/api/activate/verify', baseUrl + '/.netlify/functions/activate/verify', baseUrl + '/functions/api/activate/verify'];
 
-        if (!result.activated) {
-            return { success: false, message: '激活码无效或与本机不匹配' };
+        let data = null;
+        let lastErr = null;
+        const body = { activation_code: c, machine_id: machineId, app_version: app.getVersion() };
+        for (const url of endpoints) {
+            try {
+                const json = await requestJson(url, body);
+                data = json?.data || json;
+                lastErr = null;
+                break;
+            } catch (err) {
+                lastErr = err.message || '网络异常';
+            }
         }
 
-        const activationType = result.type;
+        if (!data || !data.activated) {
+            return { success: false, message: lastErr ? ('激活验证失败: ' + lastErr) : '激活码无效或与本机不匹配' };
+        }
+
+        const activationType = data.type || 'single';
         const store = loadStore();
         store['activation_type'] = activationType;
         store['activation_code'] = c;
         store['activation_time'] = new Date().toISOString();
+        store['activation_schema_ver'] = ACTIVATION_SCHEMA_VERSION;
         fs.writeFile(STORE_PATH, JSON.stringify(store, null, 2), () => {});
 
         return { success: true, type: activationType, message: activationType === 'permanent' ? '永久激活成功！' : '单次激活成功！' };
     } catch (e) {
-        return { success: false, message: '验证失败: ' + e.message };
+        return { success: false, message: '验证过程出错: ' + e.message };
     }
 });
 
 ipcMain.handle('activate-status', async () => {
     const store = loadStore();
+    // Invalidate activations recorded under an older schema so users covered by an
+    // override update are forced to re-activate.
+    if (store['activation_type'] && store['activation_schema_ver'] !== ACTIVATION_SCHEMA_VERSION) {
+        delete store['activation_type'];
+        delete store['activation_code'];
+        delete store['activation_time'];
+        delete store['activation_version'];
+        delete store['activation_schema_ver'];
+        fs.writeFile(STORE_PATH, JSON.stringify(store, null, 2), () => {});
+        return { activated: false, type: null, time: null };
+    }
     return {
         activated: !!store['activation_type'],
         type: store['activation_type'] || null,
@@ -2476,16 +2532,19 @@ function matchPattern(filename, pattern) {
 // 多源更新检测与下载
 // ============================================================================
 
-const IS_BETA = process.env.ENABLE_AI === 'true';
+// IS_BETA is injected at build time via generate-integrity.js placeholder replacement.
+// This avoids relying on runtime env detection (which caused false positives when
+// beta.flag was packaged into release builds).
+let IS_BETA = (() => { try { return __IS_BETA__; } catch (_) { return false; } })();
 
 const UPDATE_JSON_SOURCES = IS_BETA ? [
-    'https://raw.gitmirror.com/doujie081231/VersePC-beta/main/update.json',
-    'https://raw.githubusercontent.com/doujie081231/VersePC-beta/main/update.json',
     'https://cdn.jsdelivr.net/gh/doujie081231/VersePC-beta@main/update.json',
+    'https://raw.githubusercontent.com/doujie081231/VersePC-beta/main/update.json',
+    'https://mirror.ghproxy.com/raw.githubusercontent.com/doujie081231/VersePC-beta/main/update.json',
 ] : [
-    'https://raw.gitmirror.com/doujie081231/versePc/main/update.json',
-    'https://raw.githubusercontent.com/doujie081231/versePc/main/update.json',
     'https://cdn.jsdelivr.net/gh/doujie081231/versePc@main/update.json',
+    'https://raw.githubusercontent.com/doujie081231/versePc/main/update.json',
+    'https://mirror.ghproxy.com/raw.githubusercontent.com/doujie081231/versePc/main/update.json',
 ];
 
 async function fetchUpdateJson() {

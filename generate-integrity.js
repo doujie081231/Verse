@@ -23,6 +23,16 @@ function computeHash(filePath) {
 function main() {
     const projectRoot = __dirname;
     const manifest = {};
+    const aiEnabled = process.env.ENABLE_AI === 'true';
+
+    // Inject IS_BETA into main.js at build time. Replaces the __IS_BETA__ placeholder
+    // so the packaged app no longer depends on runtime env detection (which caused
+    // false positives when beta.flag was shipped inside release builds).
+    const mainPath = path.join(projectRoot, 'main.js');
+    let mainContent = fs.readFileSync(mainPath, 'utf8');
+    mainContent = mainContent.replace(/__IS_BETA__/g, aiEnabled ? 'true' : 'false');
+    fs.writeFileSync(mainPath, mainContent);
+    console.log(`  main.js: __IS_BETA__ -> ${aiEnabled}`);
 
     for (const file of INTEGRITY_FILES) {
         const filePath = path.join(projectRoot, file);
@@ -38,7 +48,6 @@ function main() {
     fs.writeFileSync(outputPath, JSON.stringify(manifest, null, 2));
     console.log(`Integrity manifest written to ${OUTPUT_FILE} (${Object.keys(manifest).length} files)`);
 
-    const aiEnabled = process.env.ENABLE_AI === 'true';
     const aiConfigPath = path.join(projectRoot, 'ai-enabled.json');
     fs.writeFileSync(aiConfigPath, JSON.stringify({ enabled: aiEnabled }));
     console.log(`AI config written to ai-enabled.json (enabled=${aiEnabled})`);
