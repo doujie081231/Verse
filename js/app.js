@@ -7045,6 +7045,7 @@ async function loadAccounts() {
             container.querySelectorAll('.account-avatar-img').forEach(img => {
                 const avatarSrc = img.src;
                 if (avatarSrc && avatarSrc.includes('/api/avatar')) {
+                    img.dataset.originalSrc = avatarSrc.split('&_=')[0];
                     img.removeAttribute('src');
                     fetch(avatarSrc).then(resp => {
                         const isFullSkin = resp.headers.get('X-Is-Full-Skin') === 'true';
@@ -7058,44 +7059,54 @@ async function loadAccounts() {
                             }
                             URL.revokeObjectURL(objUrl);
                         };
-                        img.src = objUrl;
-                    }).catch(() => {
-                        img.src = avatarSrc;
                         img.onerror = function() {
+                            const origSrc = this.dataset.originalSrc;
+                            if (!origSrc) return;
                             const avatarDiv = this.parentElement;
                             if (avatarDiv) {
                                 this.style.display = 'none';
                                 setTimeout(() => {
                                     const retryImg = document.createElement('img');
-                                    retryImg.src = avatarSrc.split('&_=')[0] + '&_=' + Date.now();
+                                    retryImg.src = origSrc + (origSrc.includes('?') ? '&' : '?') + '_=' + Date.now();
                                     retryImg.className = 'account-avatar-img';
-                                    retryImg.onload = function() { avatarDiv.innerHTML = ''; avatarDiv.appendChild(retryImg); };
+                                    retryImg.dataset.originalSrc = origSrc;
+                                    retryImg.onerror = function() { this.style.display = 'none'; };
+                                    retryImg.onload = function() {
+                                        avatarDiv.innerHTML = '';
+                                        avatarDiv.appendChild(retryImg);
+                                    };
+                                    avatarDiv.innerHTML = '';
+                                    avatarDiv.appendChild(retryImg);
                                 }, 2000);
                             }
                         };
-                    });
-                }
-                img.onerror = function() {
-                    const avatarDiv = this.parentElement;
-                    if (avatarDiv) {
-                        this.style.display = 'none';
-                        const accItem = avatarDiv.closest('.account-item');
-                        const accType = accItem?.querySelector('.account-item-type')?.textContent;
-                        if (true) {
-                            const origSrc = this.src.split('&_=')[0];
-                            setTimeout(() => {
-                                const retryImg = document.createElement('img');
-                                retryImg.src = origSrc + '&_=' + Date.now();
-                                retryImg.className = 'account-avatar-img';
-                                retryImg.onerror = function() { retryImg.style.display = 'none'; };
-                                retryImg.onload = function() {
+                        img.src = objUrl;
+                    }).catch(() => {
+                        img.onload = null;
+                        img.onerror = function() {
+                            const origSrc = this.dataset.originalSrc;
+                            if (!origSrc) return;
+                            const avatarDiv = this.parentElement;
+                            if (avatarDiv) {
+                                this.style.display = 'none';
+                                setTimeout(() => {
+                                    const retryImg = document.createElement('img');
+                                    retryImg.src = origSrc + (origSrc.includes('?') ? '&' : '?') + '_=' + Date.now();
+                                    retryImg.className = 'account-avatar-img';
+                                    retryImg.dataset.originalSrc = origSrc;
+                                    retryImg.onerror = function() { this.style.display = 'none'; };
+                                    retryImg.onload = function() {
+                                        avatarDiv.innerHTML = '';
+                                        avatarDiv.appendChild(retryImg);
+                                    };
                                     avatarDiv.innerHTML = '';
                                     avatarDiv.appendChild(retryImg);
-                                };
-                            }, 2000);
-                        }
-                    }
-                };
+                                }, 2000);
+                            }
+                        };
+                        img.src = avatarSrc;
+                    });
+                }
             });
         }
 
@@ -7277,7 +7288,7 @@ let _skinResizeObserver = null;
 let _currentSkinBg = 'white';
 
 function showAccountDetail(accountId) {
-    API.getAccounts().then(accounts => {
+    API.getAccounts().then(async accounts => {
         const acc = accounts.find(a => a.id === accountId);
         if (!acc) return;
         _currentDetailAccount = acc;
@@ -7301,7 +7312,7 @@ function showAccountDetail(accountId) {
         pageAccounts.style.overflow = 'hidden';
         document.getElementById('page-account-detail').style.display = '';
         setSkinBg(_currentSkinBg);
-        initSkinViewer(skinUrl);
+        await initSkinViewer(skinUrl);
         loadSkinSelector(acc);
     });
 }
@@ -7353,6 +7364,7 @@ async function initSkinViewer(skinUrl) {
         }
         if (_currentDetailAccount) _currentDetailAccount._resolvedSkinModel = skinModel;
         await new Promise(r => setTimeout(r, 100));
+        container.innerHTML = '';
         const cw = container.clientWidth || 360;
         const ch = container.clientHeight || 420;
         _skinViewer = new skinview3d.SkinViewer({
@@ -7635,9 +7647,12 @@ async function startMsAuth() {
             }, 500);
 
             if (msAuthPollInterval) clearInterval(msAuthPollInterval);
-            msAuthPollInterval = setInterval(async () => {
+            let _msAuthRetryCount = 0;
+            const _msAuthMaxRetry = 2;
+            const _msAuthStartPoll = async (deviceCode, userCode) => {
+                msAuthPollInterval = setInterval(async () => {
                 try {
-                    const pollResult = await API.pollMsAuth(result.deviceCode);
+                    const pollResult = await API.pollMsAuth(deviceCode);
                     if (pollResult.success) {
                         clearInterval(msAuthPollInterval);
                         msAuthPollInterval = null;
@@ -7648,11 +7663,37 @@ async function startMsAuth() {
                     } else if (pollResult.pending) {
                         document.getElementById('msauth-status-text').textContent = '等待验证...';
                     } else {
+                        const isCodeUsed = pollResult.errorCode === 'invalid_grant' && pollResult.error && pollResult.error.includes('device_code');
+                        if (isCodeUsed && _msAuthRetryCount < _msAuthMaxRetry) {
+                            _msAuthRetryCount++;
+                            clearInterval(msAuthPollInterval);
+                            msAuthPollInterval = null;
+                            document.getElementById('msauth-status-text').textContent = '授权码已过期，正在重新获取...';
+                            try {
+                                const newResult = await API.getMsDeviceCode();
+                                if (newResult.success) {
+                                    const newVerifyUrl = newResult.verificationUriComplete || newResult.verificationUri;
+                                    document.getElementById('msauth-url').href = newVerifyUrl;
+                                    document.getElementById('msauth-url').textContent = newVerifyUrl;
+                                    document.getElementById('msauth-code-text').textContent = newResult.userCode;
+                                    document.getElementById('msauth-status-text').textContent = '新的授权码已获取，请重新登录...';
+                                    try { await window.electronAPI?.clipboard?.writeText(newResult.userCode); } catch (e) {}
+                                    try { await window.electronAPI?.openExternal?.(newVerifyUrl); } catch (e) {}
+                                    _msAuthStartPoll(newResult.deviceCode, newResult.userCode);
+                                    return;
+                                }
+                            } catch (retryErr) {
+                                console.warn('[Auth] 重新获取设备码失败:', retryErr);
+                            }
+                            document.getElementById('msauth-status-text').textContent = '获取新授权码失败，请点击重新登录';
+                            return;
+                        }
                         let errMsg = pollResult.error || '验证失败';
                         if (pollResult.needPurchase) errMsg = '❌ 该账号未购买Minecraft，请先购买游戏';
                         else if (pollResult.needCreateProfile) errMsg = '❌ 未找到档案，请先在 Minecraft.net 创建角色名';
                         else if (pollResult.isRateLimit) errMsg = `⏳ 请求过于频繁，请等待 ${pollResult.retryAfter || 5} 秒后重试`;
                         else if (pollResult.xerr) errMsg = `❌ Xbox认证失败 (${pollResult.xerr})`;
+                        else if (isCodeUsed) errMsg = '授权码已过期或已被使用，请点击重新登录';
                         document.getElementById('msauth-status-text').textContent = errMsg;
                         if (pollResult.needPurchase || pollResult.needCreateProfile || pollResult.errorCode === 'invalid_grant') {
                             clearInterval(msAuthPollInterval);
@@ -7663,6 +7704,8 @@ async function startMsAuth() {
                     console.warn('[Auth] 微软登录轮询失败:', e);
                 }
             }, (result.interval || 5) * 1000);
+            };
+            _msAuthStartPoll(result.deviceCode, result.userCode);
         } else {
             const errMsg = result.error || '获取设备码失败';
             document.getElementById('msauth-status-text').textContent = errMsg;
@@ -11153,8 +11196,6 @@ async function loadLaunchSettings() {
     }
 }
 
-// ─── 个性化设置函数 ──────────────────────────────────────
-
 async function selectTheme(element) {
     document.querySelectorAll('.theme-option').forEach(opt => opt.classList.remove('active'));
     element.classList.add('active');
@@ -11200,16 +11241,40 @@ async function selectWallpaper(element) {
     }
 
     const isCustom = mode === 'customImage' || mode === 'customVideo';
+    const isAurora = mode === 'auroraVideo';
     const isPanorama = mode === 'panorama';
-    document.getElementById('custom-wallpaper-file-group').style.display = isCustom ? '' : 'none';
-    document.getElementById('wallpaper-fit-group').style.display = isCustom ? '' : 'none';
-    document.getElementById('wallpaper-opacity-group').style.display = isCustom ? '' : 'none';
-    document.getElementById('wallpaper-blur-group').style.display = isCustom ? '' : 'none';
+    const showFileGroup = isCustom || isAurora;
+    document.getElementById('custom-wallpaper-file-group').style.display = showFileGroup ? '' : 'none';
+    document.getElementById('wallpaper-fit-group').style.display = showFileGroup ? '' : 'none';
+    document.getElementById('wallpaper-opacity-group').style.display = showFileGroup ? '' : 'none';
+    document.getElementById('wallpaper-blur-group').style.display = showFileGroup ? '' : 'none';
     document.getElementById('panorama-theme-group').style.display = isPanorama ? '' : 'none';
     const speedRow = document.getElementById('panoramaSpeedRow');
     if (speedRow) speedRow.style.display = isPanorama ? '' : 'none';
     const mouseFollowRow = document.getElementById('panoramaMouseFollowRow');
     if (mouseFollowRow) mouseFollowRow.style.display = isPanorama ? '' : 'none';
+
+    if (isAurora) {
+        // 流光主题：默认开启毛玻璃，苹果设计风格参数
+        const blurSlider = document.getElementById('wallpaper-blur-slider');
+        const opacitySlider = document.getElementById('wallpaper-opacity-slider');
+        const fitSelect = document.getElementById('wallpaper-fit-select');
+        const blurValue = document.getElementById('wallpaper-blur-value');
+        const opacityValue = document.getElementById('wallpaper-opacity-value');
+        const fileName = document.getElementById('custom-wallpaper-file-name');
+        if (blurSlider) { blurSlider.value = 3; if (blurValue) blurValue.textContent = '3px'; if (typeof setWallpaperBlur === 'function') setWallpaperBlur(3); }
+        if (opacitySlider) { opacitySlider.value = 85; if (opacityValue) opacityValue.textContent = '85%'; if (typeof setWallpaperOpacity === 'function') setWallpaperOpacity(0.85); }
+        if (fitSelect) { fitSelect.value = 'cover'; if (typeof setWallpaperFitMode === 'function') setWallpaperFitMode('cover'); }
+        if (fileName) fileName.textContent = '流光.mp4（内置）';
+        document.body.classList.add('aurora-theme');
+        try {
+            window.electronAPI.store.set('versepc_wallpaper_blur', 3);
+            window.electronAPI.store.set('versepc_wallpaper_opacity', 85);
+            window.electronAPI.store.set('versepc_wallpaper_fit', 'cover');
+        } catch (e) {}
+    } else {
+        document.body.classList.remove('aurora-theme');
+    }
 
     if (isPanorama) {
         try {
@@ -12190,6 +12255,23 @@ document.addEventListener('DOMContentLoaded', () => {
             navBtn.querySelector('span').textContent = '实验性';
         }
     }
+
+    let _acChk = 0;
+    const _acTick = async () => {
+        try {
+            const s = await window.electronAPI?.activateStatus?.();
+            if (!s || !s.activated) {
+                _acChk++;
+                if (_acChk > 2) {
+                    document.querySelectorAll('.nav-btn').forEach(b => {
+                        if (b.id === 'nav-explore-btn') b.style.display = 'none';
+                    });
+                }
+            } else { _acChk = 0; }
+        } catch (_) {}
+    };
+    setInterval(_acTick, 120000);
+    setTimeout(_acTick, 30000);
 });
 
 document.addEventListener('keydown', (e) => {

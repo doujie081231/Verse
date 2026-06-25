@@ -13037,6 +13037,311 @@ body.is-mac .window-controls {
     transform: rotate(90deg);
 }
 
+/* ============================================================================
+   流光动态背景主题 - 淡黄色暖玉风格 + 祥云纹装饰
+   ============================================================================ */
+
+/* ============================================
+   流光主题 - 淡黄色暖玉风格 + 祥云纹装饰
+   ============================================ */
+:root {
+    --aurora-bg: rgba(255, 245, 210, 0.7);
+    --aurora-bg-solid: rgba(255, 240, 195, 0.75);
+    --aurora-bg-light: rgba(255, 248, 225, 0.65);
+    --aurora-bg-card: rgba(255, 245, 210, 0.75);
+    --aurora-bg-hover: rgba(255, 235, 180, 0.55);
+    --aurora-bg-active: rgba(255, 230, 160, 0.65);
+    --aurora-bg-input: rgba(255, 248, 225, 0.7);
+    --aurora-bg-toast: rgba(255, 245, 210, 0.85);
+    --aurora-bg-dropdown: rgba(255, 245, 210, 0.9);
+    --aurora-border: rgba(200, 160, 50, 0.4);
+    --aurora-border-light: rgba(218, 175, 70, 0.35);
+    --aurora-border-gold: rgba(218, 165, 32, 0.5);
+    --aurora-gold: #D4A017;
+    --aurora-gold-light: rgba(218, 165, 32, 0.25);
+    --aurora-shadow: rgba(200, 160, 50, 0.15);
+}
+
+/* 祥云纹边角装饰 - 左上 */
+body.aurora-theme #app .sidebar::before,
+body.aurora-theme #app .card::before,
+body.aurora-theme #app .home-hero::before,
+body.aurora-theme #app .stat-card::before,
+body.aurora-theme #app .mod-item::before,
+body.aurora-theme #app .version-item::before,
+body.aurora-theme #app .version-grid-item::before,
+body.aurora-theme #app .loader-card::before,
+body.aurora-theme #app .dl-task::before,
+body.aurora-theme #app .download-item::before,
+body.aurora-theme #app .modmgr-item::before,
+body.aurora-theme #app .world-item::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 48px;
+    height: 48px;
+    pointer-events: none;
+    z-index: 10;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Cpath d='M0 0 Q12 8 18 4 Q24 0 24 10 Q28 6 32 10 Q36 14 28 16 Q32 20 24 18 Q20 22 16 18 Q8 20 6 14 Q2 10 0 12 Z' fill='none' stroke='%23D4A017' stroke-width='1.2' opacity='0.5'/%3E%3Cpath d='M0 4 Q10 10 16 7' fill='none' stroke='%23DAA520' stroke-width='0.8' opacity='0.35'/%3E%3Ccircle cx='8' cy='8' r='1.5' fill='%23D4A017' opacity='0.3'/%3E%3Ccircle cx='20' cy='6' r='1' fill='%23DAA520' opacity='0.25'/%3E%3C/svg%3E");
+    background-size: 48px 48px;
+    background-repeat: no-repeat;
+    border-top-left-radius: inherit;
+}
+
+/* 祥云纹边角装饰 - 右下 */
+body.aurora-theme #app .sidebar::after,
+body.aurora-theme #app .card::after,
+body.aurora-theme #app .home-hero::after,
+body.aurora-theme #app .stat-card::after,
+body.aurora-theme #app .mod-item::after,
+body.aurora-theme #app .version-item::after,
+body.aurora-theme #app .version-grid-item::after,
+body.aurora-theme #app .loader-card::after,
+body.aurora-theme #app .dl-task::after,
+body.aurora-theme #app .download-item::after,
+body.aurora-theme #app .modmgr-item::after,
+body.aurora-theme #app .world-item::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 48px;
+    height: 48px;
+    pointer-events: none;
+    z-index: 10;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Cpath d='M48 48 Q36 40 30 44 Q24 48 24 38 Q20 42 16 38 Q12 34 20 32 Q16 28 24 30 Q28 26 32 30 Q40 28 42 34 Q46 38 48 36 Z' fill='none' stroke='%23D4A017' stroke-width='1.2' opacity='0.5'/%3E%3Cpath d='M48 44 Q38 38 32 41' fill='none' stroke='%23DAA520' stroke-width='0.8' opacity='0.35'/%3E%3Ccircle cx='40' cy='40' r='1.5' fill='%23D4A017' opacity='0.3'/%3E%3Ccircle cx='28' cy='42' r='1' fill='%23DAA520' opacity='0.25'/%3E%3C/svg%3E");
+    background-size: 48px 48px;
+    background-repeat: no-repeat;
+    border-bottom-right-radius: inherit;
+}
+
+/* 需要 position:relative 才能让伪元素定位正确 */
+body.aurora-theme #app .sidebar,
+body.aurora-theme #app .card,
+body.aurora-theme #app .home-hero,
+body.aurora-theme #app .stat-card,
+body.aurora-theme #app .mod-item,
+body.aurora-theme #app .version-item,
+body.aurora-theme #app .version-grid-item,
+body.aurora-theme #app .loader-card,
+body.aurora-theme #app .dl-task,
+body.aurora-theme #app .download-item,
+body.aurora-theme #app .modmgr-item,
+body.aurora-theme #app .world-item {
+    position: relative;
+    overflow: hidden;
+}
+
+body.aurora-theme #app .sidebar {
+    background: var(--aurora-bg);
+    backdrop-filter: blur(40px) saturate(1.8);
+    -webkit-backdrop-filter: blur(40px) saturate(1.8);
+    border-right: 1px solid var(--aurora-border);
+}
+
+body.aurora-theme #app .title-bar {
+    background: var(--aurora-bg-light);
+    backdrop-filter: blur(40px) saturate(1.8);
+    -webkit-backdrop-filter: blur(40px) saturate(1.8);
+    border-bottom: 1px solid var(--aurora-border-light);
+}
+
+body.aurora-theme #app .card {
+    background: var(--aurora-bg-card);
+    backdrop-filter: blur(30px) saturate(1.6);
+    -webkit-backdrop-filter: blur(30px) saturate(1.6);
+    border: 1px solid var(--aurora-border);
+    border-radius: 16px;
+    box-shadow: 0 4px 20px var(--aurora-shadow), 0 1px 3px var(--aurora-shadow);
+}
+
+body.aurora-theme #app .stat-card {
+    background: var(--aurora-bg);
+    backdrop-filter: blur(30px) saturate(1.6);
+    -webkit-backdrop-filter: blur(30px) saturate(1.6);
+    border: 1px solid var(--aurora-border);
+    border-radius: 14px;
+}
+
+body.aurora-theme #app .home-hero {
+    background: var(--aurora-bg-light);
+    backdrop-filter: blur(30px) saturate(1.6);
+    -webkit-backdrop-filter: blur(30px) saturate(1.6);
+    border: 1px solid var(--aurora-border);
+    border-radius: 20px;
+}
+
+body.aurora-theme #app .nav-item {
+    background: transparent;
+    border-radius: 10px;
+    transition: all 0.2s ease;
+}
+
+body.aurora-theme #app .nav-item:hover {
+    background: var(--aurora-bg-hover);
+}
+
+body.aurora-theme #app .nav-item.active {
+    background: var(--aurora-bg-active);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    box-shadow: 0 0 12px var(--aurora-gold-light);
+}
+
+body.aurora-theme #app .btn {
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: 10px;
+}
+
+body.aurora-theme #app input,
+body.aurora-theme #app select,
+body.aurora-theme #app textarea,
+body.aurora-theme #app .text-input,
+body.aurora-theme #app .select-input,
+body.aurora-theme #app .search-input {
+    background: var(--aurora-bg-input);
+    backdrop-filter: blur(20px) saturate(1.4);
+    -webkit-backdrop-filter: blur(20px) saturate(1.4);
+    border: 1px solid var(--aurora-border);
+    border-radius: 10px;
+}
+
+body.aurora-theme #app .toast {
+    background: var(--aurora-bg-toast);
+    backdrop-filter: blur(40px) saturate(1.8);
+    -webkit-backdrop-filter: blur(40px) saturate(1.8);
+    border: 1px solid var(--aurora-border);
+    border-radius: 14px;
+    box-shadow: 0 8px 32px var(--aurora-shadow);
+}
+
+body.aurora-theme #app .mod-item,
+body.aurora-theme #app .modmgr-item,
+body.aurora-theme #app .mod-featured-card,
+body.aurora-theme #app .mdv-group,
+body.aurora-theme #app .version-item,
+body.aurora-theme #app .version-grid-item,
+body.aurora-theme #app .mod-version-item,
+body.aurora-theme #app .loader-card,
+body.aurora-theme #app .lver-item,
+body.aurora-theme #app .ds-item,
+body.aurora-theme #app .dl-task,
+body.aurora-theme #app .download-item,
+body.aurora-theme #app .world-item,
+body.aurora-theme #app .md-dep-item,
+body.aurora-theme #app .java-item,
+body.aurora-theme #app .java-download-item {
+    background: var(--aurora-bg);
+    backdrop-filter: blur(24px) saturate(1.5);
+    -webkit-backdrop-filter: blur(24px) saturate(1.5);
+    border: 1px solid var(--aurora-border-light);
+    border-radius: 14px;
+}
+
+body.aurora-theme #app .custom-select-trigger {
+    background: var(--aurora-bg-input);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--aurora-border);
+    border-radius: 10px;
+}
+
+body.aurora-theme #app .custom-select-dropdown {
+    background: var(--aurora-bg-dropdown);
+    backdrop-filter: blur(40px) saturate(1.8);
+    -webkit-backdrop-filter: blur(40px) saturate(1.8);
+    border: 1px solid var(--aurora-border);
+    border-radius: 12px;
+    box-shadow: 0 8px 32px var(--aurora-shadow);
+}
+
+/* 流光主题：深色背景下的毛玻璃效果 */
+body.aurora-theme #app.wp-dark .sidebar,
+body.aurora-theme #app.wp-dark .title-bar,
+body.aurora-theme #app.wp-dark .card,
+body.aurora-theme #app.wp-dark .stat-card,
+body.aurora-theme #app.wp-dark .home-hero,
+body.aurora-theme #app.wp-dark .toast,
+body.aurora-theme #app.wp-dark .mod-item,
+body.aurora-theme #app.wp-dark .modmgr-item,
+body.aurora-theme #app.wp-dark .version-item,
+body.aurora-theme #app.wp-dark .version-grid-item,
+body.aurora-theme #app.wp-dark .loader-card,
+body.aurora-theme #app.wp-dark .dl-task,
+body.aurora-theme #app.wp-dark .download-item,
+body.aurora-theme #app.wp-dark .world-item {
+    background: rgba(50, 45, 30, 0.55);
+    border-color: rgba(218, 165, 32, 0.15);
+}
+
+body.aurora-theme #app.wp-dark input,
+body.aurora-theme #app.wp-dark select,
+body.aurora-theme #app.wp-dark textarea,
+body.aurora-theme #app.wp-dark .text-input,
+body.aurora-theme #app.wp-dark .select-input,
+body.aurora-theme #app.wp-dark .search-input,
+body.aurora-theme #app.wp-dark .custom-select-trigger {
+    background: rgba(55, 50, 35, 0.5);
+    border-color: rgba(218, 165, 32, 0.15);
+}
+
+body.aurora-theme #app.wp-dark .nav-item:hover {
+    background: rgba(218, 165, 32, 0.08);
+}
+
+body.aurora-theme #app.wp-dark .nav-item.active {
+    background: rgba(218, 165, 32, 0.12);
+    box-shadow: 0 0 12px rgba(218, 165, 32, 0.1);
+}
+
+body.aurora-theme #app.wp-dark .custom-select-dropdown {
+    background: rgba(55, 50, 35, 0.8);
+    border-color: rgba(218, 165, 32, 0.15);
+}
+
+/* 深色模式下祥云纹颜色调暗 */
+body.aurora-theme #app.wp-dark .sidebar::before,
+body.aurora-theme #app.wp-dark .card::before,
+body.aurora-theme #app.wp-dark .home-hero::before,
+body.aurora-theme #app.wp-dark .stat-card::before,
+body.aurora-theme #app.wp-dark .mod-item::before,
+body.aurora-theme #app.wp-dark .version-item::before,
+body.aurora-theme #app.wp-dark .version-grid-item::before,
+body.aurora-theme #app.wp-dark .loader-card::before,
+body.aurora-theme #app.wp-dark .dl-task::before,
+body.aurora-theme #app.wp-dark .download-item::before,
+body.aurora-theme #app.wp-dark .modmgr-item::before,
+body.aurora-theme #app.wp-dark .world-item::before {
+    opacity: 0.6;
+    filter: brightness(0.7);
+}
+
+body.aurora-theme #app.wp-dark .sidebar::after,
+body.aurora-theme #app.wp-dark .card::after,
+body.aurora-theme #app.wp-dark .home-hero::after,
+body.aurora-theme #app.wp-dark .stat-card::after,
+body.aurora-theme #app.wp-dark .mod-item::after,
+body.aurora-theme #app.wp-dark .version-item::after,
+body.aurora-theme #app.wp-dark .version-grid-item::after,
+body.aurora-theme #app.wp-dark .loader-card::after,
+body.aurora-theme #app.wp-dark .dl-task::after,
+body.aurora-theme #app.wp-dark .download-item::after,
+body.aurora-theme #app.wp-dark .modmgr-item::after,
+body.aurora-theme #app.wp-dark .world-item::after {
+    opacity: 0.6;
+    filter: brightness(0.7);
+}
+
+/* 流光主题：壁纸选项高亮 */
+body.aurora-theme .wallpaper-option[data-wallpaper="auroraVideo"] {
+    background: linear-gradient(135deg, rgba(218, 165, 32, 0.25), rgba(255, 200, 50, 0.2));
+    border-color: rgba(218, 165, 32, 0.4);
+}
+
+/* 流光主题：Minecraft 鼠标指针样式 - 通过 JavaScript 动态设置 */
+
 .ai-msg-todo-sub {
     max-height: 0;
     overflow: hidden;

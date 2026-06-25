@@ -124,6 +124,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
         readText: () => ipcRenderer.invoke('clipboard-read-text'),
     },
     getMachineId: () => ipcRenderer.invoke('get-machine-id'),
+    getAuroraVideoPath: () => ipcRenderer.invoke('get-aurora-video-path'),
+    readFileBuffer: (filePath) => ipcRenderer.invoke('read-file-buffer', filePath),
     activateVerify: (code) => ipcRenderer.invoke('activate-verify', code),
     activateStatus: () => ipcRenderer.invoke('activate-status'),
     store: {
@@ -263,5 +265,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
         },
     },
     platform: process.platform,
-    isAIEnabled: () => { return true; },
+    isAIEnabled: () => { return false; },
 });

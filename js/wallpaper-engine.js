@@ -29,7 +29,7 @@
 
 function wpfilePath(filePath) {
     if (!filePath) return '';
-    if (filePath.startsWith('wpfile://')) return filePath;
+    if (filePath.startsWith('wpfile://') || filePath.startsWith('blob:')) return filePath;
     const normalized = filePath.replace(/\\/g, '/');
     return 'wpfile:///' + normalized.split('/').map(encodeURIComponent).join('/');
 }
@@ -113,6 +113,23 @@ class WallpaperEngine {
         this._brightnessCallback = callback;
     }
 
+    async _getAuroraVideoPath() {
+        // 内置流光动态背景视频
+        // 通过 IPC 从主进程获取路径，兼容开发和打包环境
+        try {
+            if (window.electronAPI && window.electronAPI.getAuroraVideoPath) {
+                const p = await window.electronAPI.getAuroraVideoPath();
+                console.log('[Wallpaper] Aurora video path from IPC:', p);
+                if (p) return p;
+            }
+        } catch (e) {
+            console.error('[Wallpaper] _getAuroraVideoPath IPC error:', e);
+        }
+        // 回退：尝试相对路径
+        console.log('[Wallpaper] Using fallback aurora path');
+        return 'resources/wallpapers/aurora.mp4';
+    }
+
     _notifyBrightness(brightness) {
         this.wallpaperBrightness = brightness;
         if (this._brightnessCallback) {
@@ -120,7 +137,7 @@ class WallpaperEngine {
         }
     }
 
-    _initRenderer() {
+    async _initRenderer() {
         this._onResize();
 
         if (this.renderer && this.renderer.destroy) {
@@ -129,8 +146,17 @@ class WallpaperEngine {
 
         const isGL = this.currentMode === 'panorama';
         const isNone = this.currentMode === 'none';
-        this.canvas.style.display = (isGL || isNone) ? 'none' : 'block';
+        const isVideoMode = this.currentMode === 'customVideo' || this.currentMode === 'auroraVideo';
+        const isImageMode = this.currentMode === 'customImage';
+        const isDomMode = isVideoMode || isImageMode;
+        // 图片/视频模式用 DOM 元素显示，不需要 Canvas
+        this.canvas.style.display = (isGL || isNone || isDomMode) ? 'none' : 'block';
         if (this.glCanvas) this.glCanvas.style.display = isGL ? 'block' : 'none';
+        // 显示/隐藏 DOM 容器
+        const videoContainer = document.getElementById('wallpaper-video-container');
+        if (videoContainer) {
+            videoContainer.style.display = isDomMode ? 'block' : 'none';
+        }
 
         if (isNone) {
             this.renderer = null;
@@ -148,9 +174,19 @@ class WallpaperEngine {
         const factories = {
             panorama: () => new PanoramaRenderer(this),
             customImage: () => new CustomImageRenderer(this),
-            customVideo: () => new CustomVideoRenderer(this)
+            customVideo: () => new CustomVideoRenderer(this),
+            auroraVideo: async () => {
+                this.customVideoPath = await this._getAuroraVideoPath();
+                return new CustomVideoRenderer(this);
+            }
         };
-        this.renderer = (factories[this.currentMode] || factories.panorama)();
+        try {
+            const result = await (factories[this.currentMode] || factories.panorama)();
+            this.renderer = result;
+        } catch (e) {
+            console.error('[Wallpaper] renderer init error:', e);
+            this.renderer = null;
+        }
 
         if (this.currentMode === 'panorama') {
             if (this.renderer && this.renderer.setTheme && this._savedPanoramaTheme) {
@@ -195,7 +231,10 @@ class WallpaperEngine {
 
         if (this.renderer) {
             if (this.currentMode === 'customImage' && !this.transitioning && this.renderer.loaded) {
-                // Static image: skip redraw, no need to repaint same frame
+                // Static image: skip redraw, but still update style for opacity/blur changes
+                if (typeof this.renderer._updateStyle === 'function') {
+                    this.renderer._updateStyle();
+                }
             } else {
                 this.renderer.render(dt, timestamp);
             }
@@ -409,6 +448,7 @@ class CustomImageRenderer {
         this._brightnessSampleCanvas.width = 32;
         this._brightnessSampleCanvas.height = 32;
         this._brightnessSampleCtx = this._brightnessSampleCanvas.getContext('2d', { willReadFrequently: true });
+        this._container = document.getElementById('wallpaper-video-container');
         if (engine.customImagePath) {
             this.loadImage(engine.customImagePath);
         }
@@ -417,21 +457,91 @@ class CustomImageRenderer {
     setTheme() {}
     onResize() {}
 
-    loadImage(filePath) {
+    async loadImage(filePath) {
         this.loaded = false;
         this._lastBrightness = -1;
+        // 清理旧图片
+        if (this.image) {
+            const oldSrc = this.image.src;
+            if (this.image.parentElement) {
+                this.image.parentElement.removeChild(this.image);
+            }
+            if (oldSrc && oldSrc.startsWith('blob:')) {
+                URL.revokeObjectURL(oldSrc);
+            }
+        }
+
+        // 通过 IPC 读取文件 buffer，转 blob URL
+        let imgUrl = wpfilePath(filePath);
+        if (filePath && !filePath.startsWith('blob:') && !filePath.startsWith('wpfile://') && !filePath.startsWith('data:')) {
+            try {
+                if (window.electronAPI && window.electronAPI.readFileBuffer) {
+                    const buffer = await window.electronAPI.readFileBuffer(filePath);
+                    if (buffer && buffer.byteLength > 0) {
+                        const ext = filePath.toLowerCase().split('.').pop();
+                        const mimeMap = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', bmp: 'image/bmp', webp: 'image/webp' };
+                        const mime = mimeMap[ext] || 'image/png';
+                        const blob = new Blob([buffer], { type: mime });
+                        imgUrl = URL.createObjectURL(blob);
+                        console.log('[Wallpaper] Image loaded as blob URL, size:', buffer.byteLength);
+                    }
+                }
+            } catch (e) {
+                console.error('[Wallpaper] Failed to read image buffer:', e);
+            }
+        }
+
+        // 创建 img DOM 元素，用 CSS filter 实现 GPU 加速 blur
         this.image = new Image();
+        this.image.style.position = 'absolute';
+        this.image.style.top = '0';
+        this.image.style.left = '0';
+        this.image.style.width = '100%';
+        this.image.style.height = '100%';
+        this.image.style.pointerEvents = 'none';
         this.image.onload = () => {
             this.loaded = true;
             this._sampleBrightness();
+            this._updateStyle();
         };
         this.image.onerror = (e) => {
             console.error('[Wallpaper] Image load failed:', filePath, e);
             this.loaded = false;
             this.image = null;
         };
-        const url = wpfilePath(filePath);
-        this.image.src = url;
+        this.image.src = imgUrl;
+
+        // 添加到容器
+        if (this._container) {
+            this._container.appendChild(this.image);
+        }
+    }
+
+    _updateStyle() {
+        if (!this.image) return;
+        const opacity = this.engine.wallpaperOpacity != null ? this.engine.wallpaperOpacity : 1;
+        const blur = this.engine.wallpaperBlur || 0;
+        const fitMode = this.engine.wallpaperFitMode || 'smart';
+
+        this.image.style.opacity = opacity;
+        // CSS filter blur 由 GPU 加速
+        this.image.style.filter = blur > 0 ? `blur(${blur}px)` : 'none';
+        // 固定放大 5% 避免 blur 边缘出现透明，不会随 blur 增大而过度放大
+        this.image.style.transform = blur > 0 ? 'scale(1.05)' : 'none';
+        // object-fit 映射
+        const fitMap = {
+            cover: 'cover',
+            contain: 'contain',
+            stretch: 'fill',
+            center: 'none',
+            topLeft: 'none',
+            topRight: 'none',
+            bottomLeft: 'none',
+            bottomRight: 'none',
+            tile: 'none',
+            smart: 'cover'
+        };
+        this.image.style.objectFit = fitMap[fitMode] || 'cover';
     }
 
     _sampleBrightness() {
@@ -454,36 +564,22 @@ class CustomImageRenderer {
     }
 
     render(dt, timestamp) {
-        const ctx = this.engine.ctx;
-        const w = this.engine.canvas.width;
-        const h = this.engine.canvas.height;
-
-        ctx.fillStyle = '#0a0a0a';
-        ctx.fillRect(0, 0, w, h);
-
-        if (!this.loaded || !this.image) return;
-
-        const opacity = this.engine.wallpaperOpacity != null ? this.engine.wallpaperOpacity : 1;
-        const blur = this.engine.wallpaperBlur || 0;
-
-        ctx.save();
-        ctx.globalAlpha = opacity;
-
-        if (blur > 0) {
-            ctx.filter = `blur(${blur}px)`;
-            const margin = blur * 2;
-            ctx.translate(-margin, -margin);
-            ctx.scale(1 + margin * 2 / w, 1 + margin * 2 / h);
-        }
-
-        const imgW = this.image.naturalWidth;
-        const imgH = this.image.naturalHeight;
-        drawFitMode(ctx, this.image, imgW, imgH, w, h, this.engine.wallpaperFitMode || 'smart');
-        ctx.restore();
+        // 图片由 DOM 显示，无需 Canvas 绘制
+        // 只需更新样式（opacity/blur/fit 变化时）
+        this._updateStyle();
     }
 
     destroy() {
-        this.image = null;
+        if (this.image) {
+            const src = this.image.src;
+            if (this.image.parentElement) {
+                this.image.parentElement.removeChild(this.image);
+            }
+            if (src && src.startsWith('blob:')) {
+                URL.revokeObjectURL(src);
+            }
+            this.image = null;
+        }
         this.loaded = false;
     }
 }
@@ -499,6 +595,7 @@ class CustomVideoRenderer {
         this._brightnessSampleCanvas.height = 32;
         this._brightnessSampleCtx = this._brightnessSampleCanvas.getContext('2d', { willReadFrequently: true });
         this._brightnessCheckInterval = null;
+        this._container = document.getElementById('wallpaper-video-container');
         if (engine.customVideoPath) {
             this.loadVideo(engine.customVideoPath);
         }
@@ -507,24 +604,61 @@ class CustomVideoRenderer {
     setTheme() {}
     onResize() {}
 
-    loadVideo(filePath) {
+    async loadVideo(filePath) {
         this.loaded = false;
         this._lastBrightness = -1;
+        // 清理旧视频
         if (this.video) {
             this.video.pause();
             this.video.removeAttribute('src');
             this.video.load();
+            if (this.video.parentElement) {
+                this.video.parentElement.removeChild(this.video);
+            }
         }
         if (this._brightnessCheckInterval) {
             clearInterval(this._brightnessCheckInterval);
             this._brightnessCheckInterval = null;
         }
+
+        // 通过 IPC 读取文件 buffer，转 blob URL
+        let videoUrl = filePath;
+        if (filePath && !filePath.startsWith('blob:') && !filePath.startsWith('wpfile://')) {
+            try {
+                if (window.electronAPI && window.electronAPI.readFileBuffer) {
+                    const buffer = await window.electronAPI.readFileBuffer(filePath);
+                    if (buffer && buffer.byteLength > 0) {
+                        const blob = new Blob([buffer], { type: 'video/mp4' });
+                        videoUrl = URL.createObjectURL(blob);
+                        console.log('[Wallpaper] Video loaded as blob URL, size:', buffer.byteLength);
+                    } else {
+                        videoUrl = wpfilePath(filePath);
+                    }
+                } else {
+                    videoUrl = wpfilePath(filePath);
+                }
+            } catch (e) {
+                console.error('[Wallpaper] Failed to read video buffer:', e);
+                videoUrl = wpfilePath(filePath);
+            }
+        }
+
+        // 创建 video DOM 元素，用 CSS filter 实现 GPU 加速 blur
         this.video = document.createElement('video');
         this.video.muted = true;
         this.video.loop = true;
         this.video.playsInline = true;
         this.video.preload = 'auto';
+        this.video.style.position = 'absolute';
+        this.video.style.top = '0';
+        this.video.style.left = '0';
+        this.video.style.width = '100%';
+        this.video.style.height = '100%';
+        this.video.style.objectFit = 'cover';
+        this.video.style.pointerEvents = 'none';
+
         this.video.oncanplay = () => {
+            console.log('[Wallpaper] Video canplay triggered');
             this.loaded = true;
             this.video.play().catch((e) => {
                 console.warn('[Wallpaper] Video autoplay blocked:', e);
@@ -532,11 +666,43 @@ class CustomVideoRenderer {
             this._startBrightnessSampling();
         };
         this.video.onerror = (e) => {
-            console.error('[Wallpaper] Video load failed:', filePath, e);
+            console.error('[Wallpaper] Video load failed, errorCode:', this.video.error);
             this.loaded = false;
         };
-        const url = wpfilePath(filePath);
-        this.video.src = url;
+        this.video.src = videoUrl;
+
+        // 添加到容器
+        if (this._container) {
+            this._container.appendChild(this.video);
+        }
+        this._updateStyle();
+    }
+
+    _updateStyle() {
+        if (!this.video) return;
+        const opacity = this.engine.wallpaperOpacity != null ? this.engine.wallpaperOpacity : 1;
+        const blur = this.engine.wallpaperBlur || 0;
+        const fitMode = this.engine.wallpaperFitMode || 'cover';
+
+        this.video.style.opacity = opacity;
+        // CSS filter blur 由 GPU 加速，性能远优于 Canvas filter
+        this.video.style.filter = blur > 0 ? `blur(${blur}px)` : 'none';
+        // 固定放大 5% 避免 blur 边缘出现透明，不会随 blur 增大而过度放大
+        this.video.style.transform = blur > 0 ? 'scale(1.05)' : 'none';
+        // object-fit 映射
+        const fitMap = {
+            cover: 'cover',
+            contain: 'contain',
+            stretch: 'fill',
+            center: 'none',
+            topLeft: 'none',
+            topRight: 'none',
+            bottomLeft: 'none',
+            bottomRight: 'none',
+            tile: 'none',
+            smart: 'cover'
+        };
+        this.video.style.objectFit = fitMap[fitMode] || 'cover';
     }
 
     _startBrightnessSampling() {
@@ -567,34 +733,13 @@ class CustomVideoRenderer {
     }
 
     render(dt, timestamp) {
-        const ctx = this.engine.ctx;
-        const w = this.engine.canvas.width;
-        const h = this.engine.canvas.height;
-
-        ctx.fillStyle = '#0a0a0a';
-        ctx.fillRect(0, 0, w, h);
-
-        if (!this.loaded || !this.video || this.video.paused) return;
-
-        const opacity = this.engine.wallpaperOpacity != null ? this.engine.wallpaperOpacity : 1;
-        const blur = this.engine.wallpaperBlur || 0;
-
-        ctx.save();
-        ctx.globalAlpha = opacity;
-
-        if (blur > 0) {
-            ctx.filter = `blur(${blur}px)`;
-            const margin = blur * 2;
-            ctx.translate(-margin, -margin);
-            ctx.scale(1 + margin * 2 / w, 1 + margin * 2 / h);
+        // 视频由 DOM 自动播放，无需 Canvas 绘制
+        // 只需检查暂停状态并尝试恢复播放
+        if (this.loaded && this.video && this.video.paused) {
+            this.video.play().catch(() => {});
         }
-
-        const vw = this.video.videoWidth;
-        const vh = this.video.videoHeight;
-        if (!vw || !vh) { ctx.restore(); return; }
-
-        drawFitMode(ctx, this.video, vw, vh, w, h, this.engine.wallpaperFitMode || 'cover');
-        ctx.restore();
+        // 当 opacity/blur 变化时更新样式
+        this._updateStyle();
     }
 
     destroy() {
@@ -603,9 +748,17 @@ class CustomVideoRenderer {
             this._brightnessCheckInterval = null;
         }
         if (this.video) {
+            const src = this.video.src;
             this.video.pause();
             this.video.removeAttribute('src');
             this.video.load();
+            if (this.video.parentElement) {
+                this.video.parentElement.removeChild(this.video);
+            }
+            // 释放 blob URL
+            if (src && src.startsWith('blob:')) {
+                URL.revokeObjectURL(src);
+            }
             this.video = null;
         }
         this.loaded = false;

@@ -64,6 +64,7 @@ process.on('exit', (code) => {
 // 单实例锁 - 必须在所有初始化之前执行，防止重复启动导致闪窗口
 // ============================================================================
 const { app } = require('electron');
+const { checkTampering: _chkTamper, autoRecover: _autoRecover } = require('./activation-verify');
 
 try {
     const { exec: _execAsync } = require('child_process');
@@ -221,7 +222,7 @@ const STORE_PATH = path.join(require('os').homedir(), '.versepc', 'app-store.jso
 // Activation schema version - bumping this invalidates all activations recorded
 // under the previous schema, forcing users to re-activate. Used to ensure users
 // covered by an override update lose their previously activated state.
-const ACTIVATION_SCHEMA_VERSION = 2;
+const ACTIVATION_SCHEMA_VERSION = 3;
 let windowConfigCache = null;     // 配置缓存对象
 let windowConfigCacheTime = 0;    // 缓存时间戳
 const CONFIG_CACHE_DURATION = 1000; // 缓存有效期（1秒）
@@ -1009,6 +1010,44 @@ ipcMain.handle('get-machine-id', async () => {
     }
 });
 
+ipcMain.handle('get-aurora-video-path', async () => {
+    try {
+        const fs = require('fs');
+        const path = require('path');
+        const candidates = [];
+        // 打包环境：app.asar.unpacked/resources/wallpapers/aurora.mp4
+        if (process.resourcesPath) {
+            candidates.push(path.join(process.resourcesPath, 'app.asar.unpacked', 'resources', 'wallpapers', 'aurora.mp4'));
+            candidates.push(path.join(process.resourcesPath, 'resources', 'wallpapers', 'aurora.mp4'));
+        }
+        // 开发环境
+        candidates.push(path.join(__dirname, 'resources', 'wallpapers', 'aurora.mp4'));
+        for (const p of candidates) {
+            try {
+                if (fs.existsSync(p)) return p;
+            } catch (e) {}
+        }
+        return candidates[0];
+    } catch (e) {
+        return null;
+    }
+});
+
+// 读取文件为 buffer，用于壁纸视频加载（绕过 wpfile 协议问题）
+ipcMain.handle('read-file-buffer', async (event, filePath) => {
+    try {
+        if (!filePath || typeof filePath !== 'string') return null;
+        if (!isPathAllowed(filePath)) return null;
+        const fs = require('fs');
+        if (!fs.existsSync(filePath)) return null;
+        const buffer = fs.readFileSync(filePath);
+        return buffer;
+    } catch (e) {
+        console.error('[read-file-buffer] Error:', e.message);
+        return null;
+    }
+});
+
 ipcMain.handle('activate-verify', async (event, code) => {
     try {
         const crypto = require('crypto');
@@ -1592,7 +1631,8 @@ app.whenReady().then(async () => {
     try {
         console.log('VersePC starting...');
 
-        // 只注册核心协议处理器，其余全部延迟
+        _autoRecover();
+
         let _serverReady = false;
         protocol.handle('versepc', async (request) => {
             if (!_serverReady) {
@@ -1645,9 +1685,9 @@ app.whenReady().then(async () => {
                     if (!isPathAllowed(resolved)) return new Response('Forbidden', { status: 403 });
                     if (!fs.existsSync(resolved)) return new Response('Not Found', { status: 404 });
                     const ext = path.extname(resolved).toLowerCase();
-                    const allowedExts = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.mp4', '.webm', '.mkv', '.avi'];
+                    const allowedExts = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.mp4', '.webm', '.mkv', '.avi', '.cur', '.ani', '.ico'];
                     if (!allowedExts.includes(ext)) return new Response('Forbidden', { status: 403 });
-                    const mimeMap = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.bmp': 'image/bmp', '.webp': 'image/webp', '.mp4': 'video/mp4', '.webm': 'video/webm', '.mkv': 'video/x-matroska', '.avi': 'video/x-msvideo' };
+                    const mimeMap = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.bmp': 'image/bmp', '.webp': 'image/webp', '.mp4': 'video/mp4', '.webm': 'video/webm', '.mkv': 'video/x-matroska', '.avi': 'video/x-msvideo', '.cur': 'image/x-icon', '.ani': 'image/x-icon', '.ico': 'image/x-icon' };
                     const mime = mimeMap[ext] || 'application/octet-stream';
                     const stat = fs.statSync(resolved);
                     const fileSize = stat.size;
@@ -1746,13 +1786,21 @@ app.on('before-quit', async (event) => {
     }
     if (terminalSessions && terminalSessions.size > 0) {
         for (const [id, session] of terminalSessions) {
-            try { session.process.kill(); } catch (e) {}
+            try {
+                if (session.process && !session.process.killed) {
+                    session.process.kill('SIGTERM');
+                }
+            } catch (e) {}
         }
         terminalSessions.clear();
     }
     if (mcpClients && mcpClients.size > 0) {
         for (const [name, client] of mcpClients) {
-            try { client.child.kill(); } catch (e) {}
+            try {
+                if (client.child && !client.child.killed) {
+                    client.child.kill('SIGTERM');
+                }
+            } catch (e) {}
         }
         mcpClients.clear();
     }
@@ -1767,6 +1815,11 @@ app.on('before-quit', async (event) => {
             console.error('[App] 关闭清理失败:', e.message);
         }
     }
+
+    try {
+        const { exec } = require('child_process');
+        exec('taskkill /F /IM VersePC.exe /T', { windowsHide: true }, () => {});
+    } catch (e) {}
 });
 
 app.on('web-contents-created', (event, contents) => {
@@ -2034,6 +2087,8 @@ function getAllowedPathRoots() {
     try { roots.push(app.getPath('downloads')); } catch (e) {}
     try { roots.push(app.getPath('desktop')); } catch (e) {}
     try { roots.push(app.getPath('documents')); } catch (e) {}
+    try { if (process.resourcesPath) roots.push(process.resourcesPath); } catch (e) {}
+    try { if (process.resourcesPath) roots.push(path.join(process.resourcesPath, 'app.asar.unpacked')); } catch (e) {}
     _allowedPathRoots = roots.map(r => path.resolve(r).toLowerCase());
     return _allowedPathRoots;
 }
