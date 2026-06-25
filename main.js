@@ -1900,7 +1900,7 @@ async function handleAPIRequest(request, reqUrl) {
     reqUrl.searchParams.forEach((value, key) => { query[key] = value; });
 
     const pathname = reqUrl.pathname;
-    console.log('[Fav] handleAPIRequest:', method, pathname);
+    //console.log('[Fav] handleAPIRequest:', method, pathname);
     // 判断是否为 SSE（Server-Sent Events）流式请求
     const isSSE = pathname === '/api/game/log/stream' ||
                   (pathname === '/api/install-progress' && query.sse === 'true');

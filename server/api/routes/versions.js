@@ -1496,9 +1496,9 @@ module.exports = {
         });
 
         // ====================================================================
-        // /api/install-cancel
+        // /api/install-cancel  (同时支持 GET / POST，兼容前端两种调用方式)
         // ====================================================================
-        registerRoute('GET', '/api/install-cancel', async (req, res, parsedUrl) => {
+        const handleInstallCancel = async (req, res, parsedUrl) => {
             const sessionId = parsedUrl.query.sessionId;
             if (!sessionId) { sendError(res, 'Missing session ID', 400); return; }
 
@@ -1541,6 +1541,8 @@ module.exports = {
             } else {
                 sendError(res, 'Invalid session ID', 404);
             }
-        });
+        };
+        registerRoute('GET', '/api/install-cancel', handleInstallCancel);
+        registerRoute('POST', '/api/install-cancel', handleInstallCancel);
     }
 };

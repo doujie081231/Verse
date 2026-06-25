@@ -413,7 +413,8 @@ async function downloadFileChunked(url, destPath, options = {}) {
         await fs.promises.mkdir(d, { recursive: true });
     }
 
-    const allUrls = mirrors ? [url, ...mirrors.filter(m => m !== url)] : getMirrorUrls(url);
+    // 优先使用传入的 mirrors（已排序），否则内部生成
+    const allUrls = (mirrors && mirrors.length > 0) ? mirrors : getMirrorUrls(url);
     const _agent = customAgent || undefined;
 
     for (let ra = 0; ra <= retries; ra++) {
@@ -467,29 +468,55 @@ async function downloadFileChunked(url, destPath, options = {}) {
                     chunks.push({ i, s: i * cSize, e: Math.min((i + 1) * cSize - 1, fileSize - 1), tmp: `${destPath}.c${i}` });
                 }
                 const cProg = new Array(cCount).fill(0);
+                // 检测已下载的分块，支持续传
+                const _getChunkResumeOffset = (c) => {
+                    try {
+                        if (!fs.existsSync(c.tmp)) return 0;
+                        const stat = fs.statSync(c.tmp);
+                        const expected = c.e - c.s + 1;
+                        if (stat.size > expected) return 0;   // 文件过大，重新下载
+                        if (stat.size === expected) return -1; // 已完成，跳过
+                        return stat.size;                      // 返回续传偏移
+                    } catch (_) { return 0; }
+                };
+                // 初始化进度（累加已完成分块的字节）
+                for (const c of chunks) {
+                    const off = _getChunkResumeOffset(c);
+                    if (off === -1) cProg[c.i] = c.e - c.s + 1;
+                    else if (off > 0) cProg[c.i] = off;
+                }
                 let lastProgUpdate = Date.now();
                 const dlChunk = async (c) => {
                     if (abortSignal && abortSignal.aborted) throw new Error('下载已中止');
+                    // 检测续传偏移
+                    const resumeOffset = _getChunkResumeOffset(c);
+                    if (resumeOffset === -1) {
+                        console.log(`[MultiThread] Chunk ${c.i} 已完成，跳过`);
+                        return;
+                    }
                     while (!ctx.DownloadManager.acquireConnection()) {
                         if (abortSignal && abortSignal.aborted) throw new Error('下载已中止');
                         await new Promise(r => setTimeout(r, 50));
                     }
                     try {
-                        const cr = await httpGet(workingUrl, { start: c.s, end: c.e, timeout, agent: _agent });
+                        // 续传时调整 Range 起始位置
+                        const startByte = c.s + resumeOffset;
+                        const cr = await httpGet(workingUrl, { start: startByte, end: c.e, timeout, agent: _agent });
                         if (abortSignal && abortSignal.aborted) {
                             cr.stream.destroy();
                             throw new Error('下载已中止');
                         }
                         if (cr.statusCode !== 200 && cr.statusCode !== 206) throw new Error(`Chunk ${c.i}: HTTP ${cr.statusCode}`);
-                        const ws = fs.createWriteStream(c.tmp);
-                        let dl = 0;
+                        // 续传时追加写入，否则覆盖写
+                        const ws = fs.createWriteStream(c.tmp, resumeOffset > 0 ? { flags: 'a' } : {});
+                        let dl = resumeOffset;
                         let aborted = false;
                         let stallTimer = null;
                         const resetStall = () => {
                             if (stallTimer) clearTimeout(stallTimer);
                             stallTimer = setTimeout(() => {
                                 if (!aborted) {
-                                    console.warn(`[Java] Chunk ${c.i} stall timeout (60s), aborting...`);
+                                    console.warn(`[MultiThread] Chunk ${c.i} stall timeout (60s), aborting...`);
                                     try { cr.stream.destroy(); } catch (_) {}
                                     try { ws.destroy(); } catch (_) {}
                                     if (_chunkReject) { try { _chunkReject(new Error(`Chunk ${c.i} stall timeout`)); } catch (_) {} _chunkReject = null; }
@@ -565,7 +592,7 @@ async function downloadFileChunked(url, destPath, options = {}) {
                             if (onProgress && Date.now() - lastMergeProg > 100) {
                                 lastMergeProg = Date.now();
                                 onProgress({ bytesDownloaded: mergedBytes, totalBytes: fileSize, speed: 0,
-                                    progress: Math.min(99.9, (mergedBytes / fileSize) * 100), merging: true });
+                                    progress: Math.min(99.9, (mergedBytes / fileSize) * 100), chunks: cCount, activeChunks: 0, merging: true });
                             }
                         });
                         rs.on('end', () => { idx++; writeNext(); });
@@ -576,9 +603,11 @@ async function downloadFileChunked(url, destPath, options = {}) {
                     ws.on('error', reject);
                     writeNext();
                 });
+                // 合并成功后清理临时分块
                 for (const c of chunks) { try { await fs.promises.unlink(c.tmp); } catch (e) {} }
             } catch (e) {
-                for (const c of chunks) { try { await fs.promises.unlink(c.tmp); } catch (e) {} }
+                // 保留临时分块文件，支持下次重试续传（仅清理可能不完整的目标文件）
+                try { await fs.promises.unlink(destPath); } catch (_) {}
                 throw e;
             }
                 if (sha1) {
@@ -586,6 +615,8 @@ async function downloadFileChunked(url, destPath, options = {}) {
                     if (actual !== sha1) {
                         console.warn(`[MultiThread] SHA1 mismatch on ${allUrls[urlIdx]}: ${path.basename(destPath)}`);
                         await fs.promises.unlink(destPath).catch(() => {});
+                        // SHA1 失败时清理分块，避免损坏数据续传
+                        for (const c of chunks) { try { await fs.promises.unlink(c.tmp); } catch (_) {} }
                         if (urlIdx < allUrls.length - 1) {
                             console.log(`[MultiThread] Switching mirror: ${allUrls[urlIdx]} -> ${allUrls[urlIdx + 1]}`);
                             continue;
@@ -594,7 +625,7 @@ async function downloadFileChunked(url, destPath, options = {}) {
                         return { size: fileSize, path: destPath, sha1Match: false, chunks: cCount };
                     }
                 }
-                if (onProgress) onProgress({ bytesDownloaded: fileSize, totalBytes: fileSize, speed: 0, progress: 100 });
+                if (onProgress) onProgress({ bytesDownloaded: fileSize, totalBytes: fileSize, speed: 0, progress: 100, chunks: cCount, activeChunks: 0 });
                 console.log(`[MultiThread] Done: ${path.basename(destPath)} (${cCount}x, ${utils.formatSize(fileSize)}) from ${workingUrl}`);
                 return { size: fileSize, path: destPath, sha1Match: sha1 ? true : undefined, chunks: cCount };
             } catch (err) {
@@ -605,10 +636,15 @@ async function downloadFileChunked(url, destPath, options = {}) {
                 }
                 if (ra < retries) {
                     console.warn(`[MultiThread] Retry ${ra + 1}/${retries}`);
-                    for (let i = 0; i < 64; i++) { try { fs.unlinkSync(`${destPath}.c${i}`); } catch (e) {} }
+                    // 保留临时分块文件用于续传，仅清理目标文件
                     try { fs.unlinkSync(destPath); } catch (e) {}
                     await new Promise(r => setTimeout(r, Math.min(1000 * (ra + 1), 5000) + Math.floor(Math.random() * 500)));
-                } else throw err;
+                } else {
+                    // 所有重试耗尽，清理临时文件
+                    for (let i = 0; i < 64; i++) { try { fs.unlinkSync(`${destPath}.c${i}`); } catch (e) {} }
+                    try { fs.unlinkSync(destPath); } catch (e) {}
+                    throw err;
+                }
             }
         }
     }
@@ -647,13 +683,26 @@ async function _dlSingle(urlStr, destPath, options = {}) {
                 const mod = urlStr.startsWith('https') ? https : http;
                 utils.ensureDir(destPath);
                 const reqHeaders = { 'User-Agent': 'VersePC/2.0 (PCL2)', 'Connection': 'keep-alive' };
+                // 检测续传偏移
+                let resumeOffset = 0;
+                try {
+                    if (fs.existsSync(tmpPath)) {
+                        const stat = fs.statSync(tmpPath);
+                        if (stat.size > 0) resumeOffset = stat.size;
+                    }
+                } catch (_) {}
+                if (resumeOffset > 0) {
+                    reqHeaders['Range'] = `bytes=${resumeOffset}-`;
+                    console.log(`[Download] 续传 ${path.basename(destPath)} 从 ${resumeOffset} 字节开始`);
+                }
                 let ws = null;
                 let cleaned = false;
                 let stallTimer = null;
-                const clean = () => {
+                // keepTmp=true 时保留临时文件供续传，keepTmp=false 时删除
+                const clean = (keepTmp = false) => {
                     if (cleaned) return; cleaned = true;
                     try { if (ws) ws.destroy(); } catch (_) {}
-                    fs.promises.unlink(tmpPath).catch(() => {});
+                    if (!keepTmp) fs.promises.unlink(tmpPath).catch(() => {});
                     fs.promises.unlink(destPath).catch(() => {});
                     if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
                 };
@@ -661,9 +710,9 @@ async function _dlSingle(urlStr, destPath, options = {}) {
                     if (stallTimer) clearTimeout(stallTimer);
                     stallTimer = setTimeout(() => {
                         if (!settled && !cleaned) {
-                            try { if (onProgress) onProgress({ bytesDownloaded: 0, totalBytes: 0, speed: 0, progress: 0, stall: true }); } catch (_) {}
+                            try { if (onProgress) onProgress({ bytesDownloaded: resumeOffset, totalBytes: 0, speed: 0, progress: 0, chunks: 1, activeChunks: 1, stall: true }); } catch (_) {}
                             try { req.destroy(); } catch (_) {}
-                            clean();
+                            clean(true);  // 保留临时文件供续传
                             if (rc > 0) {
                                 setTimeout(() => attempt(rc - 1), 1000);
                             } else {
@@ -674,7 +723,7 @@ async function _dlSingle(urlStr, destPath, options = {}) {
                 };
                 currentAbortHandler = () => {
                     try { req.destroy(); } catch (_) {}
-                    clean();
+                    clean(false);  // 用户取消，删除临时文件
                     doReject(new Error('下载已中止'));
                 };
                 if (abortSignal) {
@@ -684,26 +733,30 @@ async function _dlSingle(urlStr, destPath, options = {}) {
                 resetStall();
                 const req = mod.get(urlStr, { headers: reqHeaders, agent }, (res) => {
                     if (settled) { res.destroy(); return; }
-                    if (abortSignal && abortSignal.aborted) { res.destroy(); clean(); doReject(new Error('下载已中止')); return; }
+                    if (abortSignal && abortSignal.aborted) { res.destroy(); clean(false); doReject(new Error('下载已中止')); return; }
                     if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-                        clean();
+                        clean(false);  // 重定向到新 URL，删除临时文件
                         const nu = res.headers.location.startsWith('http') ? res.headers.location : new URL(res.headers.location, urlStr).toString();
                         return _dlSingle(nu, destPath, { onProgress, sha1, timeout, retries: rc, abortSignal, stallTimeout }).then(doResolve).catch(doReject);
                     }
-                    if (res.statusCode !== 200) { clean(); doReject(new Error(`HTTP ${res.statusCode} for ${urlStr}`)); return; }
-                    const tSz = parseInt(res.headers['content-length'] || '0', 10);
-                    let dl = 0;
-                    ws = fs.createWriteStream(tmpPath);
+                    // 206 = 续传成功，追加写入；200 = 服务器不支持续传，覆盖写入
+                    const isResume = (res.statusCode === 206 && resumeOffset > 0);
+                    if (res.statusCode !== 200 && res.statusCode !== 206) { clean(false); doReject(new Error(`HTTP ${res.statusCode} for ${urlStr}`)); return; }
+                    // 206 响应的 content-length 是剩余字节数，总大小需加上 resumeOffset
+                    const contentLen = parseInt(res.headers['content-length'] || '0', 10);
+                    const tSz = isResume ? (resumeOffset + contentLen) : contentLen;
+                    let dl = resumeOffset;
+                    ws = fs.createWriteStream(tmpPath, isResume ? { flags: 'a' } : {});
                     res.on('data', (ch) => {
                         if (settled) { res.destroy(); return; }
                         dl += ch.length; ctx.DownloadManager.recordProgress(ch.length);
                         resetStall();
-                        try { if (onProgress) onProgress({ bytesDownloaded: dl, totalBytes: tSz, speed: ctx.DownloadManager.getSpeed(), progress: tSz > 0 ? (dl / tSz * 100) : 0, downloaded: dl }); } catch (_) {}
+                        try { if (onProgress) onProgress({ bytesDownloaded: dl, totalBytes: tSz, speed: ctx.DownloadManager.getSpeed(), progress: tSz > 0 ? (dl / tSz * 100) : 0, chunks: 1, activeChunks: 1 }); } catch (_) {}
                     });
                     res.pipe(ws);
                     res.on('error', (e) => {
                         try { ws.destroy(); } catch (_) {}
-                        clean();
+                        clean(true);  // 保留临时文件供续传
                         if (settled) return;
                         if (rc > 0) { setTimeout(() => attempt(rc - 1), 1000 + Math.random() * 500); }
                         else { doReject(e); }
@@ -713,14 +766,14 @@ async function _dlSingle(urlStr, destPath, options = {}) {
                             if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
                             ws.close();
                             if (settled) return;
-                            if (sha1) { const a = await utils.calculateSHA1(tmpPath); if (a !== sha1) { clean(); if (rc > 0 && !settled) { setTimeout(() => attempt(rc - 1), 1000); } else { doReject(new Error(`SHA1 mismatch: ${path.basename(destPath)}`)); } return; } }
-                            if (tSz > 0 && dl !== tSz) { clean(); if (rc > 0 && !settled) { setTimeout(() => attempt(rc - 1), 1000); } else { doReject(new Error(`Size mismatch: ${path.basename(destPath)} expected=${tSz} got=${dl}`)); } return; }
-                            if (dl === 0) { clean(); if (rc > 0 && !settled) { setTimeout(() => attempt(rc - 1), 1000); } else { doReject(new Error(`Empty file: ${path.basename(destPath)}`)); } return; }
+                            if (sha1) { const a = await utils.calculateSHA1(tmpPath); if (a !== sha1) { clean(false); if (rc > 0 && !settled) { setTimeout(() => attempt(rc - 1), 1000); } else { doReject(new Error(`SHA1 mismatch: ${path.basename(destPath)}`)); } return; } }
+                            if (tSz > 0 && dl !== tSz) { clean(true); if (rc > 0 && !settled) { setTimeout(() => attempt(rc - 1), 1000); } else { doReject(new Error(`Size mismatch: ${path.basename(destPath)} expected=${tSz} got=${dl}`)); } return; }
+                            if (dl === 0) { clean(false); if (rc > 0 && !settled) { setTimeout(() => attempt(rc - 1), 1000); } else { doReject(new Error(`Empty file: ${path.basename(destPath)}`)); } return; }
                             if (destPath.toLowerCase().endsWith('.jar') && !utils.isJarIntact(tmpPath)) {
                                 const fileSize = dl || (fs.existsSync(tmpPath) ? fs.statSync(tmpPath).size : 0);
                                 if (fileSize > 1000) {
                                     console.warn(`[Download] JAR文件ZIP结构不完整: ${path.basename(destPath)} (${fileSize} bytes)，尝试重新下载`);
-                                    clean();
+                                    clean(false);  // JAR 损坏，删除重下
                                     if (rc > 0 && !settled) { setTimeout(() => attempt(rc - 1), 1000); }
                                     else { doResolve({ size: dl, path: destPath, jarWarning: true }); }
                                     return;
@@ -730,25 +783,25 @@ async function _dlSingle(urlStr, destPath, options = {}) {
                             doResolve({ size: dl, path: destPath });
                         } catch (e) {
                             console.error(`[Download] finish处理异常: ${e.message}`);
-                            clean();
+                            clean(false);
                             if (!settled) doReject(e);
                         }
                     });
                     ws.on('error', (e) => {
-                        clean();
+                        clean(true);  // 保留临时文件供续传
                         if (settled) return;
                         if (rc > 0) { setTimeout(() => attempt(rc - 1), 1000 + Math.random() * 500); }
                         else { doReject(e); }
                     });
                 });
                 req.on('error', (e) => {
-                    clean();
+                    clean(true);  // 保留临时文件供续传
                     if (settled) return;
                     if (rc > 0) { setTimeout(() => attempt(rc - 1), Math.min(2000 + (retries - rc) * 1000, 8000)); }
                     else { doReject(e); }
                 });
                 req.setTimeout(timeout, () => {
-                    req.destroy(); clean();
+                    req.destroy(); clean(true);  // 保留临时文件供续传
                     if (settled) return;
                     if (rc > 0) { setTimeout(() => attempt(rc - 1), 2000); }
                     else { doReject(new Error(`Timeout: ${urlStr}`)); }

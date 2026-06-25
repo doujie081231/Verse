@@ -287,33 +287,32 @@ module.exports = {
                         }
                         console.log(`[Modpack] 文件大小 ${(fileSize / 1024 / 1024).toFixed(1)}MB，分块数 ${_maxChunks}`);
 
+                        // 单次调用，重试和镜像切换由 downloadFileChunked 内部处理
                         let _dlSuccess = false;
-                        for (const _tryUrl of _sortedUrls) {
-                            if (abortController.signal && abortController.signal.aborted) break;
-                            for (let _attempt = 0; _attempt < 3; _attempt++) {
-                                if (abortController.signal && abortController.signal.aborted) break;
-                                try {
-                                    console.log(`[Modpack] 尝试 (${_attempt + 1}/3): ${_tryUrl.substring(0, 80)}...`);
-                                    await http.downloadFileChunked(_tryUrl, destPath, {
-                                        onProgress: _mpOnProgress,
-                                        retries: 2,
-                                        abortSignal: abortController.signal,
-                                        timeout: _mpTimeout,
-                                        mirrors: [],
-                                        maxChunks: _maxChunks
-                                    });
-                                    if (fs.existsSync(destPath) && fs.statSync(destPath).size > 0) { _dlSuccess = true; console.log(`[Modpack] 下载成功: ${safeName}`); break; }
-                                } catch (e) {
-                                    if (abortController.signal && abortController.signal.aborted) break;
-                                    console.warn(`[Modpack] 失败 (${_attempt + 1}/3): ${e.message}`);
-                                    if (_attempt < 2) {
-                                        const sRetry = ctx.sessions.modDownloadSessions.get(sessionId);
-                                        if (sRetry && sRetry.status !== 'cancelled') { sRetry.message = `下载中断，重试中 (${_attempt + 1}/2)...`; }
-                                        await new Promise(r => setTimeout(r, 2000));
-                                    }
-                                }
+                        try {
+                            if (abortController.signal && abortController.signal.aborted) {
+                                clearTimeout(_mpOverallTimer);
+                                return;
                             }
-                            if (_dlSuccess) break;
+                            await http.downloadFileChunked(_sortedUrls[0], destPath, {
+                                onProgress: _mpOnProgress,
+                                retries: 3,
+                                abortSignal: abortController.signal,
+                                timeout: _mpTimeout,
+                                mirrors: _sortedUrls,          // 传入排序后的镜像列表
+                                maxChunks: _maxChunks,
+                                sha1: expectedSha1 || null    // 传入 SHA1 供内部校验
+                            });
+                            if (fs.existsSync(destPath) && fs.statSync(destPath).size > 0) {
+                                _dlSuccess = true;
+                                console.log(`[Modpack] 下载成功: ${safeName}`);
+                            }
+                        } catch (e) {
+                            if (abortController.signal && abortController.signal.aborted) {
+                                clearTimeout(_mpOverallTimer);
+                                return;
+                            }
+                            console.warn(`[Modpack] 下载失败: ${e.message}`);
                         }
                         clearTimeout(_mpOverallTimer);
 
@@ -348,72 +347,17 @@ module.exports = {
                         console.log(`[Modpack] 扩展名检查: safeName="${safeName}" rdType="${rdType}" isModpackExt=${isModpackExt} isModpackByMagic=${isModpackByMagic}`);
                         if (rdType === 'modpack') {
                             try {
-                                let verified = false;
-                                for (let verifyAttempt = 0; verifyAttempt < 3; verifyAttempt++) {
-                                    if (verifyAttempt > 0) {
-                                        const s2 = ctx.sessions.modDownloadSessions.get(sessionId);
-                                        if (s2) { s2.message = `文件校验失败，重新下载中 (${verifyAttempt}/2)...`; s2.progress = 5; }
-                                        console.log(`[Modpack] 文件校验失败，第 ${verifyAttempt} 次重试下载`);
-                                        try { if (fs.existsSync(destPath)) fs.unlinkSync(destPath); } catch (e) {}
-                                        const retryMirrors = http.getMirrorUrls(downloadUrl).filter(u => u !== downloadUrl);
-                                        try {
-                                            await http.downloadFileChunked(downloadUrl, destPath, {
-                                                onProgress: (p) => {
-                                                    const s3 = ctx.sessions.modDownloadSessions.get(sessionId);
-                                                    if (s3) { s3.progress = Math.round(p.progress * 0.4); s3.message = `重新下载中 ${p.progress.toFixed(0)}%`; }
-                                                },
-                                                retries: 3,
-                                                abortSignal: abortController.signal,
-                                                timeout: _mpTimeout,
-                                                mirrors: retryMirrors.length > 0 ? retryMirrors : undefined
-                                            });
-                                        } catch (dlErr) {
-                                            console.error(`[Modpack] 重试下载失败:`, dlErr.message);
-                                            continue;
-                                        }
-                                    }
-
-                                    try {
-                                        const dlStat = fs.statSync(destPath);
-                                        if (expectedSha1) {
-                                            const hash = require('crypto').createHash('sha1');
-                                            const stream = fs.createReadStream(destPath);
-                                            await new Promise((res, rej) => {
-                                                stream.on('data', (chunk) => hash.update(chunk));
-                                                stream.on('end', res);
-                                                stream.on('error', rej);
-                                            });
-                                            const computedSha1 = hash.digest('hex');
-                                            if (computedSha1 !== expectedSha1) {
-                                                console.error(`[Modpack] SHA1 校验失败: 期望 ${expectedSha1}, 实际 ${computedSha1}, 大小 ${dlStat.size}/${fileSize}`);
-                                                continue;
-                                            }
-                                            console.log(`[Modpack] SHA1 校验通过: ${computedSha1}`);
-                                        } else if (fileSize > 0 && Math.abs(dlStat.size - fileSize) > 1024) {
-                                            console.error(`[Modpack] 文件大小不匹配: 期望 ${fileSize}, 实际 ${dlStat.size}`);
-                                            continue;
-                                        }
-                                        const headBuf = Buffer.alloc(4);
-                                        const fd2 = fs.openSync(destPath, 'r');
-                                        fs.readSync(fd2, headBuf, 0, 4, 0);
-                                        fs.closeSync(fd2);
-                                        if (headBuf[0] !== 0x50 || headBuf[1] !== 0x4B) {
-                                            console.error(`[Modpack] ZIP magic bytes 无效: ${headBuf.toString('hex')}`);
-                                            continue;
-                                        }
-                                        verified = true;
-                                        break;
-                                    } catch (ve) {
-                                        console.error(`[Modpack] 验证异常:`, ve.message);
-                                        continue;
-                                    }
-                                }
-
-                                if (!verified) {
+                                // downloadFileChunked 已完成 SHA1 校验，这里只做 ZIP magic 检测
+                                const headBuf = Buffer.alloc(4);
+                                const fd2 = fs.openSync(destPath, 'r');
+                                fs.readSync(fd2, headBuf, 0, 4, 0);
+                                fs.closeSync(fd2);
+                                if (headBuf[0] !== 0x50 || headBuf[1] !== 0x4B) {
+                                    console.error(`[Modpack] ZIP magic bytes 无效: ${headBuf.toString('hex')}`);
                                     const sFail = ctx.sessions.modDownloadSessions.get(sessionId);
                                     if (sFail) {
                                         sFail.status = 'failed'; sFail.progress = 100;
-                                        sFail.message = '整合包文件下载不完整或已损坏，请检查网络连接后重试';
+                                        sFail.message = '整合包文件格式无效，请检查网络连接后重试';
                                     }
                                     try { if (fs.existsSync(destPath)) fs.unlinkSync(destPath); } catch (e) {}
                                     return;
