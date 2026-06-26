@@ -955,7 +955,7 @@ async function downloadMissingDependencies(missingFiles, onProgress, versionJson
             const dir = path.dirname(targetPath);
             if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
             try {
-                if (fs.existsSync(targetPath)) fs.unlinkSync(targetPath);
+                if (fs.existsSync(targetPath)) http._tryRemoveFile(targetPath);
                 await http.downloadFileWithMirror(assetIndexInfo.url, targetPath);
                 assetIndexPath = targetPath;
             } catch (e) {
@@ -1019,13 +1019,13 @@ async function downloadMissingDependencies(missingFiles, onProgress, versionJson
                         continue;
                     }
                 } catch (e) {}
-                try { fs.unlinkSync(file.path); } catch (e) {}
+                http._tryRemoveFile(file.path);
             } else {
                 try {
                     const stat = fs.statSync(file.path);
                     if (stat.size > 0) {
                         if (file.path.endsWith('.jar') && !utils.isJarIntact(file.path)) {
-                            try { fs.unlinkSync(file.path); } catch (_) {}
+                            http._tryRemoveFile(file.path);
                         } else {
                             skipFiles.push(file);
                             ctx.DownloadManager.skippedFiles++;
@@ -1118,7 +1118,7 @@ async function downloadMissingDependencies(missingFiles, onProgress, versionJson
                 const actualSha1 = await utils.calculateSHA1(file.path);
                 if (actualSha1 !== file.sha1) {
                     console.warn(`[下载] SHA1校验失败: ${file.name} (期望: ${file.sha1}, 实际: ${actualSha1})`);
-                    try { fs.unlinkSync(file.path); } catch (e) {}
+                    http._tryRemoveFile(file.path);
 
                     const mirrorUrls = http.getMirrorUrls(file.url);
                     let retrySuccess = false;
@@ -1131,7 +1131,7 @@ async function downloadMissingDependencies(missingFiles, onProgress, versionJson
                                 retrySuccess = true;
                                 break;
                             }
-                            try { fs.unlinkSync(file.path); } catch (e) {}
+                            http._tryRemoveFile(file.path);
                         } catch (e2) {
                             console.warn(`[下载] 镜像重试失败: ${mirrorUrls[mi]} - ${e2.message}`);
                         }

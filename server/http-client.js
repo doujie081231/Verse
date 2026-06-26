@@ -393,6 +393,85 @@ async function downloadFileH2(url, destPath, options = {}) {
 }
 
 // ============================================================================
+// 带重试的文件重命名 (Windows AV 兼容)
+// ============================================================================
+
+// 安全删除文件：处理 Windows 只读属性和锁定文件（rename-to-old 回退）
+function _tryRemoveFile(filePath) {
+    try {
+        if (!fs.existsSync(filePath)) return;
+        try { fs.chmodSync(filePath, 0o666); } catch (_) {}
+        try { fs.unlinkSync(filePath); return; } catch (_) {}
+        // unlink 失败（文件被锁定），尝试 rename 到 .old 后删除
+        const oldPath = filePath + '.old.' + process.pid;
+        try { fs.renameSync(filePath, oldPath); } catch (_) { return; }
+        try { fs.unlinkSync(oldPath); } catch (_) {}
+    } catch (_) {}
+}
+
+async function safeRename(src, dest) {
+    const _diag = () => {
+        let dStat = null, sStat = null;
+        try { sStat = fs.existsSync(src) ? fs.statSync(src) : null; } catch (_) {}
+        try { dStat = fs.existsSync(dest) ? fs.statSync(dest) : null; } catch (_) {}
+        return `src=${sStat ? sStat.size + 'B' : 'NA'} dest=${dStat ? dStat.size + 'B' : 'NA'}`;
+    };
+
+    // 尝试 rename，最多 10 次，累计等待约 55 秒
+    for (let i = 0; i < 10; i++) {
+        try {
+            if (fs.existsSync(dest)) {
+                try { fs.chmodSync(dest, 0o666); } catch (_) {}
+                // [KEY FIX] Windows: 锁定的文件通常无法 delete，但可以 rename。
+                // 先尝试将 dest 重命名为 .old，腾出目标路径，再写入新文件。
+                const oldDest = dest + '.old.' + process.pid;
+                try { fs.renameSync(dest, oldDest); } catch (_) {
+                    // rename 也失败，尝试 delete
+                    try { fs.unlinkSync(dest); } catch (_) {}
+                }
+            }
+            fs.renameSync(src, dest);
+            return true;
+        } catch (e) {
+            if (i < 9) {
+                const delay = Math.min(1000 * (i + 1), 10000);
+                console.warn(`[Download] rename 重试 ${i + 1}/10 (${delay}ms): ${e.message}`);
+                await new Promise(r => setTimeout(r, delay));
+            }
+        }
+    }
+    // rename 全部失败，尝试 copy + delete 作为回退
+    try {
+        if (fs.existsSync(dest)) {
+            try { fs.chmodSync(dest, 0o666); } catch (_) {}
+            // 同样先尝试 rename-to-old
+            const oldDest = dest + '.old.' + process.pid;
+            try { fs.renameSync(dest, oldDest); } catch (_) {
+                try { fs.unlinkSync(dest); } catch (_) {}
+            }
+        }
+        fs.copyFileSync(src, dest);
+        try { fs.unlinkSync(src); } catch (_) {}
+        return true;
+    } catch (e) {
+        // 最终回退：如果 dest 已存在且大小与 src 相同，视为成功（可能是上次下载已完成）
+        try {
+            if (fs.existsSync(dest) && fs.existsSync(src)) {
+                const destSize = fs.statSync(dest).size;
+                const srcSize = fs.statSync(src).size;
+                if (destSize > 0 && destSize === srcSize) {
+                    console.warn(`[Download] safeRename: dest 已存在且大小匹配 (${destSize} bytes)，跳过 rename`);
+                    try { fs.unlinkSync(src); } catch (_) {}
+                    return true;
+                }
+            }
+        } catch (_) {}
+        console.error(`[Download] safeRename 最终失败: ${e.message} [${_diag()}]`);
+        return false;
+    }
+}
+
+// ============================================================================
 // 多线程分块下载 (HTTP/1.1 Range)
 // ============================================================================
 
@@ -489,7 +568,7 @@ async function downloadFileChunked(url, destPath, options = {}) {
                 const dlChunk = async (c) => {
                     if (abortSignal && abortSignal.aborted) throw new Error('下载已中止');
                     // 检测续传偏移
-                    const resumeOffset = _getChunkResumeOffset(c);
+                    let resumeOffset = _getChunkResumeOffset(c);
                     if (resumeOffset === -1) {
                         console.log(`[MultiThread] Chunk ${c.i} 已完成，跳过`);
                         return;
@@ -507,8 +586,14 @@ async function downloadFileChunked(url, destPath, options = {}) {
                             throw new Error('下载已中止');
                         }
                         if (cr.statusCode !== 200 && cr.statusCode !== 206) throw new Error(`Chunk ${c.i}: HTTP ${cr.statusCode}`);
+                        // 服务器返回 200 而非 206 时，忽略续传偏移，从头下载
+                        const isChunkResume = (cr.statusCode === 206 && resumeOffset > 0);
+                        if (resumeOffset > 0 && !isChunkResume) {
+                            console.log(`[MultiThread] Chunk ${c.i} 服务器不支持续传，重新下载`);
+                            resumeOffset = 0;
+                        }
                         // 续传时追加写入，否则覆盖写
-                        const ws = fs.createWriteStream(c.tmp, resumeOffset > 0 ? { flags: 'a' } : {});
+                        const ws = fs.createWriteStream(c.tmp, isChunkResume ? { flags: 'a' } : {});
                         let dl = resumeOffset;
                         let aborted = false;
                         let stallTimer = null;
@@ -579,8 +664,10 @@ async function downloadFileChunked(url, destPath, options = {}) {
                 };
                 try {
                 await Promise.all(chunks.map(c => dlChunk(c)));
+                // 合并到临时文件，避免 AV 锁定 0 字节的 destPath
+                const mergeTmp = destPath + '.merging';
                 await new Promise((resolve, reject) => {
-                    const ws = fs.createWriteStream(destPath);
+                    const ws = fs.createWriteStream(mergeTmp);
                     let idx = 0;
                     let mergedBytes = 0;
                     let lastMergeProg = Date.now();
@@ -599,24 +686,60 @@ async function downloadFileChunked(url, destPath, options = {}) {
                         rs.on('error', reject);
                         rs.pipe(ws, { end: false });
                     };
-                    ws.on('finish', () => { ws.close(); resolve(); });
+                    ws.on('finish', () => {
+                        // 等待文件描述符完全关闭后再 resolve (Windows: 否则 EPERM 锁定源文件)
+                        const onClose = () => resolve();
+                        ws.on('close', onClose);
+                        try { ws.close(); } catch (_) { onClose(); }
+                        setTimeout(onClose, 2000);
+                    });
                     ws.on('error', reject);
                     writeNext();
                 });
                 // 合并成功后清理临时分块
                 for (const c of chunks) { try { await fs.promises.unlink(c.tmp); } catch (e) {} }
             } catch (e) {
-                // 保留临时分块文件，支持下次重试续传（仅清理可能不完整的目标文件）
-                try { await fs.promises.unlink(destPath); } catch (_) {}
+                // 保留临时分块文件，支持下次重试续传
+                try { await fs.promises.unlink(destPath + '.merging'); } catch (_) {}
                 throw e;
             }
+                // 合并后校验（在 mergeTmp 上进行，不触碰 destPath）
+                const mergeTmp = destPath + '.merging';
+                const actualSize = fs.existsSync(mergeTmp) ? fs.statSync(mergeTmp).size : 0;
+                const _mergeCleanup = async () => {
+                    await fs.promises.unlink(mergeTmp).catch(() => {});
+                    for (const c of chunks) { try { await fs.promises.unlink(c.tmp); } catch (_) {} }
+                };
+                if (fileSize > 0 && actualSize !== fileSize) {
+                    console.warn(`[MultiThread] Size mismatch after merge: ${path.basename(destPath)} expected=${fileSize} got=${actualSize}`);
+                    await _mergeCleanup();
+                    if (urlIdx < allUrls.length - 1) {
+                        console.log(`[MultiThread] Switching mirror: ${allUrls[urlIdx]} -> ${allUrls[urlIdx + 1]}`);
+                        continue;
+                    }
+                    if (ra < retries) continue;
+                    throw new Error(`Size mismatch after merge: ${path.basename(destPath)} expected=${fileSize} got=${actualSize}`);
+                }
+                if (actualSize === 0) {
+                    console.warn(`[MultiThread] Empty file after merge: ${path.basename(destPath)}`);
+                    await _mergeCleanup();
+                    if (urlIdx < allUrls.length - 1) { console.log(`[MultiThread] Switching mirror: ${allUrls[urlIdx]} -> ${allUrls[urlIdx + 1]}`); continue; }
+                    if (ra < retries) continue;
+                    throw new Error(`Empty file after merge: ${path.basename(destPath)}`);
+                }
+                // JAR 完整性校验（即使无 SHA1 也要检查）
+                if (destPath.toLowerCase().endsWith('.jar') && !utils.isJarIntact(mergeTmp)) {
+                    console.warn(`[MultiThread] JAR not intact after merge: ${path.basename(destPath)} (${actualSize} bytes)`);
+                    await _mergeCleanup();
+                    if (urlIdx < allUrls.length - 1) { console.log(`[MultiThread] Switching mirror: ${allUrls[urlIdx]} -> ${allUrls[urlIdx + 1]}`); continue; }
+                    if (ra < retries) continue;
+                    throw new Error(`JAR not intact: ${path.basename(destPath)}`);
+                }
                 if (sha1) {
-                    const actual = await utils.calculateSHA1(destPath);
+                    const actual = await utils.calculateSHA1(mergeTmp);
                     if (actual !== sha1) {
                         console.warn(`[MultiThread] SHA1 mismatch on ${allUrls[urlIdx]}: ${path.basename(destPath)}`);
-                        await fs.promises.unlink(destPath).catch(() => {});
-                        // SHA1 失败时清理分块，避免损坏数据续传
-                        for (const c of chunks) { try { await fs.promises.unlink(c.tmp); } catch (_) {} }
+                        await _mergeCleanup();
                         if (urlIdx < allUrls.length - 1) {
                             console.log(`[MultiThread] Switching mirror: ${allUrls[urlIdx]} -> ${allUrls[urlIdx + 1]}`);
                             continue;
@@ -624,6 +747,16 @@ async function downloadFileChunked(url, destPath, options = {}) {
                         if (ra < retries) continue;
                         return { size: fileSize, path: destPath, sha1Match: false, chunks: cCount };
                     }
+                }
+                // 校验通过，用带重试的 safeRename 写入最终路径
+                const _renameOK = await safeRename(mergeTmp, destPath);
+                if (!_renameOK) {
+                    if (urlIdx < allUrls.length - 1) {
+                        console.log(`[MultiThread] Switching mirror: ${allUrls[urlIdx]} -> ${allUrls[urlIdx + 1]}`);
+                        continue;
+                    }
+                    if (ra < retries) continue;
+                    throw new Error(`无法写入文件 ${path.basename(destPath)}: 文件可能被占用`);
                 }
                 if (onProgress) onProgress({ bytesDownloaded: fileSize, totalBytes: fileSize, speed: 0, progress: 100, chunks: cCount, activeChunks: 0 });
                 console.log(`[MultiThread] Done: ${path.basename(destPath)} (${cCount}x, ${utils.formatSize(fileSize)}) from ${workingUrl}`);
@@ -636,13 +769,13 @@ async function downloadFileChunked(url, destPath, options = {}) {
                 }
                 if (ra < retries) {
                     console.warn(`[MultiThread] Retry ${ra + 1}/${retries}`);
-                    // 保留临时分块文件用于续传，仅清理目标文件
-                    try { fs.unlinkSync(destPath); } catch (e) {}
+                    // 保留临时分块文件用于续传，仅清理目标文件（处理锁定/只读）
+                    _tryRemoveFile(destPath);
                     await new Promise(r => setTimeout(r, Math.min(1000 * (ra + 1), 5000) + Math.floor(Math.random() * 500)));
                 } else {
                     // 所有重试耗尽，清理临时文件
-                    for (let i = 0; i < 64; i++) { try { fs.unlinkSync(`${destPath}.c${i}`); } catch (e) {} }
-                    try { fs.unlinkSync(destPath); } catch (e) {}
+                    for (let i = 0; i < 64; i++) { _tryRemoveFile(`${destPath}.c${i}`); }
+                    _tryRemoveFile(destPath);
                     throw err;
                 }
             }
@@ -702,8 +835,8 @@ async function _dlSingle(urlStr, destPath, options = {}) {
                 const clean = (keepTmp = false) => {
                     if (cleaned) return; cleaned = true;
                     try { if (ws) ws.destroy(); } catch (_) {}
-                    if (!keepTmp) fs.promises.unlink(tmpPath).catch(() => {});
-                    fs.promises.unlink(destPath).catch(() => {});
+                    if (!keepTmp) _tryRemoveFile(tmpPath);
+                    _tryRemoveFile(destPath);
                     if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
                 };
                 const resetStall = () => {
@@ -742,6 +875,11 @@ async function _dlSingle(urlStr, destPath, options = {}) {
                     // 206 = 续传成功，追加写入；200 = 服务器不支持续传，覆盖写入
                     const isResume = (res.statusCode === 206 && resumeOffset > 0);
                     if (res.statusCode !== 200 && res.statusCode !== 206) { clean(false); doReject(new Error(`HTTP ${res.statusCode} for ${urlStr}`)); return; }
+                    // 服务器返回 200 而非 206 时，忽略续传偏移，从头下载
+                    if (resumeOffset > 0 && !isResume) {
+                        console.log(`[Download] 服务器不支持续传，重新下载 ${path.basename(destPath)}`);
+                        resumeOffset = 0;
+                    }
                     // 206 响应的 content-length 是剩余字节数，总大小需加上 resumeOffset
                     const contentLen = parseInt(res.headers['content-length'] || '0', 10);
                     const tSz = isResume ? (resumeOffset + contentLen) : contentLen;
@@ -764,26 +902,39 @@ async function _dlSingle(urlStr, destPath, options = {}) {
                     ws.on('finish', async () => {
                         try {
                             if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
-                            ws.close();
-                            if (settled) return;
-                            if (sha1) { const a = await utils.calculateSHA1(tmpPath); if (a !== sha1) { clean(false); if (rc > 0 && !settled) { setTimeout(() => attempt(rc - 1), 1000); } else { doReject(new Error(`SHA1 mismatch: ${path.basename(destPath)}`)); } return; } }
+                            // 等待文件描述符完全关闭后再 rename (Windows: 否则 EPERM 锁定源文件)
+                            await new Promise(resolve => {
+                                if (ws.destroyed) return resolve();
+                                const done = () => { ws.removeListener('close', done); resolve(); };
+                                ws.on('close', done);
+                                try { ws.close(); } catch (_) { done(); }
+                                setTimeout(done, 2000);  // 超时回退
+                            });
+                            if (settled || cleaned) return;
+                            if (sha1) { const a = await utils.calculateSHA1(tmpPath); if (settled || cleaned) return; if (a !== sha1) { clean(false); if (rc > 0 && !settled) { setTimeout(() => attempt(rc - 1), 1000); } else { doReject(new Error(`SHA1 mismatch: ${path.basename(destPath)}`)); } return; } }
                             if (tSz > 0 && dl !== tSz) { clean(true); if (rc > 0 && !settled) { setTimeout(() => attempt(rc - 1), 1000); } else { doReject(new Error(`Size mismatch: ${path.basename(destPath)} expected=${tSz} got=${dl}`)); } return; }
                             if (dl === 0) { clean(false); if (rc > 0 && !settled) { setTimeout(() => attempt(rc - 1), 1000); } else { doReject(new Error(`Empty file: ${path.basename(destPath)}`)); } return; }
                             if (destPath.toLowerCase().endsWith('.jar') && !utils.isJarIntact(tmpPath)) {
                                 const fileSize = dl || (fs.existsSync(tmpPath) ? fs.statSync(tmpPath).size : 0);
-                                if (fileSize > 1000) {
-                                    console.warn(`[Download] JAR文件ZIP结构不完整: ${path.basename(destPath)} (${fileSize} bytes)，尝试重新下载`);
-                                    clean(false);  // JAR 损坏，删除重下
-                                    if (rc > 0 && !settled) { setTimeout(() => attempt(rc - 1), 1000); }
-                                    else { doResolve({ size: dl, path: destPath, jarWarning: true }); }
-                                    return;
-                                }
+                                console.warn(`[Download] JAR文件ZIP结构不完整: ${path.basename(destPath)} (${fileSize} bytes)，尝试重新下载`);
+                                clean(false);  // JAR 损坏，删除重下
+                                if (rc > 0 && !settled) { setTimeout(() => attempt(rc - 1), 1000); }
+                                else { doReject(new Error(`JAR not intact: ${path.basename(destPath)} (${fileSize} bytes)`)); }
+                                return;
                             }
-                            fs.renameSync(tmpPath, destPath);
+                            if (settled || cleaned) return;
+                            // 带重试的 rename：Windows 上杀毒软件可能短暂锁定目标文件
+                            const _renameOK = await safeRename(tmpPath, destPath);
+                            if (!_renameOK) {
+                                // 保留 tmpPath 供下次续传，不删除已下载的数据
+                                clean(true);
+                                if (!settled) doReject(new Error(`无法写入文件 ${path.basename(destPath)}: 文件可能被占用`));
+                                return;
+                            }
                             doResolve({ size: dl, path: destPath });
                         } catch (e) {
                             console.error(`[Download] finish处理异常: ${e.message}`);
-                            clean(false);
+                            clean(true);  // 保留 tmpPath，避免丢失已下载数据
                             if (!settled) doReject(e);
                         }
                     });
@@ -1110,7 +1261,13 @@ async function downloadPCLStyle(urls, destPath, { onProgress = null, maxChunks =
                             rs.on('error', reject);
                             rs.pipe(ws, { end: false });
                         };
-                        ws.on('finish', () => { ws.close(); resolve(); });
+                        ws.on('finish', () => {
+                            // 等待文件描述符完全关闭后再 resolve (Windows: 否则 EPERM 锁定源文件)
+                            const onClose = () => resolve();
+                            ws.on('close', onClose);
+                            try { ws.close(); } catch (_) { onClose(); }
+                            setTimeout(onClose, 2000);
+                        });
                         ws.on('error', reject);
                         writeNext();
                     });
@@ -1375,4 +1532,5 @@ module.exports = {
     downloadFileWithMirror,
     fetchJSONWithMethod,
     fetchJSONWithAuth,
+    _tryRemoveFile,
 };
