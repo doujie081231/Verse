@@ -19,17 +19,10 @@ const versions = require('./versions');
 const java = require('./java');
 const dependencies = require('./dependencies');
 
-// ============================================================================
-// 懒加载 server.js 中尚未抽取到子模块的函数 (避免循环依赖)
-// 这些函数在 server.js 完成迁移后会通过 module.exports 暴露
-// ============================================================================
-let _serverModule = null;
-function _server() {
-    if (_serverModule === null) {
-        try { _serverModule = require('../server'); } catch (_) { _serverModule = {}; }
-    }
-    return _serverModule;
-}
+// 懒加载 natives 模块（运行时调用），避免与 natives.js 形成加载期循环依赖。
+// natives.js 在顶层 require('./modloaders')，若此处也在顶层 require('./natives')，
+// 则 natives 会拿到 modloaders 重新赋值前的空 module.exports，导致 findForgeCoreJars 等丢失。
+function _natives() { return require('./natives'); }
 
 // server.js 所在目录（用于查找 forge-installer.js 等资源文件）
 const SERVER_DIR = path.join(__dirname, '..');
@@ -3696,7 +3689,7 @@ async function performInstallation(sessionId, versionDetails) {
         session.progress = calcProgress('natives', 0.5);
         session.currentFile = '';
 
-        _server().extractNatives(versionDetails, versionId);
+        _natives().extractNatives(versionDetails, versionId);
 
         session.stage = 'loader';
         session.message = '完成安装...';
@@ -3790,7 +3783,7 @@ async function performInstallation(sessionId, versionDetails) {
 
             const mergedJson = versions.resolveVersionJson(versionId);
             if (mergedJson) {
-                _server().extractNatives(mergedJson, versionId);
+                _natives().extractNatives(mergedJson, versionId);
             }
         }
 

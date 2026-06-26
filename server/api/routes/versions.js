@@ -10,14 +10,6 @@ const os = require('os');
 const crypto = require('crypto');
 const { execSync } = require('child_process');
 
-let _serverModule = null;
-function _server() {
-    if (_serverModule === null) {
-        try { _serverModule = require('../../../server'); } catch (_) { _serverModule = {}; }
-    }
-    return _serverModule;
-}
-
 module.exports = {
     register(registerRoute, deps) {
         const { ctx, sendJSON, sendError, readBody } = deps;
@@ -1449,7 +1441,7 @@ module.exports = {
                 _abortController: new AbortController()
             });
             sendJSON(res, { success: true, sessionId, versionId: details.id });
-            _server().performInstallation(sessionId, details).catch(err => {
+            modloaders.performInstallation(sessionId, details).catch(err => {
                 const session = ctx.sessions.installSessions.get(sessionId);
                 if (session) { session.status = 'failed'; session.stage = 'failed'; session.message = `安装失败: ${err.message}`; session.errors.push(err.message); }
             });
