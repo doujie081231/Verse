@@ -501,7 +501,11 @@ module.exports = {
     importModpackFromPath: modpack.importModpackFromPath,
     cleanupOnShutdown,
     validateInstalledVersions: versions.validateInstalledVersions,
-    setMainWindow: ctx.setMainWindow
+    setMainWindow: ctx.setMainWindow,
+    // [AI-AUTOGEN-WARNING] performInstallation 在 modloaders.js 中定义，必须在这里重新导出
+    // server/api/routes/versions.js 通过 _server().performInstallation() 调用它
+    // 不要删除这个导出，否则基础版本下载会报 "performInstallation is not a function"
+    performInstallation: modloaders.performInstallation
 };
 
 // ============================================================================
