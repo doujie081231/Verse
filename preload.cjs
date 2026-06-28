@@ -42,13 +42,6 @@ try {
 
 let progressCallbackWrapper = null;
 let updaterStatusCallbackWrapper = null;
-let _ssePortCache = null;
-async function getSSEPort() {
-    if (_ssePortCache !== null) return _ssePortCache;
-    try { _ssePortCache = await ipcRenderer.invoke('ai:get-sse-port'); } catch (e) { _ssePortCache = 3001; }
-    return _ssePortCache;
-}
-
 contextBridge.exposeInMainWorld('electronAPI', {
     minimize: () => ipcRenderer.send('window-minimize'),
     maximize: () => ipcRenderer.send('window-maximize'),
@@ -165,107 +158,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
         onData: (callback) => ipcRenderer.on('terminal:data', (event, id, data) => callback(id, data)),
         onExit: (callback) => ipcRenderer.on('terminal:exit', (event, id, code) => callback(id, code)),
     },
-    ai: {
-        chatStream: (params) => ipcRenderer.send('ai:chat-stream', params),
-        chatAbort: () => ipcRenderer.invoke('ai:chat-abort'),
-        toolApprove: (approvalId, approved, alwaysAllow) => ipcRenderer.invoke('ai:tool-approve', { approvalId, approved, alwaysAllow }),
-        syncAutoApproveSettings: (settings) => ipcRenderer.invoke('ai:sync-auto-approve', settings),
-        askUserRespond: (askId, answer) => ipcRenderer.invoke('ai:ask-user-respond', { askId, answer }),
-        getProviders: () => ipcRenderer.invoke('ai:get-providers'),
-        getVersions: () => ipcRenderer.invoke('ai:get-versions'),
-        onChunk: (callback) => {
-            const wrapper = (event, data) => callback(data);
-            ipcRenderer.on('ai:chat-chunk', wrapper);
-            return () => ipcRenderer.removeListener('ai:chat-chunk', wrapper);
-        },
-        onSelectVersionRequest: (callback) => {
-            const wrapper = (event, data) => callback(data);
-            ipcRenderer.on('ai:select-version-request', wrapper);
-            return () => ipcRenderer.removeListener('ai:select-version-request', wrapper);
-        },
-        selectVersionResponse: (selId, selected) => {
-            ipcRenderer.send('ai:select-version-response', { selId, selected });
-        },
-        onAddDownloadTask: (callback) => {
-            const wrapper = (event, data) => callback(data);
-            ipcRenderer.on('ai:add-download-task', wrapper);
-            return () => ipcRenderer.removeListener('ai:add-download-task', wrapper);
-        },
-        // SSE 模式 - 绕过 IPC 序列化瓶颈
-        chatStreamSSE: async (params, onChunk, onDone, onError) => {
-            const SSE_PORT = await getSSEPort();
-            const chatId = `chat_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-            let abortController = new AbortController();
-
-            try {
-                const response = await fetch(`http://localhost:${SSE_PORT}/api/chat`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ...params, chatId }),
-                    signal: abortController.signal
-                });
-
-                if (!response.ok) {
-                    const err = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
-                    onError(err.error || `请求失败: ${response.status}`);
-                    return { abort: () => abortController.abort(), chatId };
-                }
-
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-                let buffer = '';
-
-                const readLoop = async () => {
-                    try {
-                        while (true) {
-                            const { done, value } = await reader.read();
-                            if (done) {
-                                onDone();
-                                return;
-                            }
-                            buffer += decoder.decode(value, { stream: true });
-                            const lines = buffer.split('\n');
-                            buffer = lines.pop() || '';
-                            for (const line of lines) {
-                                const trimmed = line.trim();
-                                if (trimmed.startsWith('data: ')) {
-                                    try {
-                                        const data = JSON.parse(trimmed.slice(6));
-                                        onChunk(data);
-                                    } catch (e) {}
-                                }
-                            }
-                        }
-                    } catch (e) {
-                        if (e.name === 'AbortError' || e.message?.includes('already closed') || e.message?.includes('ReadableStream')) {
-                            onDone();
-                            return;
-                        }
-                        onError(e.message);
-                    }
-                };
-
-                readLoop();
-                return { abort: () => abortController.abort(), chatId };
-            } catch (e) {
-                if (e.name !== 'AbortError') onError(e.message);
-                return { abort: () => {}, chatId };
-            }
-        },
-        toolApproveSSE: async (approvalId, approved) => {
-            const SSE_PORT = await getSSEPort();
-            try {
-                const r = await fetch(`http://localhost:${SSE_PORT}/api/chat/approve`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ approvalId, approved })
-                });
-                return r.json();
-            } catch (e) {
-                return { success: false, error: e.message };
-            }
-        },
-    },
     platform: process.platform,
-    isAIEnabled: () => { return false; },
 });
+

@@ -425,7 +425,7 @@ module.exports = {
                 }
 
                 if (!result.found) {
-                    const { CrashAnalyzer } = require('../../../crashAnalyzer');
+                    const { CrashAnalyzer } = require('../../crashAnalyzer');
                     try {
                         const analyzer = new CrashAnalyzer(null, caVersionDir);
                         await analyzer.collect(caCleanId, []);
@@ -654,90 +654,6 @@ module.exports = {
                 try { fs.unlinkSync(exportPath); } catch (_) {}
             } catch (exportErr) {
                 sendError(res, '导出日志失败: ' + exportErr.message, 500);
-            }
-        });
-
-        // ====================================================================
-        // /api/game/log/save-export
-        // ====================================================================
-        registerRoute('GET', '/api/game/log/save-export', async (req, res, parsedUrl) => {
-            try {
-                const seVersionId = parsedUrl.query.versionId || '';
-                const seParts = [];
-                seParts.push('='.repeat(60));
-                seParts.push('VersePC 游戏日志导出');
-                seParts.push(`导出时间: ${new Date().toLocaleString()}`);
-                seParts.push(`版本: ${seVersionId || '未知'}`);
-                seParts.push('='.repeat(60));
-                seParts.push('');
-
-                const seSettings = versions.loadSettingsCached();
-                seParts.push(`[环境信息]`);
-                seParts.push(`数据目录: ${ctx.dirs.DATA_DIR}`);
-                seParts.push(`Java路径: ${seSettings.javaPath || '自动检测'}`);
-                seParts.push(`最大内存: ${seSettings.maxMemory || 2048}MB`);
-                seParts.push(`版本隔离: ${seSettings.versionIsolation ? '是' : '否'}`);
-                seParts.push('');
-
-                if (ctx.sessions.lastGameExitAnalysis) {
-                    seParts.push(`[上次退出分析]`);
-                    seParts.push(`退出码: ${ctx.sessions.lastGameExitAnalysis.code}`);
-                    seParts.push(`原因: ${ctx.sessions.lastGameExitAnalysis.reason}`);
-                    seParts.push(`建议: ${ctx.sessions.lastGameExitAnalysis.suggestion}`);
-                    seParts.push(`是否崩溃: ${ctx.sessions.lastGameExitAnalysis.isCrash ? '是' : '否'}`);
-                    if (ctx.sessions.lastGameExitAnalysis.versionId) seParts.push(`版本ID: ${ctx.sessions.lastGameExitAnalysis.versionId}`);
-                    seParts.push('');
-                }
-
-                if (ctx.sessions.gameLogBuffer.length > 0) {
-                    seParts.push(`[游戏日志] (最近 ${Math.min(ctx.sessions.gameLogBuffer.length, 2000)} 行)`);
-                    seParts.push('-'.repeat(40));
-                    seParts.push(...ctx.sessions.gameLogBuffer.slice(-2000));
-                    seParts.push('');
-                }
-
-                if (seVersionId) {
-                    const seCrashDir = versions.getVersionSubDir(seVersionId, 'crash-reports');
-                    if (seCrashDir && fs.existsSync(seCrashDir)) {
-                        const seCrashFiles = fs.readdirSync(seCrashDir)
-                            .filter(f => f.startsWith('crash-') && f.endsWith('.txt'))
-                            .sort().reverse();
-                        if (seCrashFiles.length > 0) {
-                            try {
-                                const seCrashContent = fs.readFileSync(path.join(seCrashDir, seCrashFiles[0]), 'utf8');
-                                seParts.push(`[最新崩溃报告] ${seCrashFiles[0]}`);
-                                seParts.push('-'.repeat(40));
-                                seParts.push(seCrashContent.substring(0, 5000));
-                                if (seCrashContent.length > 5000) seParts.push(`... (已截断，共${seCrashContent.length}字符)`);
-                                seParts.push('');
-                            } catch (_) {}
-                        }
-                    }
-
-                    const seLogsDir = versions.getVersionSubDir(seVersionId, 'logs');
-                    const seLatestLog = path.join(seLogsDir, 'latest.log');
-                    if (fs.existsSync(seLatestLog)) {
-                        try {
-                            const seLogContent = fs.readFileSync(seLatestLog, 'utf8');
-                            seParts.push(`[latest.log] (最后 2000 行)`);
-                            seParts.push('-'.repeat(40));
-                            seParts.push(...seLogContent.split('\n').slice(-2000));
-                            seParts.push('');
-                        } catch (_) {}
-                    }
-                }
-
-                const seContent = seParts.join('\n');
-                const seFileName = `VersePC_Log_${new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19)}.txt`;
-                const seTempDir = path.join(ctx.dirs.DATA_DIR, 'temp');
-                if (!fs.existsSync(seTempDir)) fs.mkdirSync(seTempDir, { recursive: true });
-                const seFilePath = path.join(seTempDir, seFileName);
-                fs.writeFileSync(seFilePath, seContent, 'utf8');
-
-                res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-                res.end(JSON.stringify({ success: true, filePath: seFilePath, fileName: seFileName }));
-            } catch (seErr) {
-                sendError(res, '保存日志失败: ' + seErr.message, 500);
             }
         });
     }

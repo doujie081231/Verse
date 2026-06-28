@@ -2630,7 +2630,7 @@ async function mergeForgeLoaderToVersion(versionId, gameVersion, forgeVersion) {
             if (ipData.processors && ipData.processors.length > 0) {
                 mergeLog(`Found ${ipData.processors.length} processors, executing...`);
                 try {
-                    const _scriptSrc = path.join(SERVER_DIR, 'forge-processor.js');
+                    const _scriptSrc = path.join(SERVER_DIR, 'server', 'modloaders', 'scripts', 'forge-processor.js');
                     const _scriptDst = path.join(ctx.dirs.DATA_DIR, 'temp', 'forge-processor.js');
                     fs.mkdirSync(path.dirname(_scriptDst), { recursive: true });
                     if (fs.existsSync(_scriptDst)) { try { fs.unlinkSync(_scriptDst); } catch(_) {} }
@@ -2936,7 +2936,7 @@ async function mergeNeoForgeLoaderToVersion(versionId, gameVersion, neoVersion, 
     try {
         if (onProgress) onProgress(0.92, '打补丁中...');
 
-        const _scriptSrc = path.join(SERVER_DIR, 'neoforge-processor.js');
+        const _scriptSrc = path.join(SERVER_DIR, 'server', 'modloaders', 'scripts', 'neoforge-processor.js');
         const _scriptDst = path.join(ctx.dirs.DATA_DIR, 'temp', 'neoforge-processor.js');
         try {
             fs.mkdirSync(path.dirname(_scriptDst), { recursive: true });

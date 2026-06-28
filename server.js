@@ -145,7 +145,7 @@ const natives = require('./server/natives');
 const launch = require('./server/launch');
 const accounts = require('./server/accounts');
 const router = require('./server/api/router');
-const { checkTampering: _chkTam } = require('./activation-verify');
+const { checkTampering: _chkTam } = require('./activation/activation-verify');
 
 // ============================================================================
 // 路由依赖注入 - 向各 route 模块传递业务函数
