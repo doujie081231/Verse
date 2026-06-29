@@ -8,9 +8,7 @@ const INTEGRITY_FILES = [
     'server.js',
     'preload.cjs',
     'editor-preload.cjs',
-    'agent-engine.js',
     'js/app.js',
-    'js/ai-chat.js',
     'js/api.js'
 ];
 
@@ -35,37 +33,25 @@ function main() {
     fs.writeFileSync(mainPath, mainContent);
     console.log(`  main.js: __IS_BETA__ -> ${aiEnabled}`);
 
-    if (aiEnabled) {
-        const aiChatPath = path.join(projectRoot, 'js', 'ai-chat.js');
-        const aiChatBakPath = path.join(projectRoot, 'js', 'ai-chat.js.bak');
-        if (fs.existsSync(aiChatPath)) {
-            fs.copyFileSync(aiChatPath, aiChatBakPath);
+    const avPath = path.join(projectRoot, 'activation', 'activation-verify.js');
+    const avBakPath = path.join(projectRoot, 'activation', 'activation-verify.js.bak');
+    if (aiEnabled && fs.existsSync(avPath)) {
+        const avContent = fs.readFileSync(avPath, 'utf8');
+        const avLines = avContent.split('\n').length;
+        if (avLines > 5) {
+            fs.copyFileSync(avPath, avBakPath);
             try {
                 execSync(
-                    `npx javascript-obfuscator "${aiChatPath}" --output "${aiChatPath}" --target node --string-array-encoding rc4 --string-array-threshold 0.75 --rename-globals false --self-defending false`,
+                    `npx javascript-obfuscator "${avPath}" --output "${avPath}" --target node --string-array-encoding rc4 --string-array-threshold 1 --rename-globals false --self-defending false`,
                     { stdio: 'pipe', cwd: projectRoot }
                 );
-                console.log('  js/ai-chat.js: obfuscated');
+                console.log('  activation-verify.js: obfuscated');
             } catch (e) {
-                console.warn('  WARN: ai-chat obfuscation failed, using original:', e.message);
-                fs.copyFileSync(aiChatBakPath, aiChatPath);
+                console.warn('  WARN: activation-verify obfuscation failed:', e.message);
+                fs.copyFileSync(avBakPath, avPath);
             }
-        }
-    }
-
-    const avPath = path.join(projectRoot, 'activation-verify.js');
-    const avBakPath = path.join(projectRoot, 'activation-verify.js.bak');
-    if (aiEnabled && fs.existsSync(avPath)) {
-        fs.copyFileSync(avPath, avBakPath);
-        try {
-            execSync(
-                `npx javascript-obfuscator "${avPath}" --output "${avPath}" --target node --string-array-encoding rc4 --string-array-threshold 1 --rename-globals false --self-defending false`,
-                { stdio: 'pipe', cwd: projectRoot }
-            );
-            console.log('  activation-verify.js: obfuscated');
-        } catch (e) {
-            console.warn('  WARN: activation-verify obfuscation failed:', e.message);
-            fs.copyFileSync(avBakPath, avPath);
+        } else {
+            console.log('  activation-verify.js: already obfuscated, skipping');
         }
     }
 
@@ -82,21 +68,6 @@ function main() {
     const outputPath = path.join(projectRoot, OUTPUT_FILE);
     fs.writeFileSync(outputPath, JSON.stringify(manifest, null, 2));
     console.log(`Integrity manifest written to ${OUTPUT_FILE} (${Object.keys(manifest).length} files)`);
-
-    const aiConfigPath = path.join(projectRoot, 'ai-enabled.json');
-    fs.writeFileSync(aiConfigPath, JSON.stringify({ enabled: aiEnabled }));
-    console.log(`AI config written to ai-enabled.json (enabled=${aiEnabled})`);
-
-    if (aiEnabled) {
-        const preloadPath = path.join(projectRoot, 'preload.cjs');
-        let preloadContent = fs.readFileSync(preloadPath, 'utf8');
-        preloadContent = preloadContent.replace(
-            /isAIEnabled:\s*\(\)\s*=>\s*\{[\s\S]*?return\s+(?:true|false);\s*\}/,
-            'isAIEnabled: () => { return true; }'
-        );
-        fs.writeFileSync(preloadPath, preloadContent);
-        console.log('Preload patched: isAIEnabled -> true');
-    }
 }
 
 main();

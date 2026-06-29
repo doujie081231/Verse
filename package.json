@@ -11,21 +11,14 @@
     "scripts": {
         "start": "electron .",
         "dev": "cross-env NODE_ENV=dev electron .",
-        "obfuscate": "node obfuscate-activation.js",
+        "obfuscate": "node activation/obfuscate-activation.js",
         "build": "npm run obfuscate && node generate-integrity.js && electron-builder --win --linux --mac --publish never && node restore-build.js",
         "build:win": "npm run obfuscate && node generate-integrity.js && electron-builder --win --publish never && node restore-build.js",
-        "build:win:test": "cross-env ENABLE_AI=true node obfuscate-activation.js && cross-env ENABLE_AI=true node generate-integrity.js && cross-env ENABLE_AI=true electron-builder --win --publish never && node restore-build.js",
-        "build:win:release": "cross-env ENABLE_AI=false node obfuscate-activation.js && cross-env ENABLE_AI=false node generate-integrity.js && cross-env ENABLE_AI=false electron-builder --win --publish never && node restore-build.js",
         "build:linux": "npm run obfuscate && electron-builder --linux --publish never",
-        "build:linux:test": "cross-env ENABLE_AI=true npm run obfuscate && electron-builder --linux --publish never",
-        "build:linux:release": "cross-env ENABLE_AI=false npm run obfuscate && electron-builder --linux --publish never",
         "build:mac": "npm run obfuscate && node generate-integrity.js && electron-builder --mac --publish never && node restore-build.js",
-        "build:mac:test": "cross-env ENABLE_AI=true npm run obfuscate && node generate-integrity.js && electron-builder --mac --publish never && node restore-build.js",
-        "build:mac:release": "cross-env ENABLE_AI=false npm run obfuscate && node generate-integrity.js && electron-builder --mac --publish never && node restore-build.js",
         "build:dir": "npm run obfuscate && electron-builder --win --dir",
         "build:installer": "npm run obfuscate && electron-builder --win --config.nsis --publish never",
-        "build:publish": "npm run obfuscate && electron-builder --win --linux --mac --publish always",
-        "build:clean": "node -e \"const{execSync}=require('child_process');execSync('npm run build:win',{stdio:'inherit'})\""
+        "build:publish": "npm run obfuscate && electron-builder --win --linux --mac --publish always"
     },
     "dependencies": {
         "@xterm/addon-fit": "^0.11.0",
@@ -47,18 +40,10 @@
         },
         "files": [
             "main.js",
+            "main/**/*",
             "server.js",
             "server/**/*",
-            "activation-verify.js",
-            "neoforge-processor.js",
-            "forge-processor.js",
-            "forge-installer.js",
-            "sse-server.js",
-            "agent-engine.js",
-            "agent-worker.js",
-            "activation.obfuscated.js",
-            "ai-config.js",
-            "plugin-manager.js",
+            "activation/**/*",
             "preload.cjs",
             "editor-preload.cjs",
             "index.html",
@@ -75,7 +60,6 @@
             "plugins/**/*",
             "node_modules/monaco-editor/**/*",
             "integrity.json",
-            "ai-enabled.json",
             "package.json",
             "node_modules/adm-zip/**/*",
             "node_modules/ws/**/*",
@@ -194,7 +178,7 @@
             "resources/**/*"
         ],
         "releaseInfo": {
-            "releaseNotes": "鏌ョ湅 GitHub Releases 鑾峰彇鏇存柊鏃ュ織锛歨ttps://github.com/doujie081231/versePc/releases"
+            "releaseNotes": "查看 GitHub Releases 获取更新日志：https://github.com/doujie081231/versePc/releases"
         }
     },
     "devDependencies": {

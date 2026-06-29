@@ -22,7 +22,7 @@ module.exports = {
         registerRoute('*', '/api/crash/analyze', async (req, res, parsedUrl) => {
             if (req.method === 'POST') {
                 const data = await readBody(req);
-                const { CrashAnalyzer } = require('../../../crashAnalyzer');
+                const { CrashAnalyzer } = require('../../crashAnalyzer');
 
                 try {
                     const mcDir = data.minecraftDir || MINECRAFT_DIR;

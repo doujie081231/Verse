@@ -54,6 +54,7 @@ class WallpaperEngine {
         this.wallpaperFitMode = 'cover';
         this.customImagePath = null;
         this.customVideoPath = null;
+        this.auroraVideoPath = null;
         this.wallpaperBrightness = 0;
         this._brightnessCallback = null;
 
@@ -176,7 +177,7 @@ class WallpaperEngine {
             customImage: () => new CustomImageRenderer(this),
             customVideo: () => new CustomVideoRenderer(this),
             auroraVideo: async () => {
-                this.customVideoPath = await this._getAuroraVideoPath();
+                this.auroraVideoPath = await this._getAuroraVideoPath();
                 return new CustomVideoRenderer(this);
             }
         };
@@ -596,8 +597,9 @@ class CustomVideoRenderer {
         this._brightnessSampleCtx = this._brightnessSampleCanvas.getContext('2d', { willReadFrequently: true });
         this._brightnessCheckInterval = null;
         this._container = document.getElementById('wallpaper-video-container');
-        if (engine.customVideoPath) {
-            this.loadVideo(engine.customVideoPath);
+        const videoSrc = engine.currentMode === 'auroraVideo' ? engine.auroraVideoPath : engine.customVideoPath;
+        if (videoSrc) {
+            this.loadVideo(videoSrc);
         }
     }
 

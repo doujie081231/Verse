@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.0.1-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-1.3.41-blue" alt="Version">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey" alt="Platform">
   <img src="https://img.shields.io/badge/license-Source%20Visible-red" alt="License">
 </p>
@@ -24,10 +24,10 @@
 ## 功能特性
 
 ### 核心功能
-- **多版本管理** - 支持官方版本、Forge、Fabric、OptiFine 等主流加载器的一键安装与切换
+- **多版本管理** - 支持官方版本、Forge、Fabric、NeoForge、OptiFine 等主流加载器的一键安装与切换
 - **智能启动** - 自动检测 Java 环境，缺失时引导安装；自动选择最快的国内镜像源下载
 - **账户系统** - 支持微软账户（Microsoft Account）和离线账户登录
-- **自动更新** - 内置多源自动更新检测，支持 GitHub 和夸克网盘两种下载方式
+- **自动更新** - 内置多源自动更新检测，支持官方网址、CDN 和 GitHub 多种下载方式
 
 ### 模组与整合包
 - **模组管理** - 浏览、安装、启用/禁用模组，支持 JAR 文件解析与依赖检测
@@ -35,7 +35,6 @@
 - **版本隔离** - 每个游戏版本独立运行环境，避免冲突
 
 ### 高级特性
-- **AI 助手** - 内置智能助手，提供游戏攻略、故障排查等帮助
 - **插件系统** - 可扩展的插件架构，支持自定义功能扩展
 - **主题切换** - 支持亮色/暗色主题，自适应系统设置
 - **文件浏览器** - 内置文件管理器，方便管理游戏文件
@@ -59,21 +58,43 @@
 
 ```
 VersePC/
-├── main.js              # Electron 主进程入口
-├── server.js            # 业务逻辑与 API 路由
-├── sse-server.js        # Server-Sent Events 服务
-├── agent-engine.js      # AI 助手引擎
-├── plugin-manager.js    # 插件管理系统
-├── preload.cjs          # 安全预加载脚本
-├── index.html           # 主界面 (SPA)
-├── editor.html          # 代码编辑器
-├── css/                 # 样式文件
-├── js/                  # 前端脚本
-├── img/                 # 图标与图片资源
-└── plugins/             # 插件目录
+├── main.js                  # Electron 主进程入口（窗口、IPC、协议、GPU）
+├── server.js                # 业务逻辑与 API 路由分发
+├── preload.cjs              # 安全预加载脚本
+├── index.html               # 主界面 (SPA)
+├── editor.html              # 代码编辑器
+├── css/                     # 样式文件
+│   ├── style.css            # 主样式
+│   └── themes.css           # 主题色方案
+├── js/                      # 前端脚本
+│   ├── app.js               # 前端主应用逻辑入口
+│   ├── api.js               # 后端 API 调用封装
+│   └── app/                 # 前端业务模块（27个）
+├── main/                    # 主进程模块
+│   ├── crash-log.js         # 崩溃日志
+│   ├── mods-ipc.js          # 模组 IPC 处理
+│   ├── store.js             # 持久化存储
+│   ├── updater.js           # 自动更新
+│   ├── protocol-handler.js  # 自定义协议处理
+│   └── editor-terminal.js   # 编辑器与终端
+├── server/                  # 业务逻辑模块
+│   ├── index.js             # 服务入口
+│   ├── routes/              # API 路由
+│   └── handlers/            # 业务处理器
+├── activation/              # 激活验证模块
+├── img/                     # 图标与图片资源
+└── plugins/                 # 插件目录
 ```
 
 ## 更新日志
+
+### v1.3.41
+- 代码架构重构：main.js 和 app.js 模块化拆分
+- 修复 NeoForge/Forge 安装流程
+- 修复整合包导入与启动问题
+- 优化下载源选择策略（国内优先）
+- 修复内存自动分配问题
+- 修复版本删除链路问题
 
 ### v1.0.1 (2026-06-09)
 - 新增多源自动更新检测，支持 GitHub 和夸克网盘两种下载方式
@@ -104,6 +125,3 @@ VersePC/
 <p align="center">
   Made with ❤️ by 豆杰
 </p>
-
-
-
