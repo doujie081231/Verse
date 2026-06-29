@@ -93,6 +93,39 @@ class WallpaperEngine {
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     }
 
+    // 游戏运行低调模式 - 挂起渲染循环（不销毁 WebGL 上下文，便于快速恢复）
+    suspend() {
+        if (this._suspended) return;
+        if (this.animationId) {
+            cancelAnimationFrame(this.animationId);
+            this.animationId = null;
+        }
+        if (this.renderer && this.renderer.video) {
+            try { this.renderer.video.pause(); } catch (e) {}
+        }
+        if (this.renderer && this.renderer._brightnessCheckInterval) {
+            clearInterval(this.renderer._brightnessCheckInterval);
+            this.renderer._brightnessCheckInterval = null;
+        }
+        this._suspended = true;
+    }
+
+    // 游戏运行低调模式 - 恢复渲染循环
+    resume() {
+        if (!this._suspended) return;
+        this._suspended = false;
+        if (this.renderer && this.renderer.video) {
+            try { this.renderer.video.play().catch(() => {}); } catch (e) {}
+        }
+        if (this.renderer && !this.renderer._brightnessCheckInterval && typeof this.renderer._startBrightnessSampling === 'function') {
+            this.renderer._startBrightnessSampling();
+        }
+        if (this.isRunning && !this.animationId) {
+            this.lastTime = performance.now();
+            this._animate(this.lastTime);
+        }
+    }
+
     setTheme(isDark) {
         this.isDarkTheme = isDark;
         if (this.renderer && this.renderer.setTheme) {

@@ -51,11 +51,6 @@ function getNativesFolder(versionId) {
 function extractNatives(versionJson, versionId, externalVersionDir = null) {
     const nativesDir = getNativesFolder(versionId);
     console.log(`[Natives] 目录: ${nativesDir}`);
-    if (fs.existsSync(nativesDir)) {
-        try { fs.rmSync(nativesDir, { recursive: true, force: true }); } catch (e) {}
-    }
-    fs.mkdirSync(nativesDir, { recursive: true });
-
     const nativeJars = [];
 
     const libraries = versionJson.libraries || [];
@@ -91,11 +86,12 @@ function extractNatives(versionJson, versionId, externalVersionDir = null) {
     }
 
     function extractNativeJar(jarPath) {
+        let extracted = 0;
+        let bytes = 0;
         try {
             const AdmZip = require('adm-zip');
             const zip = new AdmZip(jarPath);
             const entries = zip.getEntries();
-            let extracted = 0;
             for (const entry of entries) {
                 const entryName = entry.entryName;
                 if (entryName.startsWith('META-INF')) continue;
@@ -121,14 +117,14 @@ function extractNatives(versionJson, versionId, externalVersionDir = null) {
                         if (data && data.length > 0) {
                             fs.writeFileSync(destPath, data);
                             extracted++;
-                            console.log(`[Natives] 解压: ${fileName} (${data.length} bytes)`);
+                            bytes += data.length;
                         }
                     } catch (writeErr) {
                         console.log(`[Natives] 写入失败 ${fileName}: ${writeErr.message}`);
                     }
                 }
             }
-            return extracted;
+            return { count: extracted, bytes: bytes };
         } catch (e) {
             console.log(`[Natives] AdmZip失败: ${e.message}，尝试系统解压`);
             try {
@@ -146,7 +142,8 @@ function extractNatives(versionJson, versionId, externalVersionDir = null) {
                     execSync('unzip', ['-o', jarPath, '-d', tempDir, '-x', 'META-INF/*'], { stdio: 'pipe', timeout: 120000 });
                 }
 
-                let extracted = 0;
+                extracted = 0;
+                bytes = 0;
                 function collectFiles(dir) {
                     const items = fs.readdirSync(dir);
                     for (const item of items) {
@@ -161,7 +158,7 @@ function extractNatives(versionJson, versionId, externalVersionDir = null) {
                                 const destPath = path.join(nativesDir, item);
                                 fs.copyFileSync(itemPath, destPath);
                                 extracted++;
-                                console.log(`[Natives] 系统解压: ${item}`);
+                                bytes += stat.size;
                             }
                         }
                     }
@@ -169,10 +166,10 @@ function extractNatives(versionJson, versionId, externalVersionDir = null) {
                 collectFiles(tempDir);
 
                 try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch (e3) {}
-                return extracted;
+                return { count: extracted, bytes: bytes };
             } catch (e2) {
                 console.log(`[Natives] 系统解压也失败: ${e2.message}`);
-                return 0;
+                throw e2;
             }
         }
     }
@@ -236,7 +233,6 @@ function extractNatives(versionJson, versionId, externalVersionDir = null) {
 
         console.log(`[Natives] 提取: ${path.basename(nativePath)}`);
         nativeJars.push(nativePath);
-        extractNativeJar(nativePath);
     }
 
     // === 合并 inheritsFrom 父版本 Natives ===
@@ -303,38 +299,68 @@ function extractNatives(versionJson, versionId, externalVersionDir = null) {
                 if (!nativePath || !fs.existsSync(nativePath)) continue;
                 console.log(`[Natives] 提取(父版本): ${path.basename(nativePath)}`);
                 nativeJars.push(nativePath);
-                extractNativeJar(nativePath);
             }
         } catch (e) { console.error(`[Natives] 父版本加载失败: ${e.message}`); break; }
     }
 
+    // === 增量解压：计算 native jar 文件的最新 mtime ===
+    let maxJarMtime = 0;
+    for (const jarPath of nativeJars) {
+        try {
+            const stat = fs.statSync(jarPath);
+            if (stat.mtimeMs > maxJarMtime) maxJarMtime = stat.mtimeMs;
+        } catch (_) {}
+    }
+
+    // === 检查 nativesDir 是否需要重新解压 ===
+    if (fs.existsSync(nativesDir)) {
+        let maxFileMtime = 0;
+        try {
+            for (const f of fs.readdirSync(nativesDir)) {
+                try {
+                    const stat = fs.statSync(path.join(nativesDir, f));
+                    if (stat.mtimeMs > maxFileMtime) maxFileMtime = stat.mtimeMs;
+                } catch (_) {}
+            }
+        } catch (_) {}
+
+        if (maxJarMtime <= maxFileMtime) {
+            console.log('[Natives] Natives 未变化，跳过解压');
+            return nativesDir;
+        }
+
+        // Natives 已变化，删除旧目录重新解压
+        try { fs.rmSync(nativesDir, { recursive: true, force: true }); } catch (e) {}
+    }
+    fs.mkdirSync(nativesDir, { recursive: true });
+
+    // === 解压流程（带失败兜底）===
+    let fileCount = 0;
+    let totalBytes = 0;
+
+    function doExtractAll() {
+        for (const jarPath of nativeJars) {
+            const result = extractNativeJar(jarPath);
+            fileCount += result.count;
+            totalBytes += result.bytes;
+        }
+    }
+
+    console.log('[Natives] 开始解压 native 文件...');
+    try {
+        doExtractAll();
+    } catch (e) {
+        console.log(`[Natives] 解压失败，强制重新解压: ${e.message}`);
+        try { fs.rmSync(nativesDir, { recursive: true, force: true }); } catch (_) {}
+        fs.mkdirSync(nativesDir, { recursive: true });
+        fileCount = 0;
+        totalBytes = 0;
+        doExtractAll();
+    }
+    console.log(`[Natives] 解压完成，共 ${fileCount} 个文件，${totalBytes} 字节`);
+
     const extractedFiles = fs.existsSync(nativesDir) ? fs.readdirSync(nativesDir) : [];
     console.log(`[Natives] 提取完成，共 ${extractedFiles.length} 个文件: ${extractedFiles.join(', ')}`);
-
-    try {
-        const AdmZipCleanup = require('adm-zip');
-        const existingFiles = new Set();
-        for (const nativeJar of nativeJars) {
-            const zip = new AdmZipCleanup(nativeJar);
-            for (const entry of zip.getEntries()) {
-                if (entry.isDirectory) continue;
-                const en = entry.entryName.toLowerCase();
-                if (en.endsWith('.dll') || en.endsWith('.so') || en.endsWith('.dylib') || en.endsWith('.jnilib')) {
-                    const fileName = path.basename(entry.entryName);
-                    existingFiles.add(fileName.toLowerCase());
-                }
-            }
-        }
-        if (fs.existsSync(nativesDir)) {
-            for (const f of fs.readdirSync(nativesDir)) {
-                const fl = f.toLowerCase();
-                if ((fl.endsWith('.dll') || fl.endsWith('.so') || fl.endsWith('.dylib') || fl.endsWith('.jnilib')) && !existingFiles.has(fl)) {
-                    console.log('[Natives] Cleaned stale:', f);
-                    try { fs.unlinkSync(path.join(nativesDir, f)); } catch (_) {}
-                }
-            }
-        }
-    } catch (_) {}
 
     return nativesDir;
 }
