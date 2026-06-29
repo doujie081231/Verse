@@ -28,9 +28,9 @@
  */
 
 /**
- * 自定义文件浏览器 (PCL2 Style)
+ * 自定义文件浏览器
  * ============================================================================
- * 提供仿 PCL2 启动器风格的文件夹/文件选择对话框。
+ * 提供文件夹/文件选择对话框。
  *
  * 功能：
  * 1. 文件夹导航 - 双飘面板和路径栏导航
@@ -775,23 +775,21 @@ class FileBrowser {
 // 创建全局单例实例
 const fileBrowser = new FileBrowser();
 
-// ============================================================================
-// 扩展 API 对象 - 添加文件浏览器相关的后端 API 调用方法
-// ============================================================================
+/* 扩展 API 对象 - 添加文件浏览器相关的后端 API 调用方法 */
 if (typeof API !== 'undefined') {
     Object.assign(API, {
-        getDefaultModPath: async function() {
+        getDefaultModPath: async () => {
             if (window.electronAPI && window.electronAPI.getDefaultModPath) {
                 return await window.electronAPI.getDefaultModPath();
             }
             return apiGet('/api/filesystem/default-mod-path');
         },
 
-        showCustomFileDialog: function(options, callback) {
+        showCustomFileDialog: (options, callback) => {
             fileBrowser.open(options, callback);
         },
 
-        openModSaveLocation: function(defaultPath, callback) {
+        openModSaveLocation: (defaultPath, callback) => {
             fileBrowser.open({
                 title: '选择保存位置',
                 defaultPath: defaultPath,

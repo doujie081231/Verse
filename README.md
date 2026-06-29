@@ -63,8 +63,14 @@ VersePC/
 ├── preload.cjs              # 安全预加载脚本
 ├── index.html               # 主界面 (SPA)
 ├── editor.html              # 代码编辑器
-├── css/                     # 样式文件
-│   ├── style.css            # 主样式
+├── css/                     # 样式文件（按功能模块拆分）
+│   ├── base.css             # 基础变量
+│   ├── layout.css           # 布局
+│   ├── versions.css         # 版本管理
+│   ├── launch.css           # 启动
+│   ├── mods.css             # 模组
+│   ├── settings.css         # 设置
+│   ├── components.css       # 组件
 │   └── themes.css           # 主题色方案
 ├── js/                      # 前端脚本
 │   ├── app.js               # 前端主应用逻辑入口
@@ -77,10 +83,11 @@ VersePC/
 │   ├── updater.js           # 自动更新
 │   ├── protocol-handler.js  # 自定义协议处理
 │   └── editor-terminal.js   # 编辑器与终端
-├── server/                  # 业务逻辑模块
-│   ├── index.js             # 服务入口
-│   ├── routes/              # API 路由
-│   └── handlers/            # 业务处理器
+├── server/                  # 业务逻辑模块（模块化结构）
+│   ├── api/routes/          # API 路由
+│   ├── modpack/             # 整合包模块
+│   ├── modloaders/          # 加载器模块
+│   └── launch/              # 启动模块
 ├── activation/              # 激活验证模块
 ├── img/                     # 图标与图片资源
 └── plugins/                 # 插件目录
