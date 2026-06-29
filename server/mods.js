@@ -60,7 +60,7 @@ async function checkModUpdates(versionId) {
             `${ctx.urls.MODRINTH_API}/version_files`,
             'POST',
             JSON.stringify({ hashes: hashList, algorithm: 'sha1' }),
-            { 'Content-Type': 'application/json', 'User-Agent': 'VersePC/2.0 (PCL2)' }
+            { 'Content-Type': 'application/json', 'User-Agent': 'VersePC/2.0' }
         );
 
         const projectIds = [...new Set(Object.values(versionRes).map(v => v.project_id))];

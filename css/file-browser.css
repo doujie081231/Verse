@@ -28,7 +28,7 @@
  */
 
 /**
- * 自定义文件浏览器样式表 (PCL2 Style)
+ * 自定义文件浏览器样式表
  * ============================================================================
  * 样式分区：
  * 1. 遮罩层和主容器 - .file-browser-overlay, .file-browser-container
@@ -40,7 +40,7 @@
  * 7. 加载动画和图标
  */
 
-/* ====== 自定义文件浏览器 (PCL2 Style) ====== */
+/* ====== 自定义文件浏览器 ====== */
 
 .file-browser-overlay {
     position: fixed;
@@ -122,7 +122,7 @@
     color: var(--text-muted);
     cursor: pointer;
     border-radius: 6px;
-    transition: all 0.15s ease;
+    transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .fb-close-btn:hover {
@@ -157,7 +157,7 @@
     color: var(--text-secondary);
     cursor: pointer;
     border-radius: 6px;
-    transition: all 0.15s ease;
+    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
     flex-shrink: 0;
 }
 
@@ -229,7 +229,7 @@
     color: var(--text-secondary);
     cursor: pointer;
     border-radius: 6px;
-    transition: all 0.15s ease;
+    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
     flex-shrink: 0;
 }
 
@@ -284,7 +284,7 @@
     font-size: 13px;
     color: var(--text-secondary);
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: background-color 0.15s ease, color 0.15s ease;
     border-left: 2px solid transparent;
 }
 
@@ -317,7 +317,7 @@
     font-size: 12.5px;
     color: var(--text-muted);
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: background-color 0.15s ease, color 0.15s ease;
     border-left: 2px solid transparent;
 }
 
@@ -379,7 +379,7 @@
     border: none;
     color: var(--text-muted);
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .fb-view-btn.active {
@@ -411,7 +411,7 @@
     color: var(--text-primary);
     font-size: 12.5px;
     outline: none;
-    transition: all 0.15s ease;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .fb-search-input:focus {
@@ -482,7 +482,7 @@
     gap: 12px;
     padding: 8px 16px;
     cursor: pointer;
-    transition: all 0.12s ease;
+    transition: background-color 0.12s ease;
     border-bottom: 1px solid transparent;
 }
 
@@ -588,7 +588,7 @@
     color: var(--text-primary);
     font-size: 13px;
     outline: none;
-    transition: all 0.15s ease;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .fb-input-field:focus {
@@ -606,7 +606,7 @@
     font-size: 13px;
     outline: none;
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: border-color 0.15s ease;
 }
 
 .fb-select-field:focus {
@@ -655,7 +655,7 @@
     font-size: 13px;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -707,7 +707,7 @@
     color: var(--text-secondary);
     border-radius: 5px;
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
     display: flex;
     align-items: center;
     gap: 5px;

@@ -1,4 +1,7 @@
 /**
+ * @file server.js
+ * @description VersePC 服务端入口模块，负责 ENOTDIR 全局修复、子模块加载与路由依赖注入、原生 API/SSE 处理、启动信息打印与 Microsoft token 自动刷新、关闭时下载任务中断。
+ *
  * VersePC - Minecraft Launcher
  * Copyright (c) 2026 豆杰. All Rights Reserved.
  *
@@ -42,9 +45,7 @@
  * API 路由分发由 server/api/router.js 处理，各路由模块位于 server/api/routes/。
  */
 
-// ============================================================================
-// 核心模块导入 - 必须在 ENOTDIR monkey-patch 之前
-// ============================================================================
+/* 核心模块导入 - 必须在 ENOTDIR monkey-patch 之前 */
 const fs = require('fs');
 const path = require('path');
 const url = require('url');
@@ -77,57 +78,55 @@ const { EventEmitter } = require('events');
 */
 const _origMkdirSync = fs.mkdirSync;
 fs.mkdirSync = function patchedMkdirSync(dir, options) {
-    try {
-        return _origMkdirSync.call(this, dir, options);
-    } catch (e) {
-        if (e && e.code === 'ENOTDIR' && typeof dir === 'string') {
-            const parts = dir.split(path.sep);
-            for (let i = 1; i <= parts.length; i++) {
-                const partial = parts.slice(0, i).join(path.sep);
-                if (partial) {
-                    try {
-                        const st = fs.statSync(partial);
-                        if (!st.isDirectory()) {
-                            fs.unlinkSync(partial);
-                            console.log(`[ENOTDIR-Fix] 清理异常文件: ${partial}`);
-                        }
-                    } catch (_) {}
-                }
+  try {
+    return _origMkdirSync.call(this, dir, options);
+  } catch (e) {
+    if (e && e.code === 'ENOTDIR' && typeof dir === 'string') {
+      const parts = dir.split(path.sep);
+      for (let i = 1; i <= parts.length; i++) {
+        const partial = parts.slice(0, i).join(path.sep);
+        if (partial) {
+          try {
+            const st = fs.statSync(partial);
+            if (!st.isDirectory()) {
+              fs.unlinkSync(partial);
+              console.log(`[ENOTDIR-Fix] 清理异常文件: ${partial}`);
             }
-            return _origMkdirSync.call(this, dir, options);
+          } catch (_) {}
         }
-        throw e;
+      }
+      return _origMkdirSync.call(this, dir, options);
     }
+    throw e;
+  }
 };
 
 const _origPromisesMkdir = fs.promises.mkdir;
 fs.promises.mkdir = async function patchedPromisesMkdir(dir, options) {
-    try {
-        return await _origPromisesMkdir.call(this, dir, options);
-    } catch (e) {
-        if (e && e.code === 'ENOTDIR' && typeof dir === 'string') {
-            const parts = dir.split(path.sep);
-            for (let i = 1; i <= parts.length; i++) {
-                const partial = parts.slice(0, i).join(path.sep);
-                if (partial) {
-                    try {
-                        const st = await fs.promises.stat(partial);
-                        if (!st.isDirectory()) {
-                            await fs.promises.unlink(partial);
-                            console.log(`[ENOTDIR-Fix] 清理异常文件: ${partial}`);
-                        }
-                    } catch (_) {}
-                }
+  try {
+    return await _origPromisesMkdir.call(this, dir, options);
+  } catch (e) {
+    if (e && e.code === 'ENOTDIR' && typeof dir === 'string') {
+      const parts = dir.split(path.sep);
+      for (let i = 1; i <= parts.length; i++) {
+        const partial = parts.slice(0, i).join(path.sep);
+        if (partial) {
+          try {
+            const st = await fs.promises.stat(partial);
+            if (!st.isDirectory()) {
+              await fs.promises.unlink(partial);
+              console.log(`[ENOTDIR-Fix] 清理异常文件: ${partial}`);
             }
-            return await _origPromisesMkdir.call(this, dir, options);
+          } catch (_) {}
         }
-        throw e;
+      }
+      return await _origPromisesMkdir.call(this, dir, options);
     }
+    throw e;
+  }
 };
 
-// ============================================================================
-// 子模块加载
-// ============================================================================
+/* 子模块加载 */
 const ctx = require('./server/context');
 const utils = require('./server/utils');
 const httpClient = require('./server/http-client');
@@ -147,9 +146,7 @@ const accounts = require('./server/accounts');
 const router = require('./server/api/router');
 const { checkTampering: _chkTam } = require('./activation/activation-verify');
 
-// ============================================================================
-// 路由依赖注入 - 向各 route 模块传递业务函数
-// ============================================================================
+/* 路由依赖注入 - 向各 route 模块传递业务函数 */
 router.deps.utils = utils;
 router.deps.http = httpClient;
 router.deps.skins = skins;
@@ -166,351 +163,369 @@ router.deps.natives = natives;
 router.deps.launch = launch;
 router.deps.accounts = accounts;
 
-// ============================================================================
-// handleNativeAPI - 原生 Electron API 处理器 (不经过 HTTP 模拟层)
-// ============================================================================
 /**
+ * handleNativeAPI - 原生 Electron API 处理器 (不经过 HTTP 模拟层)
+ *
  * @param {string} pathname - API 路径 (如 '/api/versions')
  * @param {string} method - HTTP 方法 (GET/POST/DELETE)
  * @param {string|null} body - POST/PUT 请求体
  * @param {Object} query - URL 查询参数
  * @param {string} [incomingContentType] - 请求 Content-Type
  * @returns {Promise<{status: number, headers: Object, body: Buffer}>}
+ * @throws {Error} 路由处理出现未捕获异常时返回 500
  */
 async function handleNativeAPI(pathname, method, body, query, incomingContentType) {
-    const req = new EventEmitter();
-    req.method = method;
-    req.url = pathname + (query && Object.keys(query).length > 0 ? '?' + new URLSearchParams(query).toString() : '');
-    req.headers = { 'content-type': incomingContentType || 'application/json' };
+  const req = new EventEmitter();
+  req.method = method;
+  req.url = pathname + (query && Object.keys(query).length > 0 ? '?' + new URLSearchParams(query).toString() : '');
+  req.headers = { 'content-type': incomingContentType || 'application/json' };
 
-    const res = new EventEmitter();
-    let statusCode = 200;
-    let headers = {};
-    let chunks = [];
-    let finished = false;
-    let finishResolve = null;
-    const finishPromise = new Promise((resolve) => { finishResolve = resolve; });
+  const res = new EventEmitter();
+  let statusCode = 200;
+  let headers = {};
+  let chunks = [];
+  let finished = false;
+  let finishResolve = null;
+  const finishPromise = new Promise((resolve) => { finishResolve = resolve; });
 
-    res.statusCode = 200;
-    res.headersSent = false;
-    res.finished = false;
-    res.setHeader = (name, value) => { headers[name.toLowerCase()] = value; };
-    res.getHeader = (name) => headers[name.toLowerCase()];
-    res.removeHeader = (name) => { delete headers[name.toLowerCase()]; };
-    res.writeHead = (code, hdrs) => {
-        statusCode = code;
-        res.statusCode = code;
-        res.headersSent = true;
-        if (hdrs) Object.entries(hdrs).forEach(([k, v]) => { headers[k.toLowerCase()] = v; });
-    };
-    res.write = (data) => {
-        chunks.push(Buffer.isBuffer(data) ? data : Buffer.from(data));
-    };
-    res.end = (data) => {
-        if (data) chunks.push(Buffer.isBuffer(data) ? data : Buffer.from(data));
-        finished = true;
-        res.finished = true;
-        res.emit('finish');
-        if (finishResolve) { finishResolve(); finishResolve = null; }
-    };
-    res.flushHeaders = () => {};
+  res.statusCode = 200;
+  res.headersSent = false;
+  res.finished = false;
+  res.setHeader = (name, value) => { headers[name.toLowerCase()] = value; };
+  res.getHeader = (name) => headers[name.toLowerCase()];
+  res.removeHeader = (name) => { delete headers[name.toLowerCase()]; };
+  res.writeHead = (code, hdrs) => {
+    statusCode = code;
+    res.statusCode = code;
+    res.headersSent = true;
+    if (hdrs) Object.entries(hdrs).forEach(([k, v]) => { headers[k.toLowerCase()] = v; });
+  };
+  res.write = (data) => {
+    chunks.push(Buffer.isBuffer(data) ? data : Buffer.from(data));
+  };
+  res.end = (data) => {
+    if (data) chunks.push(Buffer.isBuffer(data) ? data : Buffer.from(data));
+    finished = true;
+    res.finished = true;
+    res.emit('finish');
+    if (finishResolve) { finishResolve(); finishResolve = null; }
+  };
+  res.flushHeaders = () => {};
 
-    try {
-        const parsedUrl = url.parse(req.url, true);
+  try {
+    const parsedUrl = url.parse(req.url, true);
 
-        if (_chkTam() !== 'ok') {
-            res.writeHead(403, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: 'unauthorized' }));
-            await finishPromise;
-            return { status: 403, headers, body: Buffer.concat(chunks) };
-        }
-
-        const apiResult = router.handleAPI(pathname, req, res, parsedUrl);
-
-        await new Promise(r => setImmediate(() => {
-            if (body !== null && body !== undefined) {
-                const buf = Buffer.isBuffer(body) ? body : Buffer.from(typeof body === 'string' ? body : JSON.stringify(body));
-                req.emit('data', buf);
-            }
-            req.emit('end');
-            setImmediate(r);
-        }));
-
-        await apiResult;
-
-        if (!finished) {
-            await finishPromise;
-        }
-    } catch (e) {
-        console.error(`[Server] handleNativeAPI error for ${pathname}:`, e.message || e);
-        if (!finished) {
-            statusCode = 500;
-            chunks = [Buffer.from(JSON.stringify({ error: '服务器内部错误', detail: e.message }))];
-            finished = true;
-            if (finishResolve) { finishResolve(); finishResolve = null; }
-        }
+    if (_chkTam() !== 'ok') {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'unauthorized' }));
+      await finishPromise;
+      return { status: 403, headers, body: Buffer.concat(chunks) };
     }
 
-    return {
-        status: statusCode,
-        headers,
-        body: Buffer.concat(chunks)
-    };
+    const apiResult = router.handleAPI(pathname, req, res, parsedUrl);
+
+    await new Promise((r) => setImmediate(() => {
+      if (body !== null && body !== undefined) {
+        const buf = Buffer.isBuffer(body) ? body : Buffer.from(typeof body === 'string' ? body : JSON.stringify(body));
+        req.emit('data', buf);
+      }
+      req.emit('end');
+      setImmediate(r);
+    }));
+
+    await apiResult;
+
+    if (!finished) {
+      await finishPromise;
+    }
+  } catch (e) {
+    console.error(`[Server] handleNativeAPI error for ${pathname}:`, e.message || e);
+    if (!finished) {
+      statusCode = 500;
+      chunks = [Buffer.from(JSON.stringify({ error: '服务器内部错误', detail: e.message }))];
+      finished = true;
+      if (finishResolve) { finishResolve(); finishResolve = null; }
+    }
+  }
+
+  return {
+    status: statusCode,
+    headers,
+    body: Buffer.concat(chunks)
+  };
 }
 
-// ============================================================================
-// handleNativeSSE - 原生 Electron SSE 处理器 (流式响应)
-// ============================================================================
 /**
- * @param {string} pathname
- * @param {string} method
- * @param {string|null} body
- * @param {Object} query
+ * handleNativeSSE - 原生 Electron SSE 处理器 (流式响应)
+ *
+ * @param {string} pathname - API 路径
+ * @param {string} method - HTTP 方法
+ * @param {string|null} body - 请求体
+ * @param {Object} query - 查询参数
  * @param {Function} onData - 收到数据块时回调 (chunk: Buffer) => void
  * @returns {{status: number, headers: Object, finishPromise: Promise}}
  */
 function handleNativeSSE(pathname, method, body, query, onData) {
-    const req = new EventEmitter();
-    req.method = method;
-    req.url = pathname + (query && Object.keys(query).length > 0 ? '?' + new URLSearchParams(query).toString() : '');
-    req.headers = { 'content-type': 'application/json' };
+  const req = new EventEmitter();
+  req.method = method;
+  req.url = pathname + (query && Object.keys(query).length > 0 ? '?' + new URLSearchParams(query).toString() : '');
+  req.headers = { 'content-type': 'application/json' };
 
-    const res = new EventEmitter();
-    let statusCode = 200;
-    let headers = {};
-    let finishResolve = null;
-    const finishPromise = new Promise((resolve) => { finishResolve = resolve; });
+  const res = new EventEmitter();
+  let statusCode = 200;
+  let headers = {};
+  let finishResolve = null;
+  const finishPromise = new Promise((resolve) => { finishResolve = resolve; });
 
-    res.statusCode = 200;
-    res.headersSent = false;
-    res.finished = false;
-    res.setHeader = (name, value) => { headers[name.toLowerCase()] = value; };
-    res.getHeader = (name) => headers[name.toLowerCase()];
-    res.writeHead = (code, hdrs) => {
-        statusCode = code;
-        if (hdrs) Object.entries(hdrs).forEach(([k, v]) => { headers[k.toLowerCase()] = v; });
-    };
-    res.write = (data) => {
-        const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
-        if (onData) onData(buf);
-    };
-    res.end = (data) => {
-        if (data) {
-            const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
-            if (onData) onData(buf);
-        }
-        res.finished = true;
-        res.emit('finish');
-        if (finishResolve) { finishResolve(); finishResolve = null; }
-    };
-    res.flushHeaders = () => {};
+  res.statusCode = 200;
+  res.headersSent = false;
+  res.finished = false;
+  res.setHeader = (name, value) => { headers[name.toLowerCase()] = value; };
+  res.getHeader = (name) => headers[name.toLowerCase()];
+  res.writeHead = (code, hdrs) => {
+    statusCode = code;
+    if (hdrs) Object.entries(hdrs).forEach(([k, v]) => { headers[k.toLowerCase()] = v; });
+  };
+  res.write = (data) => {
+    const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
+    if (onData) onData(buf);
+  };
+  res.end = (data) => {
+    if (data) {
+      const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
+      if (onData) onData(buf);
+    }
+    res.finished = true;
+    res.emit('finish');
+    if (finishResolve) { finishResolve(); finishResolve = null; }
+  };
+  res.flushHeaders = () => {};
 
-    const parsedUrl = url.parse(req.url, true);
+  const parsedUrl = url.parse(req.url, true);
 
-    setImmediate(() => {
-        if (body !== null && body !== undefined) {
-            req.emit('data', Buffer.from(typeof body === 'string' ? body : JSON.stringify(body)));
-        }
-        req.emit('end');
-    });
+  setImmediate(() => {
+    if (body !== null && body !== undefined) {
+      req.emit('data', Buffer.from(typeof body === 'string' ? body : JSON.stringify(body)));
+    }
+    req.emit('end');
+  });
 
-    router.handleAPI(pathname, req, res, parsedUrl).then(() => {
-        if (!res.finished) {
-            finishPromise.then(() => {
-                if (onData) onData(null); // signal EOF
-            });
-        } else {
-            if (onData) onData(null); // signal EOF
-        }
-    }).catch((e) => {
-        console.error('SSE handler error:', e);
-        if (onData) onData(null);
-    });
+  router.handleAPI(pathname, req, res, parsedUrl).then(() => {
+    if (!res.finished) {
+      finishPromise.then(() => {
+        if (onData) onData(null); // 通知 EOF
+      });
+    } else {
+      if (onData) onData(null); // 通知 EOF
+    }
+  }).catch((e) => {
+    console.error('SSE handler error:', e);
+    if (onData) onData(null);
+  });
 
-    return { status: statusCode, headers, finishPromise };
+  return { status: statusCode, headers, finishPromise };
 }
 
-// ============================================================================
-// cleanupOnShutdown - 关闭时中断所有下载任务
-// ============================================================================
+/**
+ * cleanupOnShutdown - 关闭时中断所有下载任务
+ * 遍历各类会话（版本安装、模组下载、修复、Java 安装、启动等），
+ * 将进行中的任务标记为取消并中止网络请求，清理未完成的版本目录。
+ *
+ * @returns {void}
+ */
 function cleanupOnShutdown() {
-    console.log('[Shutdown] 开始中断所有下载任务...');
+  console.log('[Shutdown] 开始中断所有下载任务...');
 
-    for (const [sessionId, session] of ctx.sessions.installSessions) {
-        if (session.status === 'downloading' || session.status === 'preparing') {
-            session.status = 'cancelled';
-            session.stage = 'cancelled';
-            session.message = '应用已关闭';
+  for (const [sessionId, session] of ctx.sessions.installSessions) {
+    if (session.status === 'downloading' || session.status === 'preparing') {
+      session.status = 'cancelled';
+      session.stage = 'cancelled';
+      session.message = '应用已关闭';
 
-            if (session._abortController) {
-                try { session._abortController.abort(); } catch (e) {}
-            }
+      if (session._abortController) {
+        try { session._abortController.abort(); } catch (e) {}
+      }
 
-            if (session.versionId) {
-                const versionDir = path.join(ctx.dirs.VERSIONS_DIR, session.versionId);
-                versions.cleanupIncompleteVersion(versionDir);
-            }
-        }
+      if (session.versionId) {
+        const versionDir = path.join(ctx.dirs.VERSIONS_DIR, session.versionId);
+        versions.cleanupIncompleteVersion(versionDir);
+      }
     }
+  }
 
-    for (const [sessionId, session] of ctx.sessions.modDownloadSessions) {
-        if (session.status === 'downloading' || session.status === 'install') {
-            session.status = 'cancelled';
-            session.message = '应用已关闭';
+  for (const [sessionId, session] of ctx.sessions.modDownloadSessions) {
+    if (session.status === 'downloading' || session.status === 'install') {
+      session.status = 'cancelled';
+      session.message = '应用已关闭';
 
-            if (session._abortController) {
-                try { session._abortController.abort(); } catch (e) {}
-            }
-        }
+      if (session._abortController) {
+        try { session._abortController.abort(); } catch (e) {}
+      }
     }
+  }
 
-    console.log('[Shutdown] 下载任务清理完成');
+  if (ctx.sessions.customDownloadSessions) {
+    try { ctx.sessions.customDownloadSessions.clear(); } catch (e) {}
+  }
+  if (ctx.sessions.repairSessions) {
+    try { ctx.sessions.repairSessions.clear(); } catch (e) {}
+  }
+  if (ctx.sessions.javaInstallSessions) {
+    try { ctx.sessions.javaInstallSessions.clear(); } catch (e) {}
+  }
+  if (ctx.sessions.launchSessions) {
+    try { ctx.sessions.launchSessions.clear(); } catch (e) {}
+  }
+
+  console.log('[Shutdown] 下载任务清理完成');
 }
 
-// ============================================================================
-// logStartupInfo - 启动信息打印 + Microsoft token 自动刷新
-// ============================================================================
+/**
+ * logStartupInfo - 启动信息打印 + Microsoft token 自动刷新
+ * 1. 日志轮转与已安装版本校验
+ * 2. 打印数据目录、平台、Java、版本清单等信息
+ * 3. 异步刷新微软账户的 XboxLive/Minecraft token
+ *
+ * @returns {void}
+ */
 function logStartupInfo() {
-    utils.rotateLogs();
-    versions.validateInstalledVersions();
-    console.log(`\n  VersePC - Minecraft Launcher`);
-    console.log(`  ────────────────────────────────────────`);
-    console.log(`  Data:    ${ctx.dirs.DATA_DIR}`);
-    console.log(`  Platform: ${utils.getPlatformKey()}`);
-    console.log(`  ────────────────────────────────────────`);
+  utils.rotateLogs();
+  versions.validateInstalledVersions();
+  console.log(`\n  VersePC - Minecraft Launcher`);
+  console.log(`  ────────────────────────────────────────`);
+  console.log(`  Data:    ${ctx.dirs.DATA_DIR}`);
+  console.log(`  Platform: ${utils.getPlatformKey()}`);
+  console.log(`  ────────────────────────────────────────`);
 
-    const installed = versions.getInstalledVersions();
-    if (installed.length > 0) {
-        console.log(`  Installed:       ${installed.map(v => v.id).join(', ')}`);
+  const installed = versions.getInstalledVersions();
+  if (installed.length > 0) {
+    console.log(`  Installed:       ${installed.map((v) => v.id).join(', ')}`);
+  }
+  console.log('');
+
+  setTimeout(() => {
+    const javaList = [...java.detectBundledJava(), ...java.detectSystemJava()];
+    if (javaList.length > 0) {
+      console.log(`  Java:            ${javaList[0].version} (${javaList[0].path})`);
+    } else {
+      console.log('  Java:            未检测到');
     }
-    console.log('');
 
-    setTimeout(() => {
-        const javaList = [...java.detectBundledJava(), ...java.detectSystemJava()];
-        if (javaList.length > 0) {
-            console.log(`  Java:            ${javaList[0].version} (${javaList[0].path})`);
-        } else {
-            console.log('  Java:            未检测到');
-        }
+    versions.getVersionManifest().then((manifest) => {
+      console.log(`  Latest Release:  ${manifest.latest.release}`);
+      console.log(`  Latest Snapshot: ${manifest.latest.snapshot}`);
+      console.log(`  Total Versions:  ${manifest.versions.length}`);
+    }).catch(() => {
+      console.log('  Warning: Could not fetch version manifest (will retry)');
+    });
+  }, 100);
 
-        versions.getVersionManifest().then(manifest => {
-            console.log(`  Latest Release:  ${manifest.latest.release}`);
-            console.log(`  Latest Snapshot: ${manifest.latest.snapshot}`);
-            console.log(`  Total Versions:  ${manifest.versions.length}`);
-        }).catch(() => {
-            console.log('  Warning: Could not fetch version manifest (will retry)');
-        });
-    }, 100);
-
-    setTimeout(async () => {
+  setTimeout(async () => {
+    try {
+      const accts = accounts.loadAccounts();
+      const msAccounts = accts.filter((a) => a.type === 'microsoft' && a.refreshToken);
+      if (msAccounts.length === 0) return;
+      const now = Date.now();
+      for (const account of msAccounts) {
+        const tokenExpiresAt = account.tokenExpiresAt || 0;
+        if (tokenExpiresAt && now < tokenExpiresAt - 3600000) continue;
         try {
-            const accts = accounts.loadAccounts();
-            const msAccounts = accts.filter(a => a.type === 'microsoft' && a.refreshToken);
-            if (msAccounts.length === 0) return;
-            const now = Date.now();
-            for (const account of msAccounts) {
-                const tokenExpiresAt = account.tokenExpiresAt || 0;
-                if (tokenExpiresAt && now < tokenExpiresAt - 3600000) continue;
-                try {
-                    console.log(`[Auth] Auto-refreshing token for: ${account.username || account.id}`);
-                    const tokenUrl = `https://login.microsoftonline.com/consumers/oauth2/v2.0/token`;
-                    const postData = `grant_type=refresh_token&client_id=${ctx.urls.MS_CLIENT_ID}&refresh_token=${encodeURIComponent(account.refreshToken)}&scope=XboxLive.signin+offline_access`;
-                    const msTokenResult = await new Promise((resolve, reject) => {
-                        const req = https.request(tokenUrl, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(postData) },
-                            timeout: 15000
-                        }, (res) => {
-                            let data = '';
-                            res.on('data', chunk => data += chunk);
-                            res.on('end', () => {
-                                if (res.statusCode >= 400) {
-                                    try { const errBody = JSON.parse(data); resolve(errBody); } catch (e) { resolve({ error: `HTTP ${res.statusCode}` }); }
-                                    return;
-                                }
-                                try { resolve(JSON.parse(data)); } catch (e) { reject(new Error('Invalid response')); }
-                            });
-                        });
-                        req.on('error', (e) => reject(e));
-                        req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
-                        req.write(postData);
-                        req.end();
-                    });
-                    if (!msTokenResult.error && msTokenResult.access_token) {
-                        const msAccessToken = msTokenResult.access_token;
-                        const msRefreshTokenNew = msTokenResult.refresh_token || account.refreshToken;
-                        const xblResult = await httpClient.fetchJSONWithMethod('https://user.auth.xboxlive.com/user/authenticate', 'POST', JSON.stringify({
-                            Properties: { AuthMethod: 'RPS', SiteName: 'user.auth.xboxlive.com', RpsTicket: `d=${msAccessToken}` },
-                            RelyingParty: 'http://auth.xboxlive.com', TokenType: 'JWT'
-                        }), { 'Content-Type': 'application/json' });
-                        const xblToken = xblResult.Token;
-                        const xblUhs = xblResult.DisplayClaims?.xui?.[0]?.uhs || '';
-                        const xstsResult = await httpClient.fetchJSONWithMethod('https://xsts.auth.xboxlive.com/xsts/authorize', 'POST', JSON.stringify({
-                            Properties: { SandboxId: 'RETAIL', UserTokens: [xblToken] },
-                            RelyingParty: 'rp://api.minecraftservices.com/', TokenType: 'JWT'
-                        }), { 'Content-Type': 'application/json' });
-                        if (!xstsResult.XErr) {
-                            const xstsToken = xstsResult.Token;
-                            const xstsUhs = xstsResult.DisplayClaims?.xui?.[0]?.uhs || xblUhs;
-                            const mcResult = await httpClient.fetchJSONWithMethod('https://api.minecraftservices.com/authentication/login_with_xbox', 'POST', JSON.stringify({
-                                identityToken: `XBL3.0 x=${xstsUhs};${xstsToken}`
-                            }), { 'Content-Type': 'application/json' });
-                            if (mcResult.access_token) {
-                                const refreshNow = new Date();
-                                account.accessToken = mcResult.access_token;
-                                account.refreshToken = msRefreshTokenNew;
-                                account.tokenExpiresAt = refreshNow.getTime() + (msTokenResult.expires_in || 3600) * 1000;
-                                account.lastRefreshed = refreshNow.toISOString();
-                                try {
-                                    const refreshProfile = await httpClient.fetchJSONWithAuth('https://api.minecraftservices.com/minecraft/profile', mcResult.access_token);
-                                    if (refreshProfile && refreshProfile.skins && Array.isArray(refreshProfile.skins)) {
-                                        const activeSkin = refreshProfile.skins.find(s => s.state === 'ACTIVE');
-                                        if (activeSkin) {
-                                            account.skinUrl = activeSkin.url;
-                                            account.skinModel = activeSkin.variant === 'SLIM' ? 'slim' : 'default';
-                                        }
-                                    }
-                                    if (refreshProfile && refreshProfile.name) account.username = refreshProfile.name;
-                                } catch (pfErr) { console.warn(`[Auth] Refresh skin failed: ${pfErr.message}`); }
-                                const accts2 = accounts.loadAccounts();
-                                const idx = accts2.findIndex(a => a.id === account.id);
-                                if (idx >= 0) { accts2[idx] = { ...accts2[idx], ...account }; accounts.saveAccounts(accts2); }
-                                console.log(`[Auth] Token refreshed successfully for: ${account.username}`);
-                            }
-                        }
-                    } else {
-                        console.warn(`[Auth] Token refresh failed for ${account.username}: ${msTokenResult.error}`);
-                    }
-                } catch (e) {
-                    console.warn(`[Auth] Token refresh error for ${account.username}: ${e.message}`);
+          console.log(`[Auth] Auto-refreshing token for: ${account.username || account.id}`);
+          const tokenUrl = `https://login.microsoftonline.com/consumers/oauth2/v2.0/token`;
+          const postData = `grant_type=refresh_token&client_id=${ctx.urls.MS_CLIENT_ID}&refresh_token=${encodeURIComponent(account.refreshToken)}&scope=XboxLive.signin+offline_access`;
+          const msTokenResult = await new Promise((resolve, reject) => {
+            const req = https.request(tokenUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(postData) },
+              timeout: 15000
+            }, (res) => {
+              let data = '';
+              res.on('data', (chunk) => data += chunk);
+              res.on('end', () => {
+                if (res.statusCode >= 400) {
+                  try { const errBody = JSON.parse(data); resolve(errBody); } catch (e) { resolve({ error: `HTTP ${res.statusCode}` }); }
+                  return;
                 }
+                try { resolve(JSON.parse(data)); } catch (e) { reject(new Error('Invalid response')); }
+              });
+            });
+            req.on('error', (e) => reject(e));
+            req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
+            req.write(postData);
+            req.end();
+          });
+          if (!msTokenResult.error && msTokenResult.access_token) {
+            const msAccessToken = msTokenResult.access_token;
+            const msRefreshTokenNew = msTokenResult.refresh_token || account.refreshToken;
+            const xblResult = await httpClient.fetchJSONWithMethod('https://user.auth.xboxlive.com/user/authenticate', 'POST', JSON.stringify({
+              Properties: { AuthMethod: 'RPS', SiteName: 'user.auth.xboxlive.com', RpsTicket: `d=${msAccessToken}` },
+              RelyingParty: 'http://auth.xboxlive.com', TokenType: 'JWT'
+            }), { 'Content-Type': 'application/json' });
+            const xblToken = xblResult.Token;
+            const xblUhs = xblResult.DisplayClaims?.xui?.[0]?.uhs || '';
+            const xstsResult = await httpClient.fetchJSONWithMethod('https://xsts.auth.xboxlive.com/xsts/authorize', 'POST', JSON.stringify({
+              Properties: { SandboxId: 'RETAIL', UserTokens: [xblToken] },
+              RelyingParty: 'rp://api.minecraftservices.com/', TokenType: 'JWT'
+            }), { 'Content-Type': 'application/json' });
+            if (!xstsResult.XErr) {
+              const xstsToken = xstsResult.Token;
+              const xstsUhs = xstsResult.DisplayClaims?.xui?.[0]?.uhs || xblUhs;
+              const mcResult = await httpClient.fetchJSONWithMethod('https://api.minecraftservices.com/authentication/login_with_xbox', 'POST', JSON.stringify({
+                identityToken: `XBL3.0 x=${xstsUhs};${xstsToken}`
+              }), { 'Content-Type': 'application/json' });
+              if (mcResult.access_token) {
+                const refreshNow = new Date();
+                account.accessToken = mcResult.access_token;
+                account.refreshToken = msRefreshTokenNew;
+                account.tokenExpiresAt = refreshNow.getTime() + (msTokenResult.expires_in || 3600) * 1000;
+                account.lastRefreshed = refreshNow.toISOString();
+                try {
+                  const refreshProfile = await httpClient.fetchJSONWithAuth('https://api.minecraftservices.com/minecraft/profile', mcResult.access_token);
+                  if (refreshProfile && refreshProfile.skins && Array.isArray(refreshProfile.skins)) {
+                    const activeSkin = refreshProfile.skins.find((s) => s.state === 'ACTIVE');
+                    if (activeSkin) {
+                      account.skinUrl = activeSkin.url;
+                      account.skinModel = activeSkin.variant === 'SLIM' ? 'slim' : 'default';
+                    }
+                  }
+                  if (refreshProfile && refreshProfile.name) account.username = refreshProfile.name;
+                } catch (pfErr) { console.warn(`[Auth] Refresh skin failed: ${pfErr.message}`); }
+                const accts2 = accounts.loadAccounts();
+                const idx = accts2.findIndex((a) => a.id === account.id);
+                if (idx >= 0) { accts2[idx] = { ...accts2[idx], ...account }; accounts.saveAccounts(accts2); }
+                console.log(`[Auth] Token refreshed successfully for: ${account.username}`);
+              }
             }
+          } else {
+            console.warn(`[Auth] Token refresh failed for ${account.username}: ${msTokenResult.error}`);
+          }
         } catch (e) {
-            console.warn(`[Auth] Auto-refresh startup error: ${e.message}`);
+          console.warn(`[Auth] Token refresh error for ${account.username}: ${e.message}`);
         }
-    }, 2000);
+      }
+    } catch (e) {
+      console.warn(`[Auth] Auto-refresh startup error: ${e.message}`);
+    }
+  }, 2000);
 }
 
-// ============================================================================
-// 模块导出 - 保持与原 server.js 相同的 7 个函数签名
-// ============================================================================
+/* 模块导出 - 保持与原 server.js 相同的 7 个函数签名 */
 module.exports = {
-    handleNativeAPI,
-    handleNativeSSE,
-    logStartupInfo,
-    importModpackFromPath: modpack.importModpackFromPath,
-    cleanupOnShutdown,
-    validateInstalledVersions: versions.validateInstalledVersions,
-    setMainWindow: ctx.setMainWindow,
-    // [AI-AUTOGEN-WARNING] performInstallation 在 modloaders.js 中定义，必须在这里重新导出
-    // server/api/routes/versions.js 通过 _server().performInstallation() 调用它
-    // 不要删除这个导出，否则基础版本下载会报 "performInstallation is not a function"
-    performInstallation: modloaders.performInstallation
+  handleNativeAPI,
+  handleNativeSSE,
+  logStartupInfo,
+  importModpackFromPath: modpack.importModpackFromPath,
+  cleanupOnShutdown,
+  cleanupGameLogs: launch.cleanupGameLogs,
+  validateInstalledVersions: versions.validateInstalledVersions,
+  setMainWindow: ctx.setMainWindow,
+  // [AI-AUTOGEN-WARNING] performInstallation 在 modloaders.js 中定义，必须在这里重新导出
+  // server/api/routes/versions.js 通过 _server().performInstallation() 调用它
+  // 不要删除这个导出，否则基础版本下载会报 "performInstallation is not a function"
+  performInstallation: modloaders.performInstallation
 };
 
-// ============================================================================
-// 进程事件监听 - 退出时保存磁盘缓存
-// ============================================================================
+/* 进程事件监听 - 退出时保存磁盘缓存 */
 process.on('exit', () => versions.saveDiskCache());
 process.on('SIGINT', () => { versions.saveDiskCache(); process.exit(); });
 process.on('SIGTERM', () => { versions.saveDiskCache(); process.exit(); });

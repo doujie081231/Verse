@@ -1008,9 +1008,9 @@ const MODPACK_CHINESE_NAMES = {
 };
 
 /**
- * 从 PCL 翻译数据库中查找模组的中文名称
+ * 从翻译数据库中查找模组的中文名称
  * 使用多级匹配策略：
- * 1. 通过 slug 精确匹配（PCL数据，优先）
+ * 1. 通过 slug 精确匹配（翻译数据，优先）
  * 2. 通过本地字典匹配 modId 或 englishName
  * 3. 本地字典前缀/模糊匹配
  *
@@ -1025,9 +1025,9 @@ function getModChineseName(modId, englishName) {
     const name = (englishName || '').toLowerCase().replace(/[\s_]/g, '-');
 
     // 第1级：翻译数据库（8000+ 条，最权威）
-    if (typeof PCL_SLUG_MAP !== 'undefined') {
-        if (PCL_SLUG_MAP[id]) return PCL_SLUG_MAP[id];
-        if (PCL_SLUG_MAP[name]) return PCL_SLUG_MAP[name];
+    if (typeof MOD_SLUG_MAP !== 'undefined') {
+        if (MOD_SLUG_MAP[id]) return MOD_SLUG_MAP[id];
+        if (MOD_SLUG_MAP[name]) return MOD_SLUG_MAP[name];
     }
 
     // 第2级：整合包翻译字典

@@ -34,9 +34,7 @@
  * - DOM缓存(domCache)优化频繁的DOM查询
  */
 
-// ============================================================================
-// 全局状态变量 - 应用数据状态中心
-// ============================================================================
+/* 全局状态变量 - 应用数据状态中心 */
 let currentVersionTab = 'release';
 let allVersions = [];
 let installedVersions = [];
@@ -70,16 +68,14 @@ let modMultiSelectMode = false;
 let modSelectedIds = new Set();
 let modSelectedVersions = new Map();
 
-// ============================================================================
-// 优化基础设施 - DOM缓存、防抖节流等
-// ============================================================================
+/* 优化基础设施 - DOM缓存、防抖节流等 */
 
-// DOM 缓存对象
+/* DOM 缓存对象 */
 
 
 
 
-// ─── 原有函数 ──────────────────────────────────────────────
+/* 原有函数 */
 
 
 
@@ -87,33 +83,35 @@ let modSelectedVersions = new Map();
 
 
 document.addEventListener('DOMContentLoaded', () => {
-    init();
-    setTimeout(initSettingsPages, 500);
-    renderSponsors();
-    loadMachineId();
-    updateActivationStatus();
-    setTimeout(checkAnnouncementPopup, 2000);
+  init();
+  setTimeout(initSettingsPages, 500);
+  renderSponsors();
+  loadMachineId();
+  updateActivationStatus();
+  setTimeout(checkAnnouncementPopup, 2000);
 
-    if (window.electronAPI?.platform && window.electronAPI.platform !== 'win32') {
-        document.querySelectorAll('.win-only').forEach(el => el.style.display = 'none');
-    }
+  if (window.electronAPI?.platform && window.electronAPI.platform !== 'win32') {
+    document.querySelectorAll('.win-only').forEach((el) => (el.style.display = 'none'));
+  }
 
-    let _acChk = 0;
-    const _acTick = async () => {
-        try {
-            const s = await window.electronAPI?.activateStatus?.();
-            if (!s || !s.activated) {
-                _acChk++;
-                if (_acChk > 2) {
-                    document.querySelectorAll('.nav-btn').forEach(b => {
-                        if (b.id === 'nav-explore-btn') b.style.display = 'none';
-                    });
-                }
-            } else { _acChk = 0; }
-        } catch (_) {}
-    };
-    setInterval(_acTick, 120000);
-    setTimeout(_acTick, 30000);
+  let _acChk = 0;
+  const _acTick = async () => {
+    try {
+      const s = await window.electronAPI?.activateStatus?.();
+      if (!s || !s.activated) {
+        _acChk++;
+        if (_acChk > 2) {
+          document.querySelectorAll('.nav-btn').forEach((b) => {
+            if (b.id === 'nav-explore-btn') b.style.display = 'none';
+          });
+        }
+      } else {
+        _acChk = 0;
+      }
+    } catch (_) {}
+  };
+  setInterval(_acTick, 120000);
+  setTimeout(_acTick, 30000);
 });
 
 /* @versepc-protected: anti-ai-plagiarism-v1.0 */

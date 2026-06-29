@@ -68,6 +68,8 @@ extract-settings-css.js
 extract-tool-css.js
 scripts/
 hs_err_pid*.log
+.backup-before-protect/
+*.jsc
 sse-debug.log
 ai-config.local.js
 build-scripts/build-installer.js
@@ -107,7 +109,6 @@ trae-demo*
 activation/activate-tool.*
 activation/activation.*
 activation/activation.obfuscated.js
-ai-enabled.json
 copy-to-release.bat
 create-activation-tool.bat
 files-to-upload.json

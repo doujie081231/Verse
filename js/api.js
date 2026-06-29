@@ -27,15 +27,12 @@
  * ============================================================================
  */
 
-// ============================================================
-// api.js — VersePC 前端 API 通信层
-// 封装所有与本地后端服务器(Express)的 HTTP 通信
-// 通过 fetch API 调用后端路由，统一管理所有网络请求
-// ============================================================
+/* api.js — VersePC 前端 API 通信层
+ * 封装所有与本地后端服务器(Express)的 HTTP 通信
+ * 通过 fetch API 调用后端路由，统一管理所有网络请求
+ */
 
-// ============================================================
-// 统一错误类型体系
-// ============================================================
+/* 统一错误类型体系 */
 
 class ApiError extends Error {
     constructor(message, code, originalError = null) {
@@ -78,9 +75,7 @@ class TimeoutError extends NetworkError {
     }
 }
 
-// ============================================================
-// 错误消息映射与转换
-// ============================================================
+/* 错误消息映射与转换 */
 
 const ERROR_MESSAGES = {
     'NETWORK_ERROR': '网络连接失败，请检查网络设置',
@@ -106,9 +101,7 @@ function getUserFriendlyMessage(error) {
     return ERROR_MESSAGES['UNKNOWN_ERROR'];
 }
 
-// ============================================================
-// 全局错误处理器
-// ============================================================
+/* 全局错误处理器 */
 
 const ErrorHandler = {
     handle(error, context = {}) {
@@ -131,11 +124,17 @@ const ErrorHandler = {
 // 后端服务器基地址（空字符串表示同源请求）
 const API_BASE = '';
 
-// ============================================================
-// 底层网络工具函数
-// ============================================================
+/* 底层网络工具函数 */
 
-// 带超时的 fetch 包装器，默认超时30秒，超时自动中断请求
+/**
+ * 带超时的 fetch 包装器
+ * @param {string} url - 请求地址
+ * @param {Object} options - fetch 配置项
+ * @param {number} timeout - 超时时间（毫秒），默认 30 秒
+ * @returns {Promise<Response>} fetch 响应
+ * @throws {TimeoutError} 请求超时时抛出
+ * @throws {NetworkError} 网络连接失败时抛出
+ */
 async function fetchWithTimeout(url, options = {}, timeout = 30000) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort('timeout'), timeout);
@@ -156,7 +155,13 @@ async function fetchWithTimeout(url, options = {}, timeout = 30000) {
     }
 }
 
-// 通用 GET 请求，自动拼接 URL 查询参数
+/**
+ * 通用 GET 请求，自动拼接 URL 查询参数
+ * @param {string} path - API 路径（如 /api/versions）
+ * @param {Object} params - 查询参数对象
+ * @param {number} timeout - 超时时间（毫秒）
+ * @returns {Promise<Object>} 解析后的 JSON 响应
+ */
 async function apiGet(path, params = {}, timeout = 30000) {
     const query = new URLSearchParams(params).toString();
     const url = `${API_BASE}${path}${query ? '?' + query : ''}`;
@@ -176,7 +181,13 @@ async function apiGet(path, params = {}, timeout = 30000) {
     }
 }
 
-// 通用 POST 请求，自动设置 JSON 请求头
+/**
+ * 通用 POST 请求，自动设置 JSON 请求头
+ * @param {string} path - API 路径
+ * @param {Object} data - 请求体数据
+ * @param {number} timeout - 超时时间（毫秒）
+ * @returns {Promise<Object>} 解析后的 JSON 响应
+ */
 async function apiPost(path, data = {}, timeout = 30000) {
     try {
         const res = await fetchWithTimeout(`${API_BASE}${path}`, {
@@ -198,7 +209,12 @@ async function apiPost(path, data = {}, timeout = 30000) {
     }
 }
 
-// 通用 DELETE 请求
+/**
+ * 通用 DELETE 请求
+ * @param {string} path - API 路径
+ * @param {Object} data - 请求体数据
+ * @returns {Promise<Object>} 解析后的 JSON 响应
+ */
 async function apiDelete(path, data = {}) {
     try {
         const res = await fetchWithTimeout(`${API_BASE}${path}`, {
@@ -220,10 +236,9 @@ async function apiDelete(path, data = {}) {
     }
 }
 
-// ============================================================
-// API 接口对象 — 按功能模块分组
-// 所有方法均返回 Promise，由调用方处理异步逻辑
-// ============================================================
+/* API 接口对象 — 按功能模块分组
+ * 所有方法均返回 Promise，由调用方处理异步逻辑
+ */
 
 const API = {
     // === 系统信息 ===
