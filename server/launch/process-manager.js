@@ -164,39 +164,19 @@ async function applyPerformanceOptimizations(pid) {
   // Windows 平台额外通过 PowerShell 设置 CPU 亲和性（使用 75% 核心数）与 I/O 优先级
   try {
     if (process.platform === 'win32') {
-      const psScript = `
-$proc = Get-Process -Id ${pid} -ErrorAction SilentlyContinue
-if ($proc) {
-    $cpu = Get-CimInstance Win32_Processor
-    $coreCount = $cpu.NumberOfLogicalProcessors
-    if ($coreCount -ge 8) {
-        $pCores = [math]::Floor($coreCount * 0.75)
-        $mask = [math]::Pow(2, $pCores) - 1
-        $proc.ProcessorAffinity = $mask
-    }
-    try {
-        $proc.PriorityClass = 'High'
-    } catch {}
-    try {
-        $proc.IOPriority = [System.Diagnostics.ProcessPriorityClass]::High
-    } catch {}
-}
-`.trim();
-      const tmpScript = path.join(os.tmpdir(), `versepc_perf_${pid}.ps1`);
-      fs.writeFileSync(tmpScript, psScript, 'utf8');
-      exec(`powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${tmpScript}"`, { timeout: 10000 }, (err) => {
-        try {
-          fs.unlinkSync(tmpScript);
-        } catch (e) {}
+      // 使用 -Command 内联脚本，避免临时 PS1 文件被杀软或 ExecutionPolicy 拦截
+      const psInline = `$p=Get-Process -Id ${pid} -ErrorAction SilentlyContinue; if($p){ $c=(Get-CimInstance Win32_Processor).NumberOfLogicalProcessors; if($c -ge 8){ $p.ProcessorAffinity=[math]::Pow(2,[math]::Floor($c*0.75))-1 }; try{$p.PriorityClass='High'}catch{} }`;
+      const psCmd = `powershell -NoProfile -NonInteractive -Command "${psInline.replace(/"/g, '\\"').replace(/`/g, '``')}"`;
+      exec(psCmd, { timeout: 10000, windowsHide: true }, (err) => {
         if (err) {
-          console.log(`[Perf] CPU亲和性设置失败: ${err.message}`);
+          console.log(`[Perf] CPU亲和性设置失败（非致命）: ${err.message}`);
         } else {
           console.log(`[Perf] CPU亲和性和I/O优先级已优化 for PID ${pid}`);
         }
       });
     }
   } catch (e) {
-    console.log(`[Perf] 性能优化脚本执行失败: ${e.message}`);
+    console.log(`[Perf] 性能优化脚本执行失败（非致命）: ${e.message}`);
   }
 }
 
@@ -370,6 +350,8 @@ async function doLaunch(versionId, versionJson, settings, account, externalVersi
         if (mainClass.includes('knot') && basename.includes('fabric-loader')) return true;
         if (mainClass.includes('modlauncher') && basename.includes('securejarhandler')) return true;
         if (mainClass.includes('launchwrapper') && basename.includes('launchwrapper')) return true;
+        // NeoForge/Forge 1.20.2+ 使用 BootstrapLauncher，主类位于 bootstrap-loader.jar
+        if (mainClass.includes('bootstraplauncher') && basename.includes('bootstrap')) return true;
         return false;
       });
       console.log(`[Launch] 主类对应JAR在classpath中: ${mainClassInCp}`);

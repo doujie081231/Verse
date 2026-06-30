@@ -514,6 +514,31 @@ function buildLaunchArguments(versionJson, settings, account, versionId, customG
     jvmArgs.unshift('-XstartOnFirstThread');
   }
 
+  // NeoForge: 把 patched jar (neoforge-<version>-client.jar) 加入 ignoreList。
+  // patched jar 在 classpath 中会被 JPMS 加载为 'neoforge' 自动模块，同时
+  // production client provider locator 通过 :client 库条目加载 SRG client jar
+  // 为 'minecraft' 模块，两者都导出 net.minecraft.* 包，触发 split package 冲突：
+  //   "Modules neoforge and minecraft export package net.minecraft.client.gui.font.providers"
+  // 加入 ignoreList 后 BootstrapLauncher 会跳过 patched jar 不加入 JPMS 模块层，
+  // 但它仍在 classpath 中，locator 仍能通过 :client 库条目找到它。
+  const _neoClientLib = (versionJson.libraries || []).find((l) =>
+    l.name && /^net\.neoforged:neoforge:[^:]+:client$/.test(l.name)
+  );
+  if (_neoClientLib && _neoClientLib.downloads?.artifact?.path) {
+    const _patchedJarName = path.basename(_neoClientLib.downloads.artifact.path);
+    const _ignoreListIdx = jvmArgs.findIndex((a) => typeof a === 'string' && a.startsWith('-DignoreList='));
+    if (_ignoreListIdx >= 0) {
+      if (!jvmArgs[_ignoreListIdx].includes(_patchedJarName)) {
+        jvmArgs[_ignoreListIdx] = jvmArgs[_ignoreListIdx] + ',' + _patchedJarName;
+        console.log(`[Launch] NeoForge: 已将 patched jar 加入 ignoreList: ${_patchedJarName}`);
+      }
+    } else {
+      // version JSON 未自带 -DignoreList=，主动创建以避免 patched jar 被 JPMS 加载触发 split package 冲突
+      jvmArgs.push(`-DignoreList=${_patchedJarName}`);
+      console.log(`[Launch] NeoForge: 已创建 ignoreList 并加入 patched jar: ${_patchedJarName}`);
+    }
+  }
+
   // 始终使用我们自己的完整 classpath（用系统分隔符 join），跳过 JSON 自带的残缺 classpath
   const cpSeparator = process.platform === 'win32' ? ';' : ':';
   const classpathStr = Array.isArray(classpath) ? classpath.join(cpSeparator) : classpath;

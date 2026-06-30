@@ -124,8 +124,12 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
         if (process.platform === 'darwin') return !fs.existsSync(path.join(nativesDir, n.replace('.dll', '.dylib')));
         return !fs.existsSync(path.join(nativesDir, n.replace('.dll', '.so')));
       });
-      if (missingNatives.length > 0 && missingNatives.length < 6) {
-        console.log(`[LaunchGame] 检测到 ${missingNatives.length} 个缺失Natives: ${missingNatives.join(', ')}，尝试重新解压...`);
+      if (missingNatives.length > 0) {
+        if (missingNatives.length < 6) {
+          console.log(`[LaunchGame] 检测到 ${missingNatives.length} 个缺失Natives: ${missingNatives.join(', ')}，尝试重新解压...`);
+        } else {
+          console.warn(`[LaunchGame] ⚠ 大量Natives缺失(${missingNatives.length}个)，尝试重新解压...`);
+        }
         try {
           natives.extractNatives(versionJson, cleanVersionId, externalVersionDir);
           const recheckMissing = criticalNatives.filter((n) => {
@@ -136,13 +140,11 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
           if (recheckMissing.length > 0) {
             console.warn(`[LaunchGame] 重新解压后仍有 ${recheckMissing.length} 个Natives缺失: ${recheckMissing.join(', ')}`);
           } else {
-            console.log(`[LaunchGame] Natives重新解压成功`);
+            console.log(`[LaunchGame] Natives重新解压成功 (${missingNatives.length}个已恢复)`);
           }
         } catch (e) {
           console.error(`[LaunchGame] Natives重新解压失败: ${e.message}`);
         }
-      } else if (missingNatives.length >= 6) {
-        console.warn(`[LaunchGame] ⚠ 大量Natives缺失(${missingNatives.length}个)，可能影响游戏启动`);
       }
     }
 

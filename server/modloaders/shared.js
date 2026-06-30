@@ -10,13 +10,14 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { exec } = require('child_process');
+const { exec, spawn } = require('child_process');
 
 const ctx = require('../context');
 const utils = require('../utils');
 const http = require('../http-client');
 const versions = require('../versions');
 const dependencies = require('../dependencies');
+const java = require('../java');
 
 // 项目根目录（server.js 所在目录，用于查找 forge-installer.js 等资源文件）
 // 原 modloaders.js 位于 server/，故 path.join(__dirname, '..')；
@@ -702,6 +703,190 @@ function getNeoLibMirrorUrl(originalUrl) {
         .replace('https://libraries.minecraft.net/', 'https://bmclapi2.bangbang93.com/libraries/');
 }
 
+// ============================================================================
+// NeoForge / Forge 官方安装器调用
+// ============================================================================
+// 历史问题：原代码尝试手动执行 install_profile.json 中的 processors 来生成 patched JAR，
+// 但 PROCESS_MINECRAFT_JAR 这个 task 在 installertools.ConsoleTool 中并不存在
+// （ConsoleTool 只支持 EXTRACT_FILES/BUNDLER_EXTRACT/MCP_DATA/DOWNLOAD_MOJMAPS/MERGE_MAPPING 等 task）。
+// 正确的 patch 流程需要按顺序执行 6 个 processor（jarsplitter、AutoRenamingTool、binarypatcher 等），
+// 每个 processor 有自己的 jar、classpath、main class，工程复杂且容易出错。
+//
+// 解决方案：直接调用官方 SimpleInstaller（neoforge-installer.jar）的命令行模式：
+//   java -jar neoforge-installer.jar --install-client <data-dir>
+// 官方安装器会自动完成所有 processor 步骤，生成 patched JAR 和 version.json。
+
+/**
+ * 调用 NeoForge/Forge 官方安装器生成 patched JAR。
+ *
+ * @param {object} options
+ * @param {string} options.mcJarPath - 原版客户端 JAR 路径（仅用于日志校验）
+ * @param {string} options.clientLzmaPath - client.lzma 路径（仅用于日志校验）
+ * @param {string} options.patchedJarPath - patched JAR 期望输出路径
+ * @param {Array} [options.profileLibs] - 兼容旧签名，不再使用
+ * @param {Array} [options.processors] - 兼容旧签名，不再使用
+ * @param {Function} [options.onProgress] - 进度回调 (pct, msg) => void
+ * @param {string} [options.logPrefix='[NeoForge]'] - 日志前缀
+ * @returns {Promise<void>}
+ * @throws {Error} Java 不可用 / installer jar 缺失 / 子进程失败 / patched JAR 未生成
+ */
+async function runPatchProcessor({ mcJarPath, clientLzmaPath, patchedJarPath, profileLibs = [], processors = [], onProgress = null, logPrefix = '[NeoForge]' }) {
+    // 1. 查找可用 Java（安装器需要 Java 17+）
+    const candidates = [...java.detectBundledJava(), ...java.detectSystemJava()];
+    const suitable = candidates.find((j) => j.majorVersion >= 17) || candidates[0];
+    if (!suitable) {
+        throw new Error('未找到 Java 17 或更高版本，无法运行 NeoForge/Forge 安装器');
+    }
+    const javaPath = suitable.path;
+    console.log(`${logPrefix} 使用 Java: ${javaPath} (主版本 ${suitable.majorVersion})`);
+
+    // 2. 检测 loader 类型并定位 installer jar / 输出路径
+    // NeoForge patchedJarPath: .../net/neoforged/minecraft-client-patched/<ver>/minecraft-client-patched-<ver>.jar
+    // Forge   patchedJarPath: .../net/minecraftforge/forge/<mc>-<fv>/forge-<mc>-<fv>-client.jar
+    const isForge = patchedJarPath.includes('minecraftforge') || logPrefix === '[Forge]';
+    let installerJarPath, simpleInstallerOutput, siVersionDirName, installerLogFileName;
+    if (isForge) {
+        const forgeVerDir = path.basename(path.dirname(patchedJarPath)); // <mc>-<fv>
+        const forgeJarDir = path.dirname(patchedJarPath);
+        installerJarPath = path.join(forgeJarDir, `forge-${forgeVerDir}-installer.jar`);
+        // Forge installer 直接输出 patched jar 到 <mc>-<fv>/forge-<mc>-<fv>-client.jar
+        simpleInstallerOutput = patchedJarPath;
+        siVersionDirName = `forge-${forgeVerDir}`;
+        installerLogFileName = `forge-${forgeVerDir}-installer.jar.log`;
+    } else {
+        const neoVersion = path.basename(patchedJarPath).replace('minecraft-client-patched-', '').replace('.jar', '');
+        if (!neoVersion) {
+            throw new Error(`无法从 patchedJarPath 提取版本号: ${patchedJarPath}`);
+        }
+        installerJarPath = path.join(
+            ctx.dirs.LIBRARIES_DIR,
+            'net', 'neoforged', 'neoforge', neoVersion,
+            `neoforge-${neoVersion}-installer.jar`
+        );
+        simpleInstallerOutput = path.join(
+            ctx.dirs.LIBRARIES_DIR,
+            'net', 'neoforged', 'neoforge', neoVersion,
+            `neoforge-${neoVersion}-client.jar`
+        );
+        siVersionDirName = `neoforge-${neoVersion}`;
+        installerLogFileName = `neoforge-${neoVersion}-installer.jar.log`;
+    }
+    if (!fs.existsSync(installerJarPath)) {
+        throw new Error(`${logPrefix} installer jar 未找到: ${installerJarPath}`);
+    }
+    console.log(`${logPrefix} 使用官方安装器: ${path.basename(installerJarPath)}`);
+
+    // 4. 调用 SimpleInstaller --install-client
+    const targetDir = ctx.dirs.DATA_DIR;
+    const args = [
+        '-Dfile.encoding=UTF-8',
+        '-Dstdout.encoding=UTF-8',
+        '-Dstderr.encoding=UTF-8',
+        '-jar', installerJarPath,
+        '--install-client', targetDir
+    ];
+    console.log(`${logPrefix} 目标目录: ${targetDir}`);
+    if (onProgress) onProgress(0.9, '正在运行官方安装器...');
+
+    // 进度关键词映射
+    const progressMap = [
+        ['Processor:', 0.92], ['Downloading:', 0.93],
+        ['Loading patches', 0.94], ['Patching input', 0.96],
+        ['Adding new files', 0.97], ['Injecting profile', 0.98],
+        ['Successfully installed', 1.0]
+    ];
+    const parseLine = (line) => {
+        if (!line) return;
+        //console.log(`${logPrefix} ${line}`);
+        for (const [keyword, pct] of progressMap) {
+            if (line.includes(keyword)) {
+                if (onProgress) onProgress(pct, line.substring(0, 80));
+                break;
+            }
+        }
+    };
+
+    // 5. spawn Java 子进程
+    await new Promise((resolve, reject) => {
+        const child = spawn(javaPath, args, {
+            cwd: targetDir,
+            windowsHide: true,
+            stdio: ['ignore', 'pipe', 'pipe'],
+            env: { ...process.env }
+        });
+        let stdout = '', stderr = '';
+        child.stdout.on('data', (data) => {
+            stdout += data.toString();
+            const lines = stdout.split('\n');
+            stdout = lines.pop();
+            for (const line of lines) parseLine(line.trim());
+        });
+        child.stderr.on('data', (data) => {
+            stderr += data.toString();
+            const lines = stderr.split('\n');
+            stderr = lines.pop();
+            for (const line of lines) parseLine(line.trim());
+        });
+        const killTimer = setTimeout(() => {
+            try { child.kill('SIGKILL'); } catch (_) {}
+            reject(new Error('官方安装器执行超时（300s）'));
+        }, 300000);
+        child.on('close', (code) => {
+            clearTimeout(killTimer);
+            if (stdout.trim()) parseLine(stdout.trim());
+            if (stderr.trim()) console.warn(`${logPrefix} [stderr] ${stderr.trim()}`);
+            if (code !== 0) {
+                console.error(`${logPrefix} 安装器进程退出码: ${code}`);
+                reject(new Error(`官方安装器执行失败 (退出码 ${code})`));
+            } else {
+                console.log(`${logPrefix} 安装器进程正常退出`);
+                resolve();
+            }
+        });
+        child.on('error', (err) => {
+            clearTimeout(killTimer);
+            console.error(`${logPrefix} 安装器 spawn 失败: ${err.message}`);
+            reject(new Error(`官方安装器启动失败: ${err.message}`));
+        });
+    });
+
+    // 6. 验证 patched JAR 已生成
+    if (!fs.existsSync(simpleInstallerOutput)) {
+        throw new Error(`${logPrefix} 官方安装器未生成 patched JAR: ${simpleInstallerOutput}`);
+    }
+    const outputSize = fs.statSync(simpleInstallerOutput).size;
+    if (outputSize < 1024) {
+        throw new Error(`${logPrefix} 官方安装器生成的 patched JAR 大小异常 (${outputSize} 字节)`);
+    }
+    console.log(`${logPrefix} patched JAR 已生成: ${simpleInstallerOutput} (${outputSize} 字节)`);
+
+    // 7. 复制到调用方期望的位置（Forge 的 simpleInstallerOutput 已等于 patchedJarPath，跳过复制）
+    if (simpleInstallerOutput !== patchedJarPath) {
+        fs.mkdirSync(path.dirname(patchedJarPath), { recursive: true });
+        fs.copyFileSync(simpleInstallerOutput, patchedJarPath);
+        console.log(`${logPrefix} patched JAR 已复制到: ${patchedJarPath}`);
+    }
+
+    // 8. 清理 SimpleInstaller 创建的临时 version 目录（避免与我们的 version 目录混淆）
+    if (siVersionDirName) {
+        const siVersionDir = path.join(ctx.dirs.VERSIONS_DIR, siVersionDirName);
+        if (fs.existsSync(siVersionDir)) {
+            try {
+                fs.rmSync(siVersionDir, { recursive: true, force: true });
+                console.log(`${logPrefix} 已清理 SimpleInstaller 创建的临时 version 目录: ${siVersionDirName}`);
+            } catch (e) {
+                console.warn(`${logPrefix} 清理临时 version 目录失败（非致命）: ${e.message}`);
+            }
+        }
+    }
+
+    // 9. 清理 SimpleInstaller 创建的 installer log 文件
+    const installerLogFile = path.join(targetDir, installerLogFileName);
+    if (fs.existsSync(installerLogFile)) {
+        try { fs.unlinkSync(installerLogFile); } catch (_) {}
+    }
+}
+
 module.exports = {
     SERVER_DIR,
     ensureBaseVersionInstalled,
@@ -713,4 +898,5 @@ module.exports = {
     verifyImportLibs,
     isLibValid,
     getNeoLibMirrorUrl,
+    runPatchProcessor,
 };

@@ -14,7 +14,7 @@ const http = require('../http-client');
 const versions = require('../versions');
 const java = require('../java');
 
-const { ensureBaseVersionInstalled, isLibValid, SERVER_DIR } = require('./shared');
+const { ensureBaseVersionInstalled, isLibValid, SERVER_DIR, runPatchProcessor } = require('./shared');
 const { findNeoForgeCoreJars, installNeoForge } = require('./neoforge');
 
 /* Forge 核心库下载 */
@@ -944,35 +944,41 @@ async function mergeForgeLoaderToVersion(versionId, gameVersion, forgeVersion) {
             mergeLog(`install_profile.json: processors=${ipData.processors?.length || 0}, data keys=${ipData.data ? Object.keys(ipData.data).join(', ') : 'none'}`);
             if (ipData.processors && ipData.processors.length > 0) {
                 mergeLog(`Found ${ipData.processors.length} processors, executing...`);
-                try {
-                    const _scriptSrc = path.join(SERVER_DIR, 'server', 'modloaders', 'scripts', 'forge-processor.js');
-                    const _scriptDst = path.join(ctx.dirs.DATA_DIR, 'temp', 'forge-processor.js');
-                    fs.mkdirSync(path.dirname(_scriptDst), { recursive: true });
-                    if (fs.existsSync(_scriptDst)) { try { fs.unlinkSync(_scriptDst); } catch(_) {} }
-                    const _srcContent = fs.readFileSync(_scriptSrc, 'utf8');
-                    fs.writeFileSync(_scriptDst, _srcContent, 'utf8');
-                    mergeLog(`Script written to: ${_scriptDst}`);
-                    const _cmd = `node "${_scriptDst}" --root "${ctx.dirs.DATA_DIR}" --libs "${ctx.dirs.LIBRARIES_DIR}" --mcver "${gameVersion}" --forgever "${forgeVersion}"`;
-                    mergeLog(`Running: ${_cmd}`);
-                    await new Promise((resolve, reject) => {
-                        exec(_cmd, { timeout: 240000, encoding: 'utf8', maxBuffer: 10*1024*1024, windowsHide: true }, (err, stdout, stderr) => {
-                            if (stdout) mergeLog(`Script output:\n${stdout}`);
-                            if (stderr) console.warn(`[Forge-DEBUG] Script stderr:\n${stderr}`);
-                            if (err) {
-                                mergeLog(`[ERROR] Script failed: ${err.message}`);
-                                resolve();
-                            } else {
-                                mergeLog(`Script completed successfully`);
-                                resolve();
-                            }
-                        });
-                    });
-                } catch (_procErr) {
-                    mergeLog(`[ERROR] Script error: ${_procErr.message}`);
+                // 直接调用 Java installertools 执行 PROCESS_MINECRAFT_JAR
+                // 失败时抛出错误，避免错误地报告合并成功
+                const _mcJarPath = path.join(ctx.dirs.VERSIONS_DIR, gameVersion, `${gameVersion}.jar`);
+                let _clientLzmaPath = null;
+                let _patchedJarPath = null;
+                if (ipData.data) {
+                    if (ipData.data.BINPATCH && ipData.data.BINPATCH.client) {
+                        _clientLzmaPath = ipData.data.BINPATCH.client;
+                    }
+                    if (ipData.data.PATCHED && ipData.data.PATCHED.client) {
+                        _patchedJarPath = ipData.data.PATCHED.client;
+                    }
                 }
+                // 兜底路径
+                if (!_clientLzmaPath) {
+                    _clientLzmaPath = path.join(ctx.dirs.LIBRARIES_DIR, 'net', 'minecraftforge', 'forge', `${gameVersion}-${forgeVersion}`, `forge-${gameVersion}-${forgeVersion}-client.lzma`);
+                }
+                if (!_patchedJarPath) {
+                    _patchedJarPath = path.join(ctx.dirs.LIBRARIES_DIR, 'net', 'minecraftforge', 'forge', `${gameVersion}-${forgeVersion}`, `forge-${gameVersion}-${forgeVersion}-client.jar`);
+                }
+                mergeLog(`mcJar=${_mcJarPath}, clientLzma=${_clientLzmaPath}, output=${_patchedJarPath}`);
+                await runPatchProcessor({
+                    mcJarPath: _mcJarPath,
+                    clientLzmaPath: _clientLzmaPath,
+                    patchedJarPath: _patchedJarPath,
+                    profileLibs: ipData.libraries || [],
+                    processors: ipData.processors || [],
+                    onProgress: null,
+                    logPrefix: '[Forge]'
+                });
+                mergeLog(`Patch processor completed successfully`);
             }
         } catch (e) {
-            mergeLog(`[ERROR] Failed to read install_profile.json: ${e.message}`);
+            mergeLog(`[ERROR] Failed to read install_profile.json or run processor: ${e.message}`);
+            throw new Error(`Forge 处理器执行失败: ${e.message}`);
         }
     }
 
