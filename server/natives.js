@@ -186,10 +186,12 @@ function extractNatives(versionJson, versionId, externalVersionDir = null) {
     if (lib.rules && !versions.evaluateRules(lib.rules)) continue;
 
     let nativePath = null;
+    let isNativeLib = false;
 
     if (lib.natives) {
       const nativeKey = lib.natives[currentPlatform];
       if (!nativeKey) continue;
+      isNativeLib = true;
 
       const classifier = nativeKey.replace('${arch}', process.arch === 'x64' ? '64' : '32');
       const nativeDownload = lib.downloads?.classifiers?.[classifier];
@@ -214,6 +216,7 @@ function extractNatives(versionJson, versionId, externalVersionDir = null) {
       }
 
       if (!isValidPlatform) continue;
+      isNativeLib = true;
 
       if (lib.downloads?.artifact?.path) {
         nativePath = findNativeJar(lib.downloads.artifact.path);
@@ -237,7 +240,16 @@ function extractNatives(versionJson, versionId, externalVersionDir = null) {
       }
     }
 
-    if (!nativePath || !fs.existsSync(nativePath)) continue;
+    if (!isNativeLib) continue;
+
+    if (!nativePath || !fs.existsSync(nativePath)) {
+      console.warn(`[Natives] ⚠ Native jar 缺失: ${lib.name || path.basename(nativePath || '')} (解压将被跳过，可能导致游戏崩溃)`);
+      continue;
+    }
+    if (nativePath.endsWith('.jar') && !utils.isJarIntact(nativePath)) {
+      console.warn(`[Natives] ⚠ Native jar 损坏: ${path.basename(nativePath)} (解压将被跳过，可能导致游戏崩溃)`);
+      continue;
+    }
 
     console.log(`[Natives] 提取: ${path.basename(nativePath)}`);
     nativeJars.push(nativePath);
@@ -304,7 +316,14 @@ function extractNatives(versionJson, versionId, externalVersionDir = null) {
             }
           }
         }
-        if (!nativePath || !fs.existsSync(nativePath)) continue;
+        if (!nativePath || !fs.existsSync(nativePath)) {
+          console.warn(`[Natives] ⚠ 父版本 Native jar 缺失: ${lib.name || path.basename(nativePath || '')}`);
+          continue;
+        }
+        if (nativePath.endsWith('.jar') && !utils.isJarIntact(nativePath)) {
+          console.warn(`[Natives] ⚠ 父版本 Native jar 损坏: ${path.basename(nativePath)}`);
+          continue;
+        }
         console.log(`[Natives] 提取(父版本): ${path.basename(nativePath)}`);
         nativeJars.push(nativePath);
       }
@@ -631,7 +650,9 @@ function buildClasspath(versionJson, versionId, externalVersionDir = null) {
     const libName = lib.name || '';
     const nameSuffix = libName ? libName.split(':').pop() : '';
 
-    if (lib.natives) continue;
+    // 仅跳过纯 native 条目（无 artifact）。若条目同时含 natives 和 artifact
+    // （如合并后的 LWJGL 库），仍需将 artifact JAR 加入 classpath
+    if (lib.natives && !lib.downloads?.artifact?.path) continue;
 
     if (nameSuffix.startsWith('natives-')) {
       const platformNative = nameSuffix.replace('natives-', '');
@@ -690,7 +711,7 @@ function buildClasspath(versionJson, versionId, externalVersionDir = null) {
               if (lib.rules && !versions.evaluateRules(lib.rules)) continue;
               const libName = lib.name || '';
               const nameSuffix = libName ? libName.split(':').pop() : '';
-              if (lib.natives) continue;
+              if (lib.natives && !lib.downloads?.artifact?.path) continue;
               if (nameSuffix.startsWith('natives-')) {
                 let isValidPlatform = false;
                 const platformNative = nameSuffix.replace('natives-', '');
@@ -733,7 +754,7 @@ function buildClasspath(versionJson, versionId, externalVersionDir = null) {
         if (lib.rules && !versions.evaluateRules(lib.rules)) continue;
         const libName = lib.name || '';
         const nameSuffix = libName ? libName.split(':').pop() : '';
-        if (lib.natives) continue;
+        if (lib.natives && !lib.downloads?.artifact?.path) continue;
         if (nameSuffix.startsWith('natives-')) {
           let isValidPlatform = false;
           const platformNative = nameSuffix.replace('natives-', '');

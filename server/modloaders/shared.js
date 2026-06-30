@@ -589,31 +589,47 @@ async function verifyImportLibs(versionId, progress, abortSignal) {
 
     for (const lib of allLibs) {
         if (lib.rules && !versions.evaluateRules(lib.rules)) continue;
-        if (lib.natives) continue;
-        const nameSuffix = lib.name ? lib.name.split(':').pop() : '';
-        if (nameSuffix.startsWith('natives-')) {
-            let isValid = false;
-            if (process.arch === 'x64') {
-                const plat = nameSuffix.replace('natives-', '');
-                isValid = plat === currentPlatform || plat === currentPlatform + '-x64';
-            }
-            if (!isValid) continue;
-        }
-        libChecked++;
+
         let libPath = null;
-        if (lib.downloads?.artifact?.path) {
-            libPath = path.join(ctx.dirs.LIBRARIES_DIR, lib.downloads.artifact.path);
-        } else if (lib.name) {
-            const p = lib.name.split(':');
-            if (p.length >= 3) {
-                const gp = p[0].replace(/\./g, path.sep);
-                const cl = p.length >= 4 ? `-${p[3]}` : '';
-                const jn = `${p[1]}-${p[2]}${cl}.jar`;
-                libPath = path.join(ctx.dirs.LIBRARIES_DIR, gp, p[1], p[2], jn);
+        let dlUrl = '';
+        let sha1 = '';
+        let size = 0;
+
+        if (lib.natives) {
+            // Native library: resolve platform-specific classifier (e.g. lwjgl-natives-windows)
+            const nativeKey = lib.natives[currentPlatform];
+            if (!nativeKey) continue;
+            const classifier = nativeKey.replace('${arch}', process.arch === 'x64' ? '64' : '32');
+            const nativeDownload = lib.downloads?.classifiers?.[classifier];
+            if (!nativeDownload) continue;
+            libPath = path.join(ctx.dirs.LIBRARIES_DIR, nativeDownload.path);
+            dlUrl = nativeDownload.url || '';
+            sha1 = nativeDownload.sha1 || '';
+            size = nativeDownload.size || 0;
+        } else {
+            const nameSuffix = lib.name ? lib.name.split(':').pop() : '';
+            if (nameSuffix.startsWith('natives-')) {
+                let isValid = false;
+                if (process.arch === 'x64') {
+                    const plat = nameSuffix.replace('natives-', '');
+                    isValid = plat === currentPlatform || plat === currentPlatform + '-x64';
+                }
+                if (!isValid) continue;
             }
-        }
-        if (libPath && (!libPath.endsWith('.jar') ? !fs.existsSync(libPath) : !utils.isJarIntact(libPath))) {
-            let dlUrl = lib.downloads?.artifact?.url || '';
+            if (lib.downloads?.artifact?.path) {
+                libPath = path.join(ctx.dirs.LIBRARIES_DIR, lib.downloads.artifact.path);
+            } else if (lib.name) {
+                const p = lib.name.split(':');
+                if (p.length >= 3) {
+                    const gp = p[0].replace(/\./g, path.sep);
+                    const cl = p.length >= 4 ? `-${p[3]}` : '';
+                    const jn = `${p[1]}-${p[2]}${cl}.jar`;
+                    libPath = path.join(ctx.dirs.LIBRARIES_DIR, gp, p[1], p[2], jn);
+                }
+            }
+            dlUrl = lib.downloads?.artifact?.url || '';
+            sha1 = lib.downloads?.artifact?.sha1 || '';
+            size = lib.downloads?.artifact?.size || 0;
             if (!dlUrl && lib.name) {
                 const p = lib.name.split(':');
                 if (p.length >= 3) {
@@ -626,10 +642,13 @@ async function verifyImportLibs(versionId, progress, abortSignal) {
                     dlUrl = `${base}${mg}/${p[1]}/${p[2]}/${jn}`;
                 }
             }
+        }
+
+        libChecked++;
+        if (libPath && (!libPath.endsWith('.jar') ? !fs.existsSync(libPath) : !utils.isJarIntact(libPath))) {
             const libEntry = {
                 type: 'library', url: dlUrl || '', path: libPath,
-                sha1: lib.downloads?.artifact?.sha1 || '',
-                size: lib.downloads?.artifact?.size || 0,
+                sha1: sha1, size: size,
                 name: lib.name || path.basename(libPath)
             };
             if (isCoreLibrary(lib.name)) {

@@ -114,16 +114,91 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
 
     console.log(`[LaunchGame] JSON已解析, mainClass: ${versionJson.mainClass}, inheritsFrom: ${versionJson.inheritsFrom}`);
 
-    // 启动前验证 Natives 完整性，缺失时自动重新解压
-    {
+    // 修复早期 modpack 导入时 mergeVersionJson 去重逻辑丢失 natives 数据的问题：
+    // 若 libraries 中 LWJGL 库缺少 natives 字段，从原版父版本 JSON 补全 natives
+    // 和 downloads.classifiers，并写回磁盘（自愈：修复后下次启动不再触发）
+    try {
+      const lwjglMissingNatives = (versionJson.libraries || []).some((l) =>
+        l.name && l.name.startsWith('org.lwjgl:lwjgl') && !l.natives && !l.downloads?.classifiers);
+      if (lwjglMissingNatives) {
+        const parentId = versionJson.inheritsFrom || versionJson.clientVersion ||
+          (cleanVersionId.match(/^(\d+\.\d+(?:\.\d+)?)/) || [])[1];
+        if (parentId && parentId !== cleanVersionId) {
+          // 查找父版本 JSON（先内部 VERSIONS_DIR，再外部目录）
+          let parentJsonPath = path.join(ctx.dirs.VERSIONS_DIR, parentId, `${parentId}.json`);
+          if (!fs.existsSync(parentJsonPath)) {
+            for (const folder of versions.loadExternalFolders()) {
+              if (!fs.existsSync(folder.path)) continue;
+              const extPath = path.join(folder.path, 'versions', parentId, `${parentId}.json`);
+              if (fs.existsSync(extPath)) { parentJsonPath = extPath; break; }
+            }
+          }
+          if (fs.existsSync(parentJsonPath)) {
+            const vanillaLibs = (JSON.parse(fs.readFileSync(parentJsonPath, 'utf-8')).libraries || [])
+              .filter((l) => l.name && l.natives);
+            const vanillaByNatives = new Map(vanillaLibs.map((l) => [l.name, l]));
+            // 原地修复：给缺失 natives 的 LWJGL 条目补上 natives/classifiers
+            // 注意：versionJson.libraries 是 resolveVersionJson 合并后的数组（含父版本库），
+            // 仅修复内存对象供本次启动使用；写盘必须基于 child JSON 原始 libraries，
+            // 否则会把父版本库内联进 modpack 文件、破坏 inheritsFrom 机制。
+            const repairLibs = (libs) => {
+              let repaired = 0;
+              for (const cur of libs) {
+                const vanilla = vanillaByNatives.get(cur.name);
+                if (vanilla && !cur.natives && !cur.downloads?.classifiers) {
+                  // 合并 natives 和 classifiers 到现有条目，保留原有 artifact（class JAR）
+                  cur.natives = vanilla.natives;
+                  if (vanilla.downloads?.classifiers) {
+                    if (!cur.downloads) cur.downloads = {};
+                    cur.downloads.classifiers = vanilla.downloads.classifiers;
+                  }
+                  repaired++;
+                }
+              }
+              return repaired;
+            };
+            const repairedInMemory = repairLibs(versionJson.libraries);
+            // 写回 child JSON 原始 libraries（仅修复缺失 natives 的条目，不内联父版本库）
+            const writePath = externalVersionDir
+              ? versions.findVersionJson(externalVersionDir)
+              : path.join(ctx.dirs.VERSIONS_DIR, cleanVersionId, `${cleanVersionId}.json`);
+            if (writePath && fs.existsSync(writePath)) {
+              const raw = JSON.parse(fs.readFileSync(writePath, 'utf-8'));
+              const repairedOnDisk = repairLibs(raw.libraries || []);
+              if (repairedOnDisk > 0) {
+                fs.writeFileSync(writePath, JSON.stringify(raw, null, 2));
+                console.log(`[LaunchGame] 已修复 ${repairedOnDisk} 个库的 natives 数据（来源: ${parentId}），内存修复 ${repairedInMemory} 个`);
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn(`[LaunchGame] 修复 natives 数据失败: ${e.message}`);
+    }
+
+    // 构建 critical natives 列表与缺失检测（启动前自愈与最终安全检查共用）
+    // LWJGL 3.x 的 native DLL 名：glfw.dll（非 lwjgl_glfw.dll）
+    // jinput native DLL 仅旧版本（<1.13，LWJGL 2.x 时代）需要，1.16.5 不含 jinput natives
+    const checkCriticalNatives = (vJson) => {
       const nativesDir = natives.getNativesFolder(cleanVersionId);
-      const criticalNatives = ['lwjgl.dll', 'lwjgl_opengl.dll', 'lwjgl_glfw.dll', 'lwjgl_stb.dll', 'lwjgl_tinyfd.dll',
-        'openal.dll', 'jinput-dx8.dll', 'jinput-raw.dll'];
-      const missingNatives = criticalNatives.filter((n) => {
+      const criticalNatives = ['lwjgl.dll', 'lwjgl_opengl.dll', 'glfw.dll', 'lwjgl_stb.dll', 'lwjgl_tinyfd.dll',
+        'openal.dll'];
+      const hasJinputNatives = (vJson.libraries || []).some((l) =>
+        l.name && l.name.includes('jinput') && l.natives);
+      if (hasJinputNatives) criticalNatives.push('jinput-dx8.dll', 'jinput-raw.dll');
+      const filterMissing = (list) => list.filter((n) => {
         if (process.platform === 'win32') return !fs.existsSync(path.join(nativesDir, n));
         if (process.platform === 'darwin') return !fs.existsSync(path.join(nativesDir, n.replace('.dll', '.dylib')));
         return !fs.existsSync(path.join(nativesDir, n.replace('.dll', '.so')));
       });
+      return { nativesDir, criticalNatives, filterMissing };
+    };
+
+    // 启动前验证 Natives 完整性，缺失时自动重新解压
+    {
+      const { criticalNatives, filterMissing } = checkCriticalNatives(versionJson);
+      const missingNatives = filterMissing(criticalNatives);
       if (missingNatives.length > 0) {
         if (missingNatives.length < 6) {
           console.log(`[LaunchGame] 检测到 ${missingNatives.length} 个缺失Natives: ${missingNatives.join(', ')}，尝试重新解压...`);
@@ -132,13 +207,37 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
         }
         try {
           natives.extractNatives(versionJson, cleanVersionId, externalVersionDir);
-          const recheckMissing = criticalNatives.filter((n) => {
-            if (process.platform === 'win32') return !fs.existsSync(path.join(nativesDir, n));
-            if (process.platform === 'darwin') return !fs.existsSync(path.join(nativesDir, n.replace('.dll', '.dylib')));
-            return !fs.existsSync(path.join(nativesDir, n.replace('.dll', '.so')));
-          });
+          const recheckMissing = filterMissing(criticalNatives);
           if (recheckMissing.length > 0) {
+            // 重新解压后仍缺失：检查 native jar 是否损坏，删除损坏的 jar 让 depCheck 重新下载
             console.warn(`[LaunchGame] 重新解压后仍有 ${recheckMissing.length} 个Natives缺失: ${recheckMissing.join(', ')}`);
+            const currentPlatform = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'osx' : 'linux';
+            // 注意：必须传入 externalVersionDir，否则外部版本会找不到 JSON 而返回 null
+            const allLibs = versions.resolveVersionJson(cleanVersionId, externalVersionDir)?.libraries || [];
+            for (const lib of allLibs) {
+              if (lib.rules && !versions.evaluateRules(lib.rules)) continue;
+              let nativePath = null;
+              if (lib.natives) {
+                const nativeKey = lib.natives[currentPlatform];
+                if (!nativeKey) continue;
+                const classifier = nativeKey.replace('${arch}', process.arch === 'x64' ? '64' : '32');
+                const nativeDownload = lib.downloads?.classifiers?.[classifier];
+                if (!nativeDownload) continue;
+                nativePath = path.join(ctx.dirs.LIBRARIES_DIR, nativeDownload.path);
+              } else if (lib.name && lib.name.includes(':natives-')) {
+                const nameSuffix = lib.name.split(':').pop();
+                if (!nameSuffix.startsWith('natives-')) continue;
+                const plat = nameSuffix.replace('natives-', '');
+                if (plat !== currentPlatform && plat !== currentPlatform + '-x64') continue;
+                if (lib.downloads?.artifact?.path) {
+                  nativePath = path.join(ctx.dirs.LIBRARIES_DIR, lib.downloads.artifact.path);
+                }
+              }
+              if (nativePath && fs.existsSync(nativePath) && !utils.isJarIntact(nativePath)) {
+                console.warn(`[LaunchGame] Native jar 损坏，删除以触发重下载: ${path.basename(nativePath)}`);
+                try { fs.unlinkSync(nativePath); } catch (_) {}
+              }
+            }
           } else {
             console.log(`[LaunchGame] Natives重新解压成功 (${missingNatives.length}个已恢复)`);
           }
@@ -176,7 +275,7 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
       const extLibBase = externalVersionDir ? versions.findExternalRoot(externalVersionDir) : null;
       const libs = (data.libraries || []).map((l) => {
         if (l.rules && !versions.evaluateRules(l.rules)) return null;
-        if (l.natives) return null;
+        if (l.natives && !l.downloads?.artifact?.path) return null;
         if (l.downloads?.artifact?.path) {
           const relPath = l.downloads.artifact.path;
           const localPath = path.join(ctx.dirs.LIBRARIES_DIR, relPath);
@@ -771,6 +870,17 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
 
     if (checkOnly) {
       return { success: true, ready: true, message: '所有文件就绪，可以启动' };
+    }
+
+    // 最终安全检查：确保关键 natives (lwjgl.dll 等) 已解压，否则游戏会因 UnsatisfiedLinkError 崩溃
+    {
+      const { criticalNatives, filterMissing } = checkCriticalNatives(versionJson);
+      const stillMissing = filterMissing(criticalNatives);
+      if (stillMissing.length > 0) {
+        const msg = `关键原生库缺失，无法启动: ${stillMissing.join(', ')}。请重新下载整合包或检查网络后重试。`;
+        console.error(`[LaunchGame] ${msg}`);
+        return { success: false, error: msg, needDownload: true };
+      }
     }
 
     return doLaunch(cleanVersionId, versionJson, settings, account, externalVersionDir, versionId);

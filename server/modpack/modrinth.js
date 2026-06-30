@@ -228,12 +228,30 @@ async function _importMrpack(zip, manifestEntry, filePath, progress, targetVersi
       const vanillaLibs = baseJson.libraries || [];
       const loaderLibs = loaderJson.libraries || [];
       const seenNames = new Set(loaderLibs.map((l) => l.name).filter(Boolean));
+      // 记录已有 natives/classifiers 的库名，避免同名带 natives 的条目重复添加
+      const namesWithNatives = new Set(
+        loaderLibs.filter((l) => l.name && (l.natives || l.downloads?.classifiers)).map((l) => l.name));
       const mergedLibs = [...loaderLibs];
       for (const vl of vanillaLibs) {
-        if (vl.name && !seenNames.has(vl.name)) {
+        if (!vl.name) continue;
+        const vlHasNatives = !!(vl.natives || vl.downloads?.classifiers);
+        if (!seenNames.has(vl.name)) {
+          // 新库：直接添加
           mergedLibs.push(vl);
           seenNames.add(vl.name);
+          if (vlHasNatives) namesWithNatives.add(vl.name);
+        } else if (vlHasNatives && !namesWithNatives.has(vl.name)) {
+          // 同名库但含 natives/classifiers，且现有同名条目不含 natives：
+          // 原版 JSON 可能有多条同名条目（一条不含 natives，一条含 natives），替换为含 natives 的条目
+          const existingIdx = mergedLibs.findIndex((l) => l.name === vl.name);
+          if (existingIdx >= 0) {
+            mergedLibs[existingIdx] = vl;
+          } else {
+            mergedLibs.push(vl);
+          }
+          namesWithNatives.add(vl.name);
         }
+        // 否则（已有同名带 natives 的条目）：跳过，避免重复
       }
       merged.libraries = mergedLibs;
       for (const key of Object.keys(loaderJson)) {
