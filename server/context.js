@@ -155,8 +155,8 @@ const ctx = {
       { name: 'Adoptium (Temurin)', type: 'temurin' }
     ],
     FORGE_MAVEN_BASES: [
-      'https://bmclapi2.bangbang93.com/maven/',
-      'https://maven.minecraftforge.net/'
+      'https://bmclapi2.bangbang93.com/maven',
+      'https://maven.minecraftforge.net'
     ]
   },
 

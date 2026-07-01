@@ -365,7 +365,7 @@ const API = {
         apiPost('/api/optifine/install', { gameVersion, optifineType }, 120000),
 
     // === 游戏启动与生命周期 ===
-    launchGame: (versionId, options) => apiPost('/api/launch', { versionId, ...(options || {}) }),
+    launchGame: (versionId, options, timeout) => apiPost('/api/launch', { versionId, ...(options || {}) }, timeout),
     cancelLaunch: () => apiPost('/api/launch/cancel'),
     launchCheck: (versionId, externalVersionDir) => apiPost('/api/launch/check', { versionId, externalVersionDir }),
     getLaunchArgsPreview: (versionId) => apiPost('/api/launch/args-preview', { versionId }),
