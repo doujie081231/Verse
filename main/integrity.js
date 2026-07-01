@@ -12,6 +12,8 @@ let _integrityViolated = false;
 
 // 私有函数：异步执行完整性校验，比对各文件 SHA256 与清单是否一致
 async function _runIntegrityCheckAsync() {
+  // 开发模式下源文件会被频繁修改，跳过校验避免误导
+  if (process.env.NODE_ENV === 'dev') return;
   try {
     const _crypto = require('crypto');
     const _integrityPath = path.join(_rootDir, 'integrity.json');
