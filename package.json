@@ -47,6 +47,7 @@
         ],
         "files": [
             "main.js",
+            "forge-installer.js",
             "main/**/*",
             "server.js",
             "server/**/*",

@@ -234,17 +234,22 @@ async function downloadMavenArtifact(mavenCoord) {
     const dest = path.join(LIBS, relativePath);
     if (fs.existsSync(dest) && fs.statSync(dest).size > 100) return true;
 
-    // For modloader-related libraries, only use BMCLAPI mirror (domestic, fast)
-    // For other libraries, use BMCLAPI first, then official sources as fallback
+    // For modloader-related libraries, use BMCLAPI first, then official sources as fallback
+    // For other libraries, use BMCLAPI first, then aliyun, then official sources
     const isModloaderLib = ['minecraftforge', 'neoforged', 'fabricmc', 'quiltmc'].some(
         k => parts[0].toLowerCase().includes(k)
     );
+    const isForgeLib = parts[0].toLowerCase().includes('minecraftforge');
     const mirrors = isModloaderLib
-        ? [`https://bmclapi2.bangbang93.com/maven/${relativePath}`]
+        ? [
+              `https://bmclapi2.bangbang93.com/maven/${relativePath}`,
+              ...(isForgeLib ? [`https://maven.minecraftforge.net/${relativePath}`] : []),
+          ]
         : [
               `https://bmclapi2.bangbang93.com/maven/${relativePath}`,
               `https://maven.aliyun.com/repository/public/${relativePath}`,
               `https://libraries.minecraft.net/${relativePath}`,
+              `https://maven.minecraftforge.net/${relativePath}`,
           ];
     for (const url of mirrors) {
         try {
