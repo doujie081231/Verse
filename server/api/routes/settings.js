@@ -24,7 +24,6 @@ module.exports = {
                 const data = await readBody(req);
                 const current = accounts.loadSettingsCached();
                 const updated = { ...current, ...data };
-                console.log(`[设置] 保存设置: maxThreads=${updated.maxThreads}`);
                 accounts.saveSettings(updated);
                 sendJSON(res, { success: true, settings: updated });
             } else {
@@ -85,7 +84,6 @@ module.exports = {
                         autoSetChinese: true
                     };
                     accounts.saveSettings(defaults);
-                    console.log('[设置] 已重置为默认值');
                     sendJSON(res, { success: true, settings: defaults });
                 } catch (e) {
                     console.error('[设置] 重置失败:', e);

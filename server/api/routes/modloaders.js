@@ -60,7 +60,6 @@ module.exports = {
             if (!gameVersion) { sendError(res, 'Missing game parameter', 400); return; }
             try {
                 const metadataUrl = 'https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml';
-                console.log('[Forge] Fetching metadata from:', metadataUrl);
                 let metadataXml = null;
                 const forgeUrls = [
                     metadataUrl,
@@ -76,18 +75,14 @@ module.exports = {
                         const testMatches = xml.match(new RegExp(`<version>${gameVersion.replace(/\./g, '\\.')}-[^<]+<\\/version>`, 'g'));
                         if (testMatches && testMatches.length > 0) {
                             metadataXml = xml;
-                            console.log('[Forge] Got metadata from:', tryUrl, `(${testMatches.length} versions for ${gameVersion})`);
                             break;
                         }
-                        console.log('[Forge] Metadata from', tryUrl, 'has no versions for', gameVersion, ', trying next...');
-                    } catch (e) { console.log('[Forge] Metadata fetch failed from:', tryUrl, e.message); }
+                    } catch (e) {}
                 }
                 if (!metadataXml) throw new Error('所有Forge元数据源均不可用');
-                console.log('[Forge] Got metadata, length:', metadataXml?.length || 0);
                 const forgeVersions = [];
 
                 const versionMatches = metadataXml.match(/<version>([^<]+)<\/version>/g) || [];
-                console.log('[Forge] Found', versionMatches.length, 'version tags');
 
                 for (const match of versionMatches) {
                     const ver = match.replace(/<\/?version>/g, '');
@@ -99,7 +94,6 @@ module.exports = {
                     }
                 }
 
-                console.log('[Forge] Found', forgeVersions.length, 'versions for MC', gameVersion);
                 forgeVersions.reverse();
                 if (forgeVersions.length > 0) {
                     forgeVersions[0].type = '推荐';
@@ -222,7 +216,6 @@ module.exports = {
                     if (ofVersionJson.minecraftArguments && !ofVersionJson.arguments) {
                         const gameArgs = ofVersionJson.minecraftArguments.split(' ');
                         ofVersionJson.arguments = { game: gameArgs, jvm: [] };
-                        console.log(`[OptiFine] 转换 minecraftArguments → arguments: ${gameArgs.length} args`);
                     }
 
                     for (const lib of (ofVersionJson.libraries || [])) {
@@ -265,7 +258,6 @@ module.exports = {
                         if (!fs.existsSync(launchWrapperPath)) {
                             fs.mkdirSync(path.dirname(launchWrapperPath), { recursive: true });
                             fs.writeFileSync(launchWrapperPath, lwEntry.getData());
-                            console.log(`[OptiFine] 提取 launchwrapper: ${lwName}`);
                         }
                     }
 

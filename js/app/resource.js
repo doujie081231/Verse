@@ -34,60 +34,67 @@ async function importModpackFromFile() {
     showToast('整合包正在导入中，请等待完成', 'warning');
     return;
   }
+  var _useVIsland = typeof DynamicIsland !== 'undefined' && DynamicIsland.isEnabled();
   try {
     const result = await API.selectModpackFile();
     if (result && result.filePath) {
       const filePath = result.filePath;
       window._modpackImporting = true;
       try {
-        if (typeof dlManager !== 'undefined') {
-          const sessionId = 'local-modpack-' + Date.now();
-          const taskId = 'modpack-' + sessionId;
+        var sessionId = 'local-modpack-' + Date.now();
+        var taskId = 'modpack-' + sessionId;
+        if (_useVIsland) {
+          DynamicIsland.show(result.name || '整合包导入');
+        } else if (typeof dlManager !== 'undefined') {
           dlManager.add(taskId, result.name || '整合包导入', 'modpack', sessionId, '');
           navigateToPage('downloads');
-          if (window.electronAPI?.onImportProgress) {
-            if (window.electronAPI.removeImportProgressListener) window.electronAPI.removeImportProgressListener();
-            window.electronAPI.onImportProgress(function (data) {
-              const stageText = getImportStageText(data.message);
-              let speedText = '';
-              if (data.files && data.files.length > 0) {
-                let totalSpeed = 0;
-                let activeCount = 0;
-                for (const f of data.files) {
-                  if (f.s === 'downloading' && f.sp > 0) { totalSpeed += f.sp; activeCount++; }
-                }
-                if (totalSpeed > 0) {
-                  const speedMB = (totalSpeed / 1024 / 1024).toFixed(1);
-                  const speedKB = (totalSpeed / 1024).toFixed(0);
-                  speedText = totalSpeed > 1024 * 1024 ? ` | ${speedMB} MB/s` : ` | ${speedKB} KB/s`;
-                }
+        }
+        if (window.electronAPI?.onImportProgress) {
+          if (window.electronAPI.removeImportProgressListener) window.electronAPI.removeImportProgressListener();
+          window.electronAPI.onImportProgress(function (data) {
+            var stageText = getImportStageText(data.message);
+            var pct = data.progress || 0;
+            var filesMapped = null;
+            if (data.files && data.files.length > 0) {
+              var totalSpeed = 0;
+              for (var i = 0; i < data.files.length; i++) {
+                var f = data.files[i];
+                if ((f.status === 'downloading' || f.s === 'downloading') && (f.speed || f.sp || 0) > 0) totalSpeed += (f.speed || f.sp || 0);
               }
-              dlManager.update(taskId, {
-                progress: data.progress || 0,
-                status: 'downloading',
-                message: stageText + speedText,
-                stageHistory: data.stageHistory || []
+              filesMapped = data.files.map(function (f) {
+                return { name: f.name || f.filename || f.n || '', status: f.status || f.s || 'pending', progress: f.progress || f.p || 0, speed: f.speed || f.sp || 0 };
               });
-            });
-          }
-          showToast('正在导入整合包...', 'info');
-          const importResult = await window.electronAPI.importModpack(filePath, '');
-          if (importResult && importResult.success) {
+            }
+            if (_useVIsland) {
+              DynamicIsland.update({ progress: pct, status: 'downloading', message: stageText, name: result.name || '整合包导入', speed: totalSpeed || data.speed || 0, files: filesMapped || [], stageHistory: data.stageHistory || [], currentFile: data.currentFile || '' });
+            } else if (typeof dlManager !== 'undefined') {
+              var speedText = '';
+              if (totalSpeed > 0) {
+                speedText = totalSpeed > 1024 * 1024 ? ' | ' + (totalSpeed / 1024 / 1024).toFixed(1) + ' MB/s' : ' | ' + (totalSpeed / 1024).toFixed(0) + ' KB/s';
+              }
+              var u = { progress: pct, status: 'downloading', message: stageText + speedText, stageHistory: data.stageHistory || [], currentFile: data.currentFile || '' };
+              if (filesMapped) u.files = filesMapped;
+              dlManager.update(taskId, u);
+            }
+          });
+        }
+        if (!_useVIsland) showToast('正在导入整合包...', 'info');
+        const importResult = await window.electronAPI.importModpack(filePath, '');
+        if (importResult && importResult.success) {
+          if (_useVIsland) {
+            DynamicIsland.update({ progress: 100, status: 'completed', message: '导入完成' });
+          } else if (typeof dlManager !== 'undefined') {
             dlManager.update(taskId, { status: 'completed', progress: 100, message: '导入完成' });
-            showToast(`整合包 "${importResult.name || '未知'}" 导入成功！`, 'success');
-          } else {
-            dlManager.update(taskId, { status: 'failed', progress: 100, message: importResult?.error || '未知错误', stageHistory: importResult?.stageHistory || [] });
-            showToast(`导入失败: ${importResult?.error || '未知错误'}`, 'error');
           }
+          if (!_useVIsland) showToast(`整合包 "${importResult.name || '未知'}" 导入成功！`, 'success');
         } else {
-          navigateToPage('downloads');
-          showToast('正在导入整合包...', 'info');
-          const importResult = await window.electronAPI.importModpack(filePath, '');
-          if (importResult && importResult.success) {
-            showToast(`整合包 "${importResult.name || '未知'}" 导入成功！`, 'success');
-          } else {
-            showToast(`导入失败: ${importResult?.error || '未知错误'}`, 'error');
+          var errMsg = importResult?.error || '未知错误';
+          if (_useVIsland) {
+            DynamicIsland.update({ status: 'failed', message: errMsg });
+          } else if (typeof dlManager !== 'undefined') {
+            dlManager.update(taskId, { status: 'failed', progress: 100, message: errMsg, stageHistory: importResult?.stageHistory || [] });
           }
+          if (!_useVIsland) showToast(`导入失败: ${errMsg}`, 'error');
         }
       } finally {
         window._modpackImporting = false;
@@ -115,52 +122,48 @@ document.addEventListener('drop', (e) => {
     }
     if (filePath) {
       window._modpackImporting = true;
-      if (typeof dlManager !== 'undefined') {
-        const sessionId = 'local-modpack-' + Date.now();
-        const taskId = 'modpack-' + sessionId;
+      var _vi = typeof DynamicIsland !== 'undefined' && DynamicIsland.isEnabled();
+      var sessionId = 'local-modpack-' + Date.now();
+      var taskId = 'modpack-' + sessionId;
+      if (_vi) {
+        DynamicIsland.show(name || '整合包导入');
+      } else if (typeof dlManager !== 'undefined') {
         dlManager.add(taskId, name || '整合包导入', 'modpack', sessionId, '');
         navigateToPage('downloads');
-        if (window.electronAPI?.onImportProgress) {
-          if (window.electronAPI.removeImportProgressListener) window.electronAPI.removeImportProgressListener();
-          window.electronAPI.onImportProgress(function (data) {
-            const stageText = getImportStageText(data.message);
-            dlManager.update(taskId, {
-              progress: data.progress || 0,
-              status: 'downloading',
-              message: stageText
-            });
-          });
-        }
-        showToast('正在导入整合包...', 'info');
-        window.electronAPI.importModpack(filePath, '').then(result => {
-          window._modpackImporting = false;
-          if (result && result.success) {
-            dlManager.update(taskId, { status: 'completed', progress: 100, message: '导入完成' });
-            showToast(`整合包 "${result.name || '未知'}" 导入成功！`, 'success');
-          } else {
-            dlManager.update(taskId, { status: 'error', message: result?.error || '未知错误' });
-            showToast(`导入失败: ${result?.error || '未知错误'}`, 'error');
+      }
+      if (window.electronAPI?.onImportProgress) {
+        if (window.electronAPI.removeImportProgressListener) window.electronAPI.removeImportProgressListener();
+        window.electronAPI.onImportProgress(function (data) {
+          var stageText = getImportStageText(data.message);
+          var pct = data.progress || 0;
+          if (_vi) {
+            var filesMapped = data.files ? data.files.map(function (f) { return { name: f.name || f.filename || f.n || '', status: f.status || f.s || 'pending', progress: f.progress || f.p || 0, speed: f.speed || f.sp || 0 }; }) : [];
+            DynamicIsland.update({ progress: pct, status: 'downloading', message: stageText, name: name || '整合包导入', speed: data.speed || 0, files: filesMapped, stageHistory: data.stageHistory || [], currentFile: data.currentFile || '' });
+          } else if (typeof dlManager !== 'undefined') {
+            dlManager.update(taskId, { progress: pct, status: 'downloading', message: stageText, stageHistory: data.stageHistory || [], currentFile: data.currentFile || '' });
           }
-        }).catch(err => {
-          window._modpackImporting = false;
-          dlManager.update(taskId, { status: 'error', message: err.message || '' });
-          showToast('导入失败: ' + (err.message || ''), 'error');
-        });
-      } else {
-        navigateToPage('downloads');
-        showToast('正在导入整合包...', 'info');
-        window.electronAPI.importModpack(filePath, '').then(result => {
-          window._modpackImporting = false;
-          if (result && result.success) {
-            showToast(`整合包 "${result.name || '未知'}" 导入成功！`, 'success');
-          } else {
-            showToast(`导入失败: ${result?.error || '未知错误'}`, 'error');
-          }
-        }).catch(err => {
-          window._modpackImporting = false;
-          showToast('导入失败: ' + (err.message || ''), 'error');
         });
       }
+      if (!_vi) showToast('正在导入整合包...', 'info');
+      window.electronAPI.importModpack(filePath, '').then(result => {
+        window._modpackImporting = false;
+        if (result && result.success) {
+          if (_vi) { DynamicIsland.update({ progress: 100, status: 'completed', message: '导入完成' }); }
+          else if (typeof dlManager !== 'undefined') { dlManager.update(taskId, { status: 'completed', progress: 100, message: '导入完成' }); }
+          if (!_vi) showToast(`整合包 "${result.name || '未知'}" 导入成功！`, 'success');
+        } else {
+          var errMsg = result?.error || '未知错误';
+          if (_vi) { DynamicIsland.update({ status: 'failed', message: errMsg }); }
+          else if (typeof dlManager !== 'undefined') { dlManager.update(taskId, { status: 'error', message: errMsg }); }
+          if (!_vi) showToast(`导入失败: ${errMsg}`, 'error');
+        }
+      }).catch(err => {
+        window._modpackImporting = false;
+        var catchMsg = err.message || '';
+        if (_vi) { DynamicIsland.update({ status: 'failed', message: catchMsg }); }
+        else if (typeof dlManager !== 'undefined') { dlManager.update(taskId, { status: 'error', message: catchMsg }); }
+        if (!_vi) showToast('导入失败: ' + catchMsg, 'error');
+      });
     }
   }
 });

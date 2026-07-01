@@ -44,7 +44,6 @@ async function _repairCorruptedModJars(versionDir) {
 
     if (corruptedJars.length === 0) return { repaired: 0, failed: 0 };
 
-    console.log(`[Modpack] 发现 ${corruptedJars.length} 个损坏的JAR文件，尝试修复...`);
     let repaired = 0, failed = 0;
 
     for (const jar of corruptedJars) {
@@ -69,7 +68,7 @@ async function _repairCorruptedModJars(versionDir) {
                             newZip.addLocalFile(f, path.dirname(rel));
                         }
                         newZip.writeZip(jar.path);
-                        if (utils.isJarIntact(jar.path)) { fixed = true; console.log(`[Modpack] 已修复: ${path.basename(jar.path)}`); }
+                        if (utils.isJarIntact(jar.path)) { fixed = true; }
                     }
                 } catch (e) {
                     console.warn(`[Modpack] PowerShell修复失败 ${path.basename(jar.path)}: ${e.message}`);
@@ -88,7 +87,7 @@ async function _repairCorruptedModJars(versionDir) {
                     function addDirToZip(zip, dir, base) { for (const i of fs.readdirSync(dir)) { const p = path.join(dir, i); if (fs.statSync(p).isDirectory()) addDirToZip(zip, p, base); else zip.addLocalFile(p, path.relative(base, path.dirname(p)).replace(/\\/g, '/')); } }
                     addDirToZip(newZip, tempDir2, tempDir2);
                     newZip.writeZip(jar.path);
-                    if (utils.isJarIntact(jar.path)) { fixed = true; console.log(`[Modpack] unzip已修复: ${path.basename(jar.path)}`); }
+                    if (utils.isJarIntact(jar.path)) { fixed = true; }
                 } catch (e) {}
                 if (fs.existsSync(tempDir2)) fs.rmSync(tempDir2, { recursive: true, force: true });
             }
@@ -100,7 +99,6 @@ async function _repairCorruptedModJars(versionDir) {
         if (fixed) repaired++; else failed++;
     }
 
-    console.log(`[Modpack] JAR修复完成: ${repaired}个修复, ${failed}个失败`);
     return { repaired, failed };
 }
 

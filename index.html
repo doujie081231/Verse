@@ -1,4 +1,4 @@
-<!-- index.html - VersePC 主入口界面 -->
+﻿<!-- index.html - VersePC 主入口界面 -->
 <!--
   VersePC - Minecraft Launcher
   Copyright (c) 2026 豆杰. All Rights Reserved.
@@ -44,7 +44,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>VersePC - Minecraft Launcher</title>
-  <style>body{background:#ffffff!important}[data-theme="dark"] body{background:#0a0a0a!important}</style>
+  <style>
+    body{background:#ffffff!important}[data-theme="dark"] body{background:#0a0a0a!important}
+    button,a,input,select,textarea{outline:none!important}
+    button{background:transparent;border:none;color:inherit;font:inherit;cursor:default}
+    a{color:inherit;text-decoration:none}
+    *:focus,*:focus-visible{outline:none!important}
+  </style>
   <link rel="stylesheet" href="css/base.css">
   <link rel="stylesheet" href="css/layout.css">
   <link rel="stylesheet" href="css/versions.css">
@@ -52,6 +58,7 @@
   <link rel="stylesheet" href="css/mods.css">
   <link rel="stylesheet" href="css/settings.css">
   <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/dynamic-island.css">
   <link rel="stylesheet" href="node_modules/@xterm/xterm/css/xterm.css">
   <link rel="stylesheet" href="css/themes.css">
   <link rel="stylesheet" href="css/file-browser.css">
@@ -2887,6 +2894,17 @@
             <h2>其他设置</h2>
           </div>
           <div class="settings-container">
+            <div class="card">
+              <h3>V 岛</h3>
+              <div class="form-group">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="vIsland">
+                  <span>启用灵动岛下载样式</span>
+                </label>
+                <span class="form-hint">开启后下载任务以顶部灵动岛展示，取代右下角下载按钮</span>
+              </div>
+            </div>
+
             <div class="card sponsor-card" id="sponsor-card">
               <div class="sponsor-header">
                 <h3>💕 赞助者</h3>
@@ -3319,45 +3337,46 @@
     <div id="toast-container" class="toast-container"></div>
   </div>
 
-  <script src="js/utils.js"></script>
-  <script src="js/api.js"></script>
-  <script src="js/wallpaper-engine.js"></script>
-  <script src="js/marked.min.js"></script>
-  <script src="node_modules/@xterm/xterm/lib/xterm.js"></script>
-  <script src="node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
-  <script src="js/skinview3d.bundle.js"></script>
-  <script src="js/app/lan.js"></script>
-  <script src="js/app/favorites.js"></script>
-  <script src="js/app/mod-detail.js"></script>
-  <script src="js/app/mod-install.js"></script>
-  <script src="js/app/accounts.js"></script>
-  <script src="js/app/launch.js"></script>
-  <script src="js/app/java.js"></script>
-  <script src="js/app/versions.js"></script>
-  <script src="js/app/mod-browse.js"></script>
-  <script src="js/app/sponsors.js"></script>
-  <script src="js/app/maixiang.js"></script>
-  <script src="js/app/personalize.js"></script>
-  <script src="js/app/other-settings.js"></script>
-  <script src="js/app/resource.js"></script>
-  <script src="js/app/version-settings.js"></script>
-  <script src="js/app/launch-settings.js"></script>
-  <script src="js/app/announcement.js"></script>
-  <script src="js/app/window-theme.js"></script>
-  <script src="js/app/settings-misc.js"></script>
-  <script src="js/app/utils.js"></script>
-  <script src="js/app/custom-select.js"></script>
-  <script src="js/app/ui-components.js"></script>
-  <script src="js/app/custom-download.js"></script>
-  <script src="js/app/java-mgr.js"></script>
-  <script src="js/app/console-log.js"></script>
-  <script src="js/app/settings-load-save.js"></script>
-  <script src="js/app/init-setup.js"></script>
-  <script src="js/app.js"></script>
+  <script src="js/utils.js" defer></script>
+  <script src="js/api.js" defer></script>
+  <script src="js/wallpaper-engine.js" defer></script>
+  <script src="js/marked.min.js" defer></script>
+  <script src="node_modules/@xterm/xterm/lib/xterm.js" defer></script>
+  <script src="node_modules/@xterm/addon-fit/lib/addon-fit.js" defer></script>
+  <script src="js/skinview3d.bundle.js" defer></script>
+  <script src="js/app/lan.js" defer></script>
+  <script src="js/app/favorites.js" defer></script>
+  <script src="js/app/mod-detail.js" defer></script>
+  <script src="js/app/mod-install.js" defer></script>
+  <script src="js/app/accounts.js" defer></script>
+  <script src="js/app/launch.js" defer></script>
+  <script src="js/app/java.js" defer></script>
+  <script src="js/app/versions.js" defer></script>
+  <script src="js/app/mod-browse.js" defer></script>
+  <script src="js/app/sponsors.js" defer></script>
+  <script src="js/app/maixiang.js" defer></script>
+  <script src="js/app/personalize.js" defer></script>
+  <script src="js/app/other-settings.js" defer></script>
+  <script src="js/app/resource.js" defer></script>
+  <script src="js/app/version-settings.js" defer></script>
+  <script src="js/app/launch-settings.js" defer></script>
+  <script src="js/app/announcement.js" defer></script>
+  <script src="js/app/window-theme.js" defer></script>
+  <script src="js/app/settings-misc.js" defer></script>
+  <script src="js/app/utils.js" defer></script>
+  <script src="js/app/custom-select.js" defer></script>
+  <script src="js/app/ui-components.js" defer></script>
+  <script src="js/app/custom-download.js" defer></script>
+  <script src="js/app/java-mgr.js" defer></script>
+  <script src="js/app/console-log.js" defer></script>
+  <script src="js/app/settings-load-save.js" defer></script>
+  <script src="js/app/init-setup.js" defer></script>
+  <script src="js/app.js" defer></script>
   <script src="js/mod-slug-map.js" defer></script>
   <script src="js/mod-chinese-names.js" defer></script>
   <script src="js/file-browser.js" defer></script>
   <script src="js/crashAnalyzerUI.js" defer></script>
+  <script src="js/dynamic-island.js" defer></script>
   <script src="js/modpack-import.js" defer></script>
   <script>
     (function() {

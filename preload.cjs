@@ -35,10 +35,9 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 // 启动时读取本地主题配置并注入到 HTML 根节点，避免首屏闪烁
 try {
   const fs = require('fs');
-  const os = require('os');
   const path = require('path');
-  const storeFile = path.join(os.homedir(), '.versepc', 'app-store.json');
-  const storeData = JSON.parse(fs.readFileSync(storeFile, 'utf-8'));
+  const { APP_STORE_FILE } = require('./main/paths');
+  const storeData = JSON.parse(fs.readFileSync(APP_STORE_FILE, 'utf-8'));
   const theme = storeData.versepc_theme;
   if (theme === 'light' || theme === 'dark') {
     document.documentElement.setAttribute('data-theme', theme);

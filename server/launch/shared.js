@@ -163,7 +163,6 @@ function analyzeExitCode(code, versionId) {
  */
 function setGameLanguage(gameDir, versionJson, settings) {
   if (!settings.autoSetChinese) {
-    console.log('[Language] 自动设置中文已关闭，跳过语言设置');
     return;
   }
 
@@ -173,10 +172,7 @@ function setGameLanguage(gameDir, versionJson, settings) {
     // Yosbr Mod 会将配置前置到 config/yosbr 目录
     const yosbrPath = path.join(gameDir, 'config', 'yosbr', 'options.txt');
     if (fs.existsSync(yosbrPath)) {
-      console.log('[Language] 使用 Yosbr Mod 中的 options.txt');
       optionsPath = yosbrPath;
-    } else {
-      console.log('[Language] options.txt 不存在，将创建新文件');
     }
   }
 
@@ -196,17 +192,13 @@ function setGameLanguage(gameDir, versionJson, settings) {
   let requiredLang = 'zh_cn';
 
   if (releaseDate > new Date(0) && releaseDate <= mc1_1_date) {
-    console.log('[Language] 1.0 及以下版本，无语言选项');
     return;
   } else if (releaseDate > mc1_1_date && releaseDate <= mc1_11_date) {
     requiredLang = 'zh_CN';
-    console.log('[Language] 1.1~1.10 版本，使用 zh_CN 格式');
   } else if (releaseDate > mc1_11_date && releaseDate <= mc1_13_date) {
     requiredLang = 'zh_cn';
-    console.log('[Language] 1.11~1.12 版本，使用 zh_cn 格式');
   } else {
     requiredLang = 'zh_cn';
-    console.log('[Language] 1.13+ 版本，使用 zh_cn 格式');
   }
 
   let currentLang = 'none';
@@ -220,14 +212,10 @@ function setGameLanguage(gameDir, versionJson, settings) {
     }
   }
 
-  if (currentLang === requiredLang) {
-    console.log(`[Language] 当前语言已为 ${requiredLang}，无需修改`);
-  } else {
+  if (currentLang !== requiredLang) {
     // 已有存档且语言已显式设置时保留用户选择，避免覆盖
     const hasExistingSaves = fs.existsSync(path.join(gameDir, 'saves'));
-    if (currentLang !== 'none' && hasExistingSaves) {
-      console.log(`[Language] 已有存档且语言已设置 (${currentLang})，保留用户选择`);
-    } else {
+    if (!(currentLang !== 'none' && hasExistingSaves)) {
       if (optionsContent && currentLang !== 'none') {
         optionsContent = optionsContent.replace(/^lang:.+$/m, `lang:${requiredLang}`);
       } else if (optionsContent) {
@@ -235,7 +223,6 @@ function setGameLanguage(gameDir, versionJson, settings) {
       } else {
         optionsContent = `lang:${requiredLang}\n`;
       }
-      console.log(`[Language] 已将游戏语言设置为 ${requiredLang}`);
     }
   }
 
@@ -274,7 +261,6 @@ function applyWindowSettings(gameDir, settings) {
       } else {
         optionsContent = 'fullscreen:false\n';
       }
-      console.log('[Options] 已设置 fullscreen:false (窗口化模式)');
     } else {
       if (optionsContent.match(/^fullscreen:/m)) {
         optionsContent = optionsContent.replace(/^fullscreen:.+$/m, 'fullscreen:true');
@@ -283,7 +269,6 @@ function applyWindowSettings(gameDir, settings) {
       } else {
         optionsContent = 'fullscreen:true\n';
       }
-      console.log('[Options] 已设置 fullscreen:true (全屏模式)');
     }
 
     const dir = path.dirname(optionsPath);

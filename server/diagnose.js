@@ -209,7 +209,6 @@ async function performRepair(sessionId, versionId) {
     try { fs.mkdirSync(path.dirname(repairLogPath), { recursive: true }); } catch (_) {}
     function rlog(msg) {
         const line = `[${new Date().toLocaleTimeString()}] ${msg}`;
-        console.log(`[Repair] ${msg}`);
         try { fs.appendFileSync(repairLogPath, line + '\n'); } catch (_) {}
     }
     session._logFile = repairLogPath;

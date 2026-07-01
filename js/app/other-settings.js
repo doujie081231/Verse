@@ -47,7 +47,8 @@ async function saveOtherSettings() {
         debugMode: document.getElementById('debug-mode')?.checked,
         verboseLogging: document.getElementById('verbose-logging')?.checked,
         consoleDebug: document.getElementById('enable-console-debug')?.checked,
-        autoMemoryOptimize: document.getElementById('auto-memory-optimize')?.checked
+        autoMemoryOptimize: document.getElementById('auto-memory-optimize')?.checked,
+        vIsland: document.getElementById('vIsland')?.checked
     };
 
     try {
@@ -84,8 +85,11 @@ async function resetOtherSettings() {
     document.getElementById('verbose-logging').checked = false;
     document.getElementById('enable-console-debug').checked = false;
     document.getElementById('auto-memory-optimize').checked = true;
+    document.getElementById('vIsland').checked = false;
+    document.body.classList.remove('v-island-enabled');
 
     API.saveSetting('autoSetChinese', true).catch(() => {});
+    API.saveSetting('vIsland', false).catch(() => {});
     showToast('其他设置已重置', 'success');
 }
 
@@ -117,6 +121,10 @@ async function loadOtherSettings() {
             if (settings.verboseLogging !== undefined) document.getElementById('verbose-logging').checked = settings.verboseLogging;
             if (settings.consoleDebug !== undefined) document.getElementById('enable-console-debug').checked = settings.consoleDebug;
             if (settings.autoMemoryOptimize !== undefined) document.getElementById('auto-memory-optimize').checked = settings.autoMemoryOptimize;
+            if (settings.vIsland !== undefined) {
+                document.getElementById('vIsland').checked = settings.vIsland;
+                if (settings.vIsland) document.body.classList.add('v-island-enabled');
+            }
         }
     } catch (e) {
         console.error('[Settings] Load other settings error:', e);
@@ -129,3 +137,31 @@ function updateSpeedLimitLabel(value) {
         label.textContent = value == 0 ? '无限制' : `${value} MB/s`;
     }
 }
+
+(function setupVIslandToggle() {
+    function init() {
+        var el = document.getElementById('vIsland');
+        if (!el) return;
+        if (el.checked) {
+            document.body.classList.add('v-island-enabled');
+            if (typeof DynamicIsland !== 'undefined') DynamicIsland.setupHoverZone();
+        }
+        el.addEventListener('change', function () {
+            if (el.checked) {
+                document.body.classList.add('v-island-enabled');
+                if (typeof DynamicIsland !== 'undefined') {
+                    DynamicIsland.setupHoverZone();
+                    DynamicIsland.preview();
+                }
+            } else {
+                document.body.classList.remove('v-island-enabled');
+                if (typeof DynamicIsland !== 'undefined') DynamicIsland.dismiss();
+            }
+        });
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+})();

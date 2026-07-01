@@ -116,11 +116,9 @@ async function ensureTerracottaInstalled() {
     for (let i = 0; i < TERRACOTTA_URLS.length; i++) {
         const url = TERRACOTTA_URLS[i];
         try {
-            console.log(`[Terracotta] 下载组件 (${i + 1}/${TERRACOTTA_URLS.length}): ${url}`);
             const resp = await fetch(url);
             if (!resp.ok) { console.warn(`[Terracotta] 下载失败 HTTP ${resp.status}: ${url}`); continue; }
             const buffer = Buffer.from(await resp.arrayBuffer());
-            console.log(`[Terracotta] 下载完成，文件大小: ${(buffer.length / 1024 / 1024).toFixed(2)} MB`);
             if (buffer.length < 10000) { console.warn(`[Terracotta] 文件过小 (${buffer.length} bytes)，跳过: ${url}`); continue; }
             const { execFile } = require('child_process');
             const tmpDir = path.join(binDir, '_tmp_extract');
@@ -151,7 +149,6 @@ async function ensureTerracottaInstalled() {
                         try { fs.copyFileSync(dll, path.join(binDir, path.basename(dll))); } catch (_) {}
                     }
                     if (!isWin) fs.chmodSync(binPath, 0o755);
-                    console.log(`[Terracotta] 解压安装成功 (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`);
                     fs.rmSync(tmpDir, { recursive: true, force: true });
                     return true;
                 }
@@ -166,7 +163,6 @@ async function ensureTerracottaInstalled() {
             fs.writeFileSync(tmpPath, buffer);
             fs.renameSync(tmpPath, binPath);
             if (!isWin) fs.chmodSync(binPath, 0o755);
-            console.log(`[Terracotta] 直接写入安装成功 (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`);
             try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (e) {}
             return true;
         } catch (e) {
@@ -182,11 +178,9 @@ async function ensureTerracottaInstalled() {
 
 async function fetchTerracottaPublicNodes(forceRefresh = false) {
     if (!forceRefresh && ctx.network.terracottaPublicNodes && Date.now() < ctx.network.terracottaPublicNodesExpiry) {
-        console.log(`[Terracotta] 使用缓存的公共节点 (${ctx.network.terracottaPublicNodes.length}个)`);
         return ctx.network.terracottaPublicNodes;
     }
     try {
-        console.log('[Terracotta] 从 terracotta.glavo.site 获取公共节点...');
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 8000);
         const resp = await fetch('https://terracotta.glavo.site/nodes', { signal: controller.signal });
@@ -205,7 +199,6 @@ async function fetchTerracottaPublicNodes(forceRefresh = false) {
                 })
                 .map(n => n.url);
             ctx.network.terracottaPublicNodesExpiry = Date.now() + 3600000;
-            console.log(`[Terracotta] 获取公共节点成功: ${ctx.network.terracottaPublicNodes.length}个 (中国: ${isChina})`);
         }
     } catch (e) {
         console.warn(`[Terracotta] 获取公共节点失败: ${e.message}，使用默认节点`);
@@ -216,7 +209,6 @@ async function fetchTerracottaPublicNodes(forceRefresh = false) {
             'https://etnode.zkitefly.eu.org/node2'
         ];
         ctx.network.terracottaPublicNodesExpiry = Date.now() + 600000;
-        console.log('[Terracotta] 使用默认公共节点 (2个)');
     }
     return ctx.network.terracottaPublicNodes;
 }
@@ -258,7 +250,6 @@ async function terracottaHttpGet(endpoint, params = {}, retries = 5) {
                 req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
                 req.on('error', reject);
             });
-            if (attempt > 0) console.log(`[Terracotta] API重试成功 ${endpoint} (第${attempt + 1}次)`);
             return result;
         } catch (e) {
             lastErr = e;
@@ -279,7 +270,6 @@ function waitForTerracottaPort(filePath, timeout, processRef) {
     return new Promise((resolve, reject) => {
         let settled = false;
         const startTime = Date.now();
-        console.log(`[Terracotta] 等待端口文件: ${filePath} (超时: ${timeout / 1000}秒)`);
         const onProcessError = (err) => {
             if (!settled) { settled = true; console.error(`[Terracotta] 进程启动失败: ${err.message}`); reject(new Error('Terracotta进程启动失败: ' + err.message)); }
         };
@@ -297,7 +287,6 @@ function waitForTerracottaPort(filePath, timeout, processRef) {
                     const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
                     if (data.port) {
                         settled = true;
-                        console.log(`[Terracotta] 端口文件就绪，HTTP端口: ${data.port}`);
                         if (processRef) {
                             processRef.removeListener('error', onProcessError);
                             processRef.removeListener('close', onProcessClose);
@@ -313,9 +302,6 @@ function waitForTerracottaPort(filePath, timeout, processRef) {
                 console.error(`[Terracotta] 启动超时 (${timeout / 1000}秒)，端口文件未出现`);
                 reject(new Error('Terracotta启动超时'));
                 return;
-            }
-            if (elapsed % 5000 < 600) {
-                console.log(`[Terracotta] 等待端口文件... (${Math.round(elapsed / 1000)}秒/${timeout / 1000}秒)`);
             }
             setTimeout(check, 500);
         };
@@ -336,11 +322,9 @@ async function killExistingTerracotta() {
 
 async function startTerracotta() {
     if (ctx.network.terracottaProcess && ctx.network.terracottaHttpPort) {
-        console.log('[Terracotta] 已有进程运行，执行健康检查...');
         for (let i = 0; i < 3; i++) {
             try {
                 await terracottaHttpGet('/state');
-                console.log('[Terracotta] 健康检查通过，复用现有进程');
                 return ctx.network.terracottaHttpPort;
             } catch (e) {
                 console.warn(`[Terracotta] 健康检查失败 (${i + 1}/3): ${e.message}`);
@@ -351,17 +335,14 @@ async function startTerracotta() {
         stopTerracotta();
     }
 
-    console.log('[Terracotta] 清理残留进程...');
     await killExistingTerracotta();
     await new Promise(r => setTimeout(r, 500));
 
-    console.log('[Terracotta] 检查组件是否已安装...');
     const installed = await ensureTerracottaInstalled();
     if (!installed) {
         console.error('[Terracotta] 组件安装失败，所有下载源均不可用');
         throw new Error('陶瓦联机初始化失败，请检查网络连接后重试');
     }
-    console.log('[Terracotta] 组件已就绪');
 
     const binPath = getTerracottaBinaryPath();
     const binCwd = path.dirname(binPath);
@@ -371,8 +352,6 @@ async function startTerracotta() {
     const tmpDir = path.join(os.tmpdir(), `versepc-terracotta-${Date.now()}`);
     fs.mkdirSync(tmpDir, { recursive: true });
     ctx.network.terracottaPortFilePath = path.join(tmpDir, 'http');
-
-    console.log(`[Terracotta] Starting: ${binPath} --hmcl ${ctx.network.terracottaPortFilePath}`);
 
     try {
         ctx.network.terracottaProcess = spawn(binPath, ['--hmcl', ctx.network.terracottaPortFilePath], {
@@ -386,16 +365,13 @@ async function startTerracotta() {
 
     ctx.network.terracottaProcess.stdout.on('data', (data) => {
         const line = data.toString().trim();
-        console.log(`[Terracotta] ${line}`);
     });
 
     ctx.network.terracottaProcess.stderr.on('data', (data) => {
         const line = data.toString().trim();
-        console.log(`[Terracotta ERR] ${line}`);
     });
 
     ctx.network.terracottaProcess.on('close', (code) => {
-        console.log(`[Terracotta] Process exited with code ${code}`);
         ctx.network.terracottaStatus.running = false;
         ctx.network.terracottaHttpPort = 0;
         ctx.network.terracottaProcess = null;
@@ -417,7 +393,6 @@ async function startTerracotta() {
         const port = await waitForTerracottaPort(ctx.network.terracottaPortFilePath, 30000, ctx.network.terracottaProcess);
         ctx.network.terracottaHttpPort = port;
         ctx.network.terracottaStatus.running = true;
-        console.log(`[Terracotta] HTTP API listening on port ${port}`);
         return port;
     } catch (e) {
         if (ctx.network.terracottaProcess) {
@@ -449,11 +424,8 @@ function getPlayerName() {
 // ============================================================================
 
 async function terracottaStartHost(gamePort, playerName) {
-    console.log(`[Terracotta] === 创建主机 === 游戏端口: ${gamePort}`);
     const port = await startTerracotta();
-    console.log('[Terracotta] 获取公共节点...');
     const nodes = await fetchTerracottaPublicNodes();
-    console.log(`[Terracotta] 公共节点: ${nodes.slice(0, 2).join(', ')}...`);
 
     ctx.network.terracottaStatus.mode = 'host';
     ctx.network.terracottaStatus.gamePort = gamePort;
@@ -463,13 +435,11 @@ async function terracottaStartHost(gamePort, playerName) {
         player: name,
         public_nodes: nodes
     };
-    console.log(`[Terracotta] 玩家名: ${name}, 开始扫描局域网...`);
 
     for (let retry = 0; retry < 3; retry++) {
         try {
             await new Promise(r => setTimeout(r, 1000 + retry * 500));
             await terracottaHttpGet('/state/scanning', params);
-            console.log(`[Terracotta] 扫描指令发送成功${retry > 0 ? ` (第${retry + 1}次)` : ''}`);
             break;
         } catch (e) {
             console.warn(`[Terracotta] /state/scanning 第${retry + 1}次失败: ${e.message}`);
@@ -481,17 +451,13 @@ async function terracottaStartHost(gamePort, playerName) {
     ctx.network._terracottaSavedGamePort = gamePort;
     ctx.network._terracottaCrashCount = 0;
     startTerracottaDaemon();
-    console.log('[Terracotta] 主机创建完成，开始守护轮询');
 
     return { success: true, httpPort: port };
 }
 
 async function terracottaStartGuest(roomCode, playerName) {
-    console.log(`[Terracotta] === 加入房间 === 房间码: ${roomCode}`);
     const port = await startTerracotta();
-    console.log('[Terracotta] 获取公共节点...');
     const nodes = await fetchTerracottaPublicNodes();
-    console.log(`[Terracotta] 公共节点: ${nodes.slice(0, 2).join(', ')}...`);
 
     ctx.network.terracottaStatus.mode = 'guest';
 
@@ -501,13 +467,11 @@ async function terracottaStartGuest(roomCode, playerName) {
         player: name,
         public_nodes: nodes
     };
-    console.log(`[Terracotta] 玩家名: ${name}, 开始连接房间...`);
 
     for (let retry = 0; retry < 3; retry++) {
         try {
             await new Promise(r => setTimeout(r, 1000 + retry * 500));
             await terracottaHttpGet('/state/guesting', params);
-            console.log(`[Terracotta] 连接指令发送成功${retry > 0 ? ` (第${retry + 1}次)` : ''}`);
             break;
         } catch (e) {
             console.warn(`[Terracotta] /state/guesting 第${retry + 1}次失败: ${e.message}`);
@@ -519,7 +483,6 @@ async function terracottaStartGuest(roomCode, playerName) {
     ctx.network._terracottaSavedRoomCode = roomCode;
     ctx.network._terracottaCrashCount = 0;
     startTerracottaDaemon();
-    console.log('[Terracotta] 客户端连接完成，开始守护轮询');
 
     return { success: true, httpPort: port };
 }
@@ -604,13 +567,8 @@ async function getTerracottaState() {
             ctx.network.terracottaStatus.state = state.state;
             ctx.network.terracottaStatus.stateIndex = state.index || -1;
 
-            if (state.state !== prevState) {
-                console.log(`[Terracotta] 状态变化: ${prevState || 'null'} -> ${state.state}`);
-            }
-
             if (state.state === 'host-ok' && state.room) {
                 ctx.network.terracottaStatus.roomCode = typeof state.room === 'object' ? (state.room.code || '') : state.room;
-                console.log(`[Terracotta] 房间已就绪, 房间码: ${ctx.network.terracottaStatus.roomCode}`);
             }
             if (state.state === 'guest-ok' && state.url) {
                 const urlStr = state.url;
@@ -618,7 +576,6 @@ async function getTerracottaState() {
                 const portMatch = urlStr.match(/:(\d+)$/);
                 if (portMatch) ctx.network.terracottaStatus.guestPort = parseInt(portMatch[1], 10);
                 else ctx.network.terracottaStatus.guestPort = 25565;
-                console.log(`[Terracotta] P2P连接已建立, 地址: ${urlStr}`);
             }
 
             if (state.state === 'exception' && state.type !== undefined) {

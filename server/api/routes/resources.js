@@ -177,8 +177,6 @@ module.exports = {
 
                 if (!versionData) { sendError(res, '未找到版本信息，请检查网络连接或稍后重试'); return; }
 
-                console.log('[Download] Version data:', JSON.stringify(versionData).substring(0, 500));
-
                 const primaryFile = versionData.files?.find(f => f.primary) || versionData.files?.[0];
                 if (!primaryFile) {
                     console.error('[Download] No files in version data, files:', versionData.files);
@@ -219,7 +217,6 @@ module.exports = {
                 });
 
                 sendJSON(res, { success: true, sessionId, fileName: safeName });
-                console.log(`[Modpack] 开始下载: ${safeName} (${fileSize} bytes, URL: ${downloadUrl?.substring(0, 80)}...)`);
 
                 (async () => {
                     try {
@@ -251,7 +248,6 @@ module.exports = {
                                     session.phase = 'download';
                                     if (!session._lastLogPct || pct - session._lastLogPct >= 10 || pct === 100) {
                                         session._lastLogPct = pct;
-                                        console.log(`[Modpack] 下载进度: ${safeName} ${pct}% (${speedKB}KB/s)`);
                                     }
                                     if (rdType === 'modpack') {
                                         if (!session.stageHistory) session.stageHistory = [];
@@ -267,7 +263,6 @@ module.exports = {
                                 }
                             } catch (_) {}
                         };
-                        console.log(`[Modpack] 开始下载: ${safeName} (URL: ${downloadUrl?.substring(0, 80)}...)`);
                         const _mpUrls = http.getMirrorUrls(downloadUrl);
                         // probe mirrors and sort by speed before downloading
                         let _sortedUrls = _mpUrls;
@@ -275,7 +270,6 @@ module.exports = {
                             const _probed = await http.probeMirrorSpeed(_mpUrls, 65536, 5000);
                             _sortedUrls = _probed;
                         } catch (e) { console.warn(`[Modpack] 测速失败，使用默认顺序: ${e.message}`); }
-                        console.log(`[Modpack] 下载源顺序: ${_sortedUrls.map(u => u.substring(0, 60)).join(' -> ')}`);
 
                         // Dynamic chunk count based on file size
                         let _maxChunks = 16;
@@ -285,7 +279,6 @@ module.exports = {
                             else if (fileSize <= 50 * 1024 * 1024) _maxChunks = 8;
                             else _maxChunks = 16;
                         }
-                        console.log(`[Modpack] 文件大小 ${(fileSize / 1024 / 1024).toFixed(1)}MB，分块数 ${_maxChunks}`);
 
                         // 单次调用，重试和镜像切换由 downloadFileChunked 内部处理
                         let _dlSuccess = false;
@@ -305,7 +298,6 @@ module.exports = {
                             });
                             if (fs.existsSync(destPath) && fs.statSync(destPath).size > 0) {
                                 _dlSuccess = true;
-                                console.log(`[Modpack] 下载成功: ${safeName}`);
                             }
                         } catch (e) {
                             if (abortController.signal && abortController.signal.aborted) {
@@ -341,10 +333,9 @@ module.exports = {
                                 const buf = Buffer.alloc(4);
                                 fs.readSync(fd, buf, 0, 4, 0);
                                 fs.closeSync(fd);
-                                if (buf[0] === 0x50 && buf[1] === 0x4B) { isModpackByMagic = true; console.log(`[Modpack] 文件扩展名 "${safeName}" 不匹配，但检测到 ZIP magic bytes，视为整合包`); }
+                                if (buf[0] === 0x50 && buf[1] === 0x4B) { isModpackByMagic = true; }
                             } catch (_mfErr) {}
                         }
-                        console.log(`[Modpack] 扩展名检查: safeName="${safeName}" rdType="${rdType}" isModpackExt=${isModpackExt} isModpackByMagic=${isModpackByMagic}`);
                         if (rdType === 'modpack') {
                             try {
                                 // downloadFileChunked 已完成 SHA1 校验，这里只做 ZIP magic 检测
@@ -392,7 +383,6 @@ module.exports = {
                                             if (p.stageHistory && p.stageHistory.length > 0) s.stageHistory = p.stageHistory;
                                             if (!s._lastImportLog || Date.now() - s._lastImportLog >= 3000) {
                                                 s._lastImportLog = Date.now();
-                                                console.log(`[Modpack] 导入进度: ${p.stage} ${Math.round(p.progress)}% - ${p.message || ''}`);
                                             }
                                         }
                                     } catch (_) {}
@@ -405,7 +395,6 @@ module.exports = {
                                 }
 
                                 if (importResult.success) {
-                                    console.log(`[Modpack] 导入完成: "${importResult.name || packName}" (${importResult.versionId || ''})${importResult.warning ? ' 警告: ' + importResult.warning : ''}`);
                                     if (s) {
                                         s.status = 'completed'; s.progress = 100;
                                         s.message = `整合包 "${importResult.name || packName}" 安装完成！`;

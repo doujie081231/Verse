@@ -268,7 +268,6 @@ module.exports = {
                         wsResult = network.startWSRelayServer(wsPort);
                         if (wsResult.success) break;
                     } catch (e) {
-                        console.log('[LAN-Remote] WS port', wsPort, 'failed:', e.message);
                     }
                     wsPort = 31000 + Math.floor(Math.random() * 1000);
                 }
@@ -285,7 +284,6 @@ module.exports = {
                     try {
                         upnpResult = await network.upnpAddPortMapping(gamePort, gamePort, 'VersePC Minecraft');
                     } catch (e) {
-                        console.log('[LAN-Remote] UPnP failed:', e.message);
                         upnpResult = { success: false, error: e.message };
                     }
                 }
@@ -293,7 +291,6 @@ module.exports = {
                 try {
                     publicIP = await network.getPublicIP();
                 } catch (e) {
-                    console.log('[LAN-Remote] Public IP detection failed:', e.message);
                 }
 
                 const localIPs = [];
@@ -342,7 +339,6 @@ module.exports = {
         // /api/easytier/status
         // ====================================================================
         registerRoute('GET', '/api/easytier/status', async (req, res, parsedUrl) => {
-            console.log('[Terracotta] API: 查询状态');
             const terracottaState = await terracotta.getTerracottaState();
             const terracottaStatus = ctx.network.terracottaStatus;
             sendJSON(res, {
@@ -367,7 +363,6 @@ module.exports = {
         registerRoute('POST', '/api/easytier/host', async (req, res, parsedUrl) => {
             const etHostData = await readBody(req);
             const etGamePort = etHostData.gamePort || 25565;
-            console.log(`[Terracotta] API: 创建主机 | 端口: ${etGamePort} | 玩家: ${etHostData.playerName || '未知'}`);
 
             try {
                 const result = await terracotta.terracottaStartHost(etGamePort, etHostData.playerName);
@@ -384,7 +379,6 @@ module.exports = {
         registerRoute('POST', '/api/easytier/guest', async (req, res, parsedUrl) => {
             const etGuestData = await readBody(req);
             const etGuestRoomCode = etGuestData.roomCode || etGuestData.invitationCode;
-            console.log(`[Terracotta] API: 加入房间 | 房间码: ${etGuestRoomCode || '空'} | 玩家: ${etGuestData.playerName || '未知'}`);
 
             if (!etGuestRoomCode) {
                 sendError(res, '缺少房间码', 400);
@@ -414,7 +408,6 @@ module.exports = {
         registerRoute('GET', '/api/easytier/diagnose', async (req, res, parsedUrl) => {
             const diagResults = [];
             const nodes = await terracotta.fetchTerracottaPublicNodes(true);
-            console.log(`[Terracotta] 诊断: 测试 ${nodes.length} 个公共节点...`);
             for (const node of nodes) {
                 const start = Date.now();
                 let status = 'unknown';
@@ -448,7 +441,6 @@ module.exports = {
                     if (status === 'unknown') status = `err_${e.code || e.message}`;
                 }
                 diagResults.push({ node, status, latency });
-                console.log(`[Terracotta] 诊断: ${node} -> ${status} (${latency}ms)`);
             }
             sendJSON(res, { nodes: diagResults });
         });

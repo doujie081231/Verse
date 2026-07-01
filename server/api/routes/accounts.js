@@ -155,7 +155,6 @@ module.exports = {
                         }
                     }
                 } catch (e) {
-                    console.log('[Authlib] 下载失败:', e.message);
                 }
             }
         }
@@ -748,7 +747,6 @@ module.exports = {
                         }
                     }
                 } catch (e) {
-                    console.log('[ThirdParty] refresh失败，使用原始token:', e.message);
                 }
 
                 if (!profile) {
@@ -756,15 +754,8 @@ module.exports = {
                     return;
                 }
 
-                console.log(`[ThirdParty] 登录成功: ${profile.name} (${profile.id})`);
                 const extractedSkinUrl = extractSkinUrlFromAuthResult(refreshResult || authResult) || extractSkinUrlFromAuthResult(authResult);
                 const extractedSkinModel = extractSkinModelFromAuthResult(refreshResult || authResult) || extractSkinModelFromAuthResult(authResult);
-                if (extractedSkinUrl) {
-                    console.log(`[ThirdParty] 从登录响应提取到皮肤URL: ${extractedSkinUrl.substring(0, 60)}...`);
-                }
-                if (extractedSkinModel) {
-                    console.log(`[ThirdParty] 从登录响应提取到皮肤模型: ${extractedSkinModel}`);
-                }
                 await ensureAuthlibInjector();
 
                 const accountsList = accounts.loadAccounts();
@@ -836,7 +827,6 @@ module.exports = {
                 const spExtractedSkinUrl = extractSkinUrlFromAuthResult(refreshResult);
                 const spExtractedSkinModel = extractSkinModelFromAuthResult(refreshResult);
                 if (spExtractedSkinUrl) {
-                    console.log(`[ThirdParty] 从角色选择响应提取到皮肤URL: ${spExtractedSkinUrl.substring(0, 60)}...`);
                 }
 
                 await ensureAuthlibInjector();

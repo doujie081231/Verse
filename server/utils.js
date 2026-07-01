@@ -526,7 +526,6 @@ function decodePngPixels(buf) {
 
     return pixels;
   } catch (e) {
-    console.log('[Avatar] decodePngPixels失败:', e.message);
     return null;
   }
 }

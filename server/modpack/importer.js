@@ -43,9 +43,6 @@ async function importModpackFromPath(filePath, onProgress, targetVersion = '', a
     utils._writeImportLog(`========== 开始导入整合包 ==========`);
     utils._writeImportLog(`文件路径: ${filePath}`);
     utils._writeImportLog(`目标版本: ${targetVersion || '(自动)'}`);
-    console.log(`[Modpack] ========== 开始导入整合包 ==========`);
-    console.log(`[Modpack] 文件路径: ${filePath}`);
-    console.log(`[Modpack] 目标版本: ${targetVersion || '(自动)'}`);
 
     if (!filePath || !fs.existsSync(filePath)) {
         console.error(`[Modpack] 文件不存在: ${filePath}`);
@@ -66,7 +63,6 @@ async function importModpackFromPath(filePath, onProgress, targetVersion = '', a
     }
 
     const fileStat = fs.statSync(filePath);
-    console.log(`[Modpack] 文件大小: ${(fileStat.size / 1024 / 1024).toFixed(1)} MB`);
     if (fileStat.size < 1024) {
         console.error(`[Modpack] 文件太小: ${fileStat.size} 字节`);
         return { success: false, error: '文件太小（' + fileStat.size + ' 字节），可能下载不完整' };
@@ -114,19 +110,15 @@ async function importModpackFromPath(filePath, onProgress, targetVersion = '', a
     try {
         if (modrinthEntry) {
             utils._writeImportLog(`检测到 Modrinth 整合包`);
-            console.log(`[Modpack] 检测到 Modrinth 整合包 (.mrpack)`);
             result = await _importMrpack(zip, modrinthEntry, filePath, progress, targetVersion, abortSignal);
         } else if (curseEntry) {
             utils._writeImportLog(`检测到 CurseForge 整合包`);
-            console.log(`[Modpack] 检测到 CurseForge 整合包`);
             result = await _importCurseForge(zip, curseEntry, filePath, progress, targetVersion, abortSignal);
         } else if (hmclEntry) {
             utils._writeImportLog(`检测到 HMCL 整合包`);
-            console.log(`[Modpack] 检测到 HMCL 整合包 (modpack.json)`);
             result = await _importHmcl(zip, hmclEntry, filePath, progress, targetVersion, abortSignal);
         } else {
             utils._writeImportLog(`未检测到已知格式，尝试普通ZIP导入`);
-            console.log(`[Modpack] 未检测到已知整合包格式，尝试作为普通 ZIP 导入`);
             result = await _importRawZip(zip, filePath, progress, targetVersion, abortSignal);
         }
     } catch (e) {
@@ -134,14 +126,12 @@ async function importModpackFromPath(filePath, onProgress, targetVersion = '', a
         console.error(`[Modpack] Import exception:`, e.stack || e.message);
         if (result && result.versionId) {
             versions.cleanupVersionChain(result.versionId);
-            console.log(`[Modpack] Cleaned up failed version chain: ${result.versionId}`);
         }
         if (result && result.loaderVersionId) {
             try {
                 const loaderDir = path.join(ctx.dirs.VERSIONS_DIR, result.loaderVersionId);
                 if (fs.existsSync(loaderDir)) {
                     fs.rmSync(loaderDir, { recursive: true, force: true });
-                    console.log(`[Modpack] 清理加载器目录: ${result.loaderVersionId}`);
                 }
             } catch (ce) {
                 console.error(`[Modpack] 清理加载器目录失败: ${ce.message}`);
@@ -163,7 +153,6 @@ async function importModpackFromPath(filePath, onProgress, targetVersion = '', a
                 const loaderDir = path.join(ctx.dirs.VERSIONS_DIR, result.loaderVersionId);
                 if (fs.existsSync(loaderDir)) {
                     fs.rmSync(loaderDir, { recursive: true, force: true });
-                    console.log(`[Modpack] 清理加载器目录: ${result.loaderVersionId}`);
                 }
             } catch (ce) {
                 console.error(`[Modpack] 清理加载器目录失败: ${ce.message}`);
@@ -176,9 +165,6 @@ async function importModpackFromPath(filePath, onProgress, targetVersion = '', a
         ctx.caches._versionsCacheTime = 0;
         utils._writeImportLog(`========== 导入成功 ==========`);
         utils._writeImportLog(`版本ID: ${result.versionId}, 整合包名: ${result.name}`);
-        console.log(`[Modpack] ========== 导入成功 ==========`);
-        console.log(`[Modpack] 版本ID: ${result.versionId}`);
-        console.log(`[Modpack] 整合包名: ${result.name}`);
     } else {
         ctx.caches._versionsCache = null;
         ctx.caches._versionsCacheTime = 0;
@@ -193,7 +179,6 @@ async function importModpackFromPath(filePath, onProgress, targetVersion = '', a
 
 // HMCL整合包格式 (modpack.json)
 async function _importHmcl(zip, hmclEntry, filePath, progress, targetVersion = '', abortSignal = null) {
-    console.log(`[HMCL] ========== 开始解析 HMCL 整合包 ==========`);
     let hmclMeta;
     try {
         hmclMeta = JSON.parse(hmclEntry.getData().toString('utf8'));
@@ -205,7 +190,6 @@ async function _importHmcl(zip, hmclEntry, filePath, progress, targetVersion = '
     const mcVersion = hmclMeta.gameVersion || '';
     const author    = hmclMeta.author || '';
 
-    console.log(`[HMCL] 整合包: ${packName}, MC: ${mcVersion}, 作者: ${author}`);
     progress('prepare', `整合包: ${packName}  MC: ${mcVersion}`, 8);
 
     let versionId = targetVersion ? targetVersion.replace(/ \[外部\d*\]/, '') : _dedupeVersionId(packName);
@@ -342,7 +326,6 @@ async function _importRawZip(zip, filePath, progress, targetVersion = '', abortS
         if (fs.existsSync(existingDir)) {
             versionId = cleanTargetId;
             versionDir = existingDir;
-            console.log(`[RawZip] 安装到现有版本: ${versionId}`);
         } else {
             const extFolders = versions.loadExternalFolders();
             for (const folder of extFolders) {
@@ -352,7 +335,6 @@ async function _importRawZip(zip, filePath, progress, targetVersion = '', abortS
                 if (extV) {
                     versionId = cleanTargetId;
                     versionDir = extV.externalVersionDir;
-                    console.log(`[RawZip] 安装到外部版本: ${versionId}`);
                     break;
                 }
             }
@@ -360,12 +342,10 @@ async function _importRawZip(zip, filePath, progress, targetVersion = '', abortS
         if (!versionDir) {
             versionId = _dedupeVersionId(packName);
             versionDir = path.join(ctx.dirs.VERSIONS_DIR, versionId);
-            console.log(`[RawZip] 目标版本不存在，创建新版本: ${versionId}`);
         }
     } else {
         versionId = _dedupeVersionId(packName);
         versionDir = path.join(ctx.dirs.VERSIONS_DIR, versionId);
-        console.log(`[RawZip] 未指定目标版本，创建新版本: ${versionId}`);
     }
 
     const isNewVersionDirRZ = !fs.existsSync(path.join(versionDir, `${versionId}.json`));
@@ -439,14 +419,11 @@ async function _importRawZip(zip, filePath, progress, targetVersion = '', abortS
         if (baseMcVersion) {
             try {
                 const baseResult = await modloaders.ensureBaseVersionInstalled(baseMcVersion);
-                if (baseResult.error) console.log(`[RawZip] 基础版本安装失败: ${baseResult.error}`);
             } catch (e) {
-                console.log(`[RawZip] 基础版本安装异常: ${e.message}`);
             }
         }
         fs.writeFileSync(path.join(versionDir, `${versionId}.json`), JSON.stringify(versionJson, null, 2));
         versions._invalidateResolvedJsonCache(versionId);
-        console.log(`[RawZip] 创建版本JSON: ${versionId}.json (inheritsFrom: ${baseMcVersion || '无'})`);
     }
 
     if (baseMcVersion) {
@@ -458,7 +435,7 @@ async function _importRawZip(zip, filePath, progress, targetVersion = '', abortS
     return { success: true, name: packName, versionId, targetVersion: targetVersion || '' };
     } catch (e) {
         console.error('[RawZip] 导入失败:', e);
-        try { if (fs.existsSync(versionDir)) { fs.rmSync(versionDir, { recursive: true, force: true }); console.log(`[RawZip] 清理失败目录: ${versionDir}`); } } catch (ce) {}
+        try { if (fs.existsSync(versionDir)) { fs.rmSync(versionDir, { recursive: true, force: true }); } } catch (ce) {}
         return { success: false, versionId, error: e.message || '导入失败' };
     }
 }

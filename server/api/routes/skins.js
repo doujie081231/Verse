@@ -264,7 +264,6 @@ module.exports = {
                         try {
                             const sharpLib2 = require('sharp');
                             skinBuf = await sharpLib2(skinBuf).resize(64, 64, { kernel: 'nearest' }).png().toBuffer();
-                            console.log(`[Upload] Resized skin from ${metadata.width}x${metadata.height} to 64x64`);
                         } catch (resizeErr) {
                             console.warn('[Upload] Sharp resize failed, saving original size:', resizeErr.message);
                         }

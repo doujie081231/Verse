@@ -58,9 +58,7 @@ async function mergeOptiFineToVersion(versionId, gameVersion, optiFineVersion, o
 
         fs.writeFileSync(jsonPath, JSON.stringify(versionJson, null, 2));
         versions._invalidateResolvedJsonCache(versionId);
-        console.log(`[OptiFine] Installed into version: ${versionId}`);
     } catch (e) {
-        console.log(`[OptiFine] Install failed: ${e.message}`);
     }
 }
 

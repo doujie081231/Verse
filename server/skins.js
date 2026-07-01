@@ -66,7 +66,6 @@ async function fetchSkinFromSessionServer(uuid, serverUrl) {
       }
     }
   } catch (e) {
-    console.log('[Avatar] session server获取皮肤失败:', e.message);
   }
   return null;
 }
@@ -166,7 +165,6 @@ async function getSteveHeadLocal() {
       /* 旧版皮肤（32 高）无帽子层，直接返回脸部 */
       if (h < 64 && metadata.channels !== 4) {
         ctx.caches.cachedSteveHead = facePng;
-        console.log('[Avatar] Steve head loaded (no hat layer)');
         return ctx.caches.cachedSteveHead;
       }
 
@@ -182,7 +180,6 @@ async function getSteveHeadLocal() {
         .png()
         .toBuffer();
 
-      console.log('[Avatar] Steve head loaded with hat overlay');
       return ctx.caches.cachedSteveHead;
     } catch (e) {
       console.error('[Avatar] getSteveHeadLocal error:', e.message);
@@ -309,7 +306,7 @@ async function fetchAvatarData(cleanUuid, avatarServerUrl, avatarUsername, store
         avatarContentType = skinRes.headers['content-type'] || 'image/png';
         isFullSkin = true;
       } else { skinRes.resume(); }
-    } catch (e) { console.log('[Avatar] storedSkinUrl失败: ' + e.message); }
+    } catch (e) {}
   }
 
   if (!avatarData && !avatarServerUrl) {
@@ -335,7 +332,6 @@ async function fetchAvatarData(cleanUuid, avatarServerUrl, avatarUsername, store
       }
     }
   } else if (avatarServerUrl) {
-    console.log('[Avatar] 外置认证，跳过公共Avatar服务，直连 ' + avatarServerUrl);
   }
 
   /* 外置认证传统 API：直接拉取 /skin/<name>.png */
@@ -344,7 +340,6 @@ async function fetchAvatarData(cleanUuid, avatarServerUrl, avatarUsername, store
       let skinRoot = cleanServerUrl(avatarServerUrl);
       if (skinRoot.endsWith('/api/yggdrasil')) skinRoot = skinRoot.replace('/api/yggdrasil', '');
       const skinUrl = skinRoot + '/skin/' + encodeURIComponent(avatarUsername) + '.png';
-      console.log('[Avatar] 传统API: ' + skinUrl);
       const skinRes = await http.fetchWithProtocol(skinUrl, { timeout: 10000 });
       if (skinRes.statusCode === 200) {
         const chunks = [];
@@ -352,7 +347,7 @@ async function fetchAvatarData(cleanUuid, avatarServerUrl, avatarUsername, store
         avatarData = Buffer.concat(chunks);
         isFullSkin = true;
       } else { skinRes.resume(); }
-    } catch (e) { console.log('[Avatar] 传统API失败: ' + e.message); }
+    } catch (e) {}
   }
 
   /* 外置认证 CSL API：先查皮肤 hash，再拉取纹理 */
@@ -378,7 +373,7 @@ async function fetchAvatarData(cleanUuid, avatarServerUrl, avatarUsername, store
           }
         }
       }
-    } catch (e) { console.log('[Avatar] CSL失败: ' + e.message); }
+    } catch (e) {}
   }
 
   /* 上述均失败，回退 Session Server 纹理 URL */
@@ -393,7 +388,7 @@ async function fetchAvatarData(cleanUuid, avatarServerUrl, avatarUsername, store
           avatarData = Buffer.concat(chunks);
           isFullSkin = true;
         } else { texRes.resume(); }
-      } catch (e) { console.log('[Avatar] SessionServer失败: ' + e.message); }
+      } catch (e) {}
     }
   }
 
@@ -404,7 +399,6 @@ async function fetchAvatarData(cleanUuid, avatarServerUrl, avatarUsername, store
       avatarData = cropped;
       avatarContentType = 'image/png';
       isFullSkin = false;
-      console.log('[Avatar] sharp裁剪全皮肤为头像成功');
     } else {
       console.warn('[Avatar] sharp裁剪失败，保留完整皮肤供前端裁剪');
       isFullSkin = true;
@@ -437,7 +431,6 @@ function refreshAvatarCache(cacheKey, cleanUuid, avatarServerUrl, avatarUsername
   fetchAvatarData(cleanUuid, avatarServerUrl, avatarUsername, storedSkinUrl).then((result) => {
     if (result) {
       ctx.caches.AVATAR_CACHE.set(cacheKey, { data: result.data, contentType: result.contentType, time: Date.now(), isFullSkin: result.isFullSkin });
-      console.log('[Avatar] 后台刷新成功: ' + cacheKey);
     }
   }).catch((e) => {
     console.error('[Avatar] 后台刷新失败: ' + e.message);
@@ -467,7 +460,7 @@ async function fetchAvatarDataFull(cleanUuid, avatarServerUrl, avatarUsername, s
         avatarData = Buffer.concat(chunks);
         avatarContentType = skinRes.headers['content-type'] || 'image/png';
       } else { skinRes.resume(); }
-    } catch (e) { console.log('[AvatarFull] storedSkinUrl失败: ' + e.message); }
+    } catch (e) {}
   }
 
   if (!avatarData && !avatarServerUrl) {
@@ -481,7 +474,7 @@ async function fetchAvatarDataFull(cleanUuid, avatarServerUrl, avatarUsername, s
           avatarData = Buffer.concat(texChunks);
           avatarContentType = texRes.headers['content-type'] || 'image/png';
         } else { texRes.resume(); }
-      } catch (e) { console.log('[AvatarFull] SessionServer失败: ' + e.message); }
+      } catch (e) {}
     }
   }
   if (!avatarData && !avatarServerUrl) {
@@ -706,7 +699,6 @@ function cropSkinHead(skinPngBuffer) {
 
     return utils.encodePng(outPixels, outputSize, outputSize);
   } catch (e) {
-    console.log('[Avatar] cropSkinHead失败:', e.message);
     return null;
   }
 }

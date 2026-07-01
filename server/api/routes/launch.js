@@ -56,24 +56,19 @@ module.exports = {
               } else {
                 settings.resolution = lsData.windowSize;
               }
-              console.log(`[Launch] 使用启动设置窗口大小: ${settings.resolution}`);
             }
             if (typeof lsData.fullscreen === 'boolean') {
               settings.fullscreen = lsData.fullscreen;
-              console.log(`[Launch] 使用启动设置全屏模式: ${settings.fullscreen}`);
             }
             if (lsData.customInfo) {
               settings.customInfo = lsData.customInfo;
-              console.log(`[Launch] 使用启动设置自定义信息: ${settings.customInfo}`);
             }
             if (lsData.windowTitle) {
               settings.windowTitle = lsData.windowTitle;
-              console.log(`[Launch] 使用启动设置窗口标题: ${settings.windowTitle}`);
             }
           }
         }
       } catch (e) {
-        console.log(`[Launch] 读取启动设置失败，使用全局设置: ${e.message}`);
       }
 
       // 读取版本级设置（优先级高于全局设置），覆盖自定义信息、窗口标题、全屏、分辨率
@@ -81,22 +76,17 @@ module.exports = {
         const verSettings = versions.loadVersionSettings(versionId);
         if (verSettings.customInfo) {
           settings.customInfo = verSettings.customInfo;
-          console.log(`[Launch] 使用版本设置自定义信息: ${settings.customInfo}`);
         }
         if (verSettings.windowTitle) {
           settings.windowTitle = verSettings.windowTitle;
-          console.log(`[Launch] 使用版本设置窗口标题: ${settings.windowTitle}`);
         }
         if (verSettings.fullscreen && verSettings.fullscreen !== 'global') {
           settings.fullscreen = verSettings.fullscreen === true || verSettings.fullscreen === 'true';
-          console.log(`[Launch] 使用版本设置全屏模式: ${settings.fullscreen}`);
         }
         if (verSettings.resolution && verSettings.resolution !== '') {
           settings.resolution = verSettings.resolution;
-          console.log(`[Launch] 使用版本设置分辨率: ${settings.resolution}`);
         }
       } catch (e) {
-        console.log(`[Launch] 读取版本设置失败: ${e.message}`);
       }
 
       const acctsList = accounts.loadAccounts();
@@ -114,7 +104,6 @@ module.exports = {
         const now = Date.now();
         const shouldRefresh = !tokenExpiresAt || now > tokenExpiresAt - 5 * 60 * 1000;
         if (shouldRefresh) {
-          console.log(`[Launch] 微软账号Token即将过期或已过期，尝试刷新...`);
           try {
             const tokenUrl = `https://login.microsoftonline.com/consumers/oauth2/v2.0/token`;
             const postData = `grant_type=refresh_token&client_id=${ctx.urls.MS_CLIENT_ID}&refresh_token=${encodeURIComponent(account.refreshToken)}&scope=XboxLive.signin+offline_access`;
@@ -182,7 +171,6 @@ module.exports = {
                   const accts = accounts.loadAccounts();
                   const idx = accts.findIndex((a) => a.id === account.id);
                   if (idx >= 0) { accts[idx] = { ...accts[idx], ...account }; accounts.saveAccounts(accts); }
-                  console.log(`[Launch] 微软账号Token刷新成功`);
                 }
               }
             } else {

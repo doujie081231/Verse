@@ -13,7 +13,6 @@ module.exports = {
         // /api/favorites
         // ====================================================================
         registerRoute('GET', '/api/favorites', async (req, res, parsedUrl) => {
-            console.log('[Fav] GET /api/favorites hit');
             sendJSON(res, accounts.loadFavorites());
         });
 

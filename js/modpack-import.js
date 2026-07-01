@@ -75,48 +75,61 @@
         }
 
         window._modpackImporting = true;
+        var _useVIsland = typeof DynamicIsland !== 'undefined' && DynamicIsland.isEnabled();
 
-        if (typeof showToast === 'function') showToast('正在导入整合包: ' + file.name, 'info');
+        if (typeof showToast === 'function' && !_useVIsland) showToast('正在导入整合包: ' + file.name, 'info');
 
-        const sessionId = 'local-modpack-' + Date.now();
-        const taskId = 'modpack-' + sessionId;
-        const iconUrl = '';
+        var sessionId = 'local-modpack-' + Date.now();
+        var taskId = 'modpack-' + sessionId;
+        var iconUrl = '';
 
-        if (typeof dlManager !== 'undefined') {
+        if (_useVIsland) {
+            DynamicIsland.show(file.name || '整合包导入');
+        } else if (typeof dlManager !== 'undefined') {
             dlManager.add(taskId, file.name || '整合包导入', 'modpack', sessionId, iconUrl);
             if (typeof navigateToPage === 'function') navigateToPage('downloads');
         }
 
         if (window.electronAPI && window.electronAPI.onImportProgress) {
             if (window.electronAPI.removeImportProgressListener) window.electronAPI.removeImportProgressListener();
-            let _localSmoothPct = 0;
-            let _maxSeenPct = 0;
+            var _localSmoothPct = 0;
+            var _maxSeenPct = 0;
             window.electronAPI.onImportProgress(function (data) {
-                if (typeof dlManager !== 'undefined') {
-                    const stageText = getImportStageText(data.message);
-                    const rawPct = data.progress || 0;
-                    if (rawPct > _maxSeenPct) _maxSeenPct = rawPct;
-                    if (_localSmoothPct <= 0 || rawPct <= _localSmoothPct) {
-                        _localSmoothPct = rawPct;
-                    } else {
-                        _localSmoothPct = _localSmoothPct * 0.7 + rawPct * 0.3;
-                    }
-                    const displayPct = Math.max(_maxSeenPct, Math.round(_localSmoothPct));
-                    const updateData = {
+                var stageText = getImportStageText(data.message);
+                var rawPct = data.progress || 0;
+                if (rawPct > _maxSeenPct) _maxSeenPct = rawPct;
+                if (_localSmoothPct <= 0 || rawPct <= _localSmoothPct) {
+                    _localSmoothPct = rawPct;
+                } else {
+                    _localSmoothPct = _localSmoothPct * 0.7 + rawPct * 0.3;
+                }
+                var displayPct = Math.max(_maxSeenPct, Math.round(_localSmoothPct));
+                var filesMapped = null;
+                if (data.files && data.files.length > 0) {
+                    filesMapped = data.files.map(function (f) {
+                        return {
+                            name: f.name || f.filename || f.n || f.path || '',
+                            status: f.status || f.s || 'pending',
+                            progress: f.progress || f.p || 0,
+                            size: f.size ? (typeof formatSize === 'function' ? formatSize(f.size) : f.size) : '',
+                            speed: f.speed || f.sp || 0
+                        };
+                    });
+                }
+                if (_useVIsland) {
+                    DynamicIsland.update({
                         progress: displayPct,
                         status: 'downloading',
-                        message: stageText
-                    };
-                    if (data.files && data.files.length > 0) {
-                        updateData.files = data.files.map(function (f) {
-                            return {
-                                name: f.name || f.filename || f.path || '',
-                                status: f.status || 'pending',
-                                progress: f.progress || 0,
-                                size: f.size ? (typeof formatSize === 'function' ? formatSize(f.size) : f.size) : ''
-                            };
-                        });
-                    }
+                        message: stageText,
+                        name: file.name || '整合包导入',
+                        speed: data.speed || 0,
+                        files: filesMapped || [],
+                        stageHistory: data.stageHistory || [],
+                        currentFile: data.currentFile || ''
+                    });
+                } else if (typeof dlManager !== 'undefined') {
+                    var updateData = { progress: displayPct, status: 'downloading', message: stageText, stageHistory: data.stageHistory || [], currentFile: data.currentFile || '' };
+                    if (filesMapped) updateData.files = filesMapped;
                     dlManager.update(taskId, updateData);
                 }
             });
@@ -141,27 +154,25 @@
 
             if (result && result.success) {
                 window._modpackImporting = false;
-                if (typeof dlManager !== 'undefined') {
-                    dlManager.update(taskId, {
-                        progress: 100,
-                        status: 'completed',
-                        message: '安装完成'
-                    });
+                if (_useVIsland) {
+                    DynamicIsland.update({ progress: 100, status: 'completed', message: '安装完成' });
+                } else if (typeof dlManager !== 'undefined') {
+                    dlManager.update(taskId, { progress: 100, status: 'completed', message: '安装完成' });
                 }
-                if (typeof showToast === 'function') {
+                if (typeof showToast === 'function' && !_useVIsland) {
                     showToast('整合包 "' + (result.name || file.name) + '" 导入成功！', 'success');
                 }
                 if (typeof loadVersions === 'function') loadVersions(true);
             } else {
                 window._modpackImporting = false;
-                if (typeof dlManager !== 'undefined') {
-                    dlManager.update(taskId, {
-                        status: 'failed',
-                        message: (result && result.error) ? result.error : '导入失败'
-                    });
+                var errMsg = (result && result.error) ? result.error : '导入失败';
+                if (_useVIsland) {
+                    DynamicIsland.update({ status: 'failed', message: errMsg });
+                } else if (typeof dlManager !== 'undefined') {
+                    dlManager.update(taskId, { status: 'failed', message: errMsg });
                 }
-                if (typeof showToast === 'function') {
-                    showToast('导入失败: ' + ((result && result.error) || '未知错误'), 'error');
+                if (typeof showToast === 'function' && !_useVIsland) {
+                    showToast('导入失败: ' + errMsg, 'error');
                 }
             }
         } catch (err) {
@@ -169,14 +180,14 @@
             if (window.electronAPI && window.electronAPI.removeImportProgressListener) {
                 window.electronAPI.removeImportProgressListener();
             }
-            if (typeof dlManager !== 'undefined') {
-                dlManager.update(taskId, {
-                    status: 'failed',
-                    message: '导入出错: ' + (err.message || err)
-                });
+            var catchMsg = '导入出错: ' + (err.message || err);
+            if (_useVIsland) {
+                DynamicIsland.update({ status: 'failed', message: catchMsg });
+            } else if (typeof dlManager !== 'undefined') {
+                dlManager.update(taskId, { status: 'failed', message: catchMsg });
             }
-            if (typeof showToast === 'function') {
-                showToast('导入出错: ' + (err.message || err), 'error');
+            if (typeof showToast === 'function' && !_useVIsland) {
+                showToast(catchMsg, 'error');
             }
         }
     }

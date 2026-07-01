@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { parseJarFile, readJarEntryContent } = require('./jar-parser');
+const { DATA_DIR, VERSIONS_DIR, SETTINGS_FILE } = require('./paths');
 
 /**
  * 注册所有模组相关的 IPC 处理器
@@ -173,7 +174,7 @@ function registerModsIPC({ isPathAllowed, loadStore } = {}) {
     // 获取已安装的版本列表（包含模组加载器信息和模组数量）
     ipcMain.handle("mods:getInstalledVersions", async () => {
         try {
-            const versionsDir = path.join(os.homedir(), '.versepc', 'versions');
+            const versionsDir = VERSIONS_DIR;
             try { await fs.promises.access(versionsDir); } catch { return { success: true, versions: [] }; }
 
             const versions = [];
@@ -350,13 +351,13 @@ function registerModsIPC({ isPathAllowed, loadStore } = {}) {
                 return { success: true, path: _defaultModPathCache.path };
             }
             const homeDir = os.homedir();
-            const dataDir = path.join(homeDir, '.versepc');
-            const versionsDir = path.join(dataDir, 'versions');
+            const dataDir = DATA_DIR;
+            const versionsDir = VERSIONS_DIR;
             const minecraftDir = path.join(homeDir, '.minecraft');
 
             let settings = {};
             try {
-                const content = await fs.promises.readFile(path.join(dataDir, 'settings.json'), 'utf8');
+                const content = await fs.promises.readFile(SETTINGS_FILE, 'utf8');
                 settings = JSON.parse(content);
             } catch (e) {}
 
@@ -436,8 +437,7 @@ function registerModsIPC({ isPathAllowed, loadStore } = {}) {
     // 获取版本下载文件夹
     ipcMain.handle("getVersionsDir", async () => {
         try {
-            const versionsDir = path.join(os.homedir(), '.versepc', 'versions');
-            return { success: true, path: versionsDir };
+            return { success: true, path: VERSIONS_DIR };
         } catch (e) {
             return { success: false, error: e.message };
         }

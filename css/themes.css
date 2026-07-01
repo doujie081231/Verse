@@ -71,6 +71,7 @@
     --launchbar-height: 56px;
     --transition: 0.2s ease;
     --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+    --sidebar-bg-solid: rgba(20, 20, 20, 0.95);
 }
 
 [data-theme="light"] {
@@ -123,5 +124,6 @@
     --launchbar-height: 56px;
     --transition: 0.2s ease;
     --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+    --sidebar-bg-solid: rgba(245, 245, 247, 0.95);
 }
 

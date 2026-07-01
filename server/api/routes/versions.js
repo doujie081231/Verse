@@ -538,7 +538,6 @@ module.exports = {
     registerRoute('POST', '/api/version/delete', async (req, res, parsedUrl) => {
       const body6 = await readBody(req);
       const { versionId: dvId, permanent: dvPermanent } = body6;
-      console.log(`[version-delete] 收到删除请求: versionId="${dvId}", permanent=${dvPermanent}`);
       if (!dvId) { sendError(res, 'Missing versionId', 400); return; }
       try {
         const cleanId = dvId.replace(/ \[外部\d*\]/, '');
@@ -688,7 +687,6 @@ module.exports = {
           ctx.caches._versionsCacheTime = 0;
 
           sendJSON(res, { success: true, deleted: allDeletedIds, permanent: !!dvPermanent });
-          console.log(`[version-delete] 删除成功: ${allDeletedIds.join(', ')}`);
         } else {
           sendJSON(res, { success: false, error: `删除失败: ${deleteError || '文件可能被占用，请关闭游戏后重试'}`, permanent: !!dvPermanent });
         }
@@ -809,7 +807,6 @@ module.exports = {
         const folderName = afName || path.basename(afPath);
         folders.push({ path: afPath, name: folderName, addedAt: new Date().toISOString() });
         versions.saveExternalFolders(folders);
-        console.log(`[ExternalFolder] 添加外部文件夹: ${afPath}, 发现 ${scannedVersions.length} 个版本`);
         sendJSON(res, {
           success: true,
           folder: { path: afPath, name: folderName },
@@ -841,7 +838,6 @@ module.exports = {
           return;
         }
         versions.saveExternalFolders(folders);
-        console.log(`[ExternalFolder] 移除外部文件夹: ${rfPath}`);
         sendJSON(res, { success: true });
       } catch (e) { sendJSON(res, { success: false, error: e.message }); }
     });
@@ -1022,8 +1018,6 @@ module.exports = {
           }
         }
 
-        console.log('[Export] Dependencies:', JSON.stringify(modrinthIndex.dependencies));
-
         const addFileToZip = (filePath, zipPath) => {
           if (fs.existsSync(filePath)) {
             zip.addLocalFile(filePath, zipPath);
@@ -1099,7 +1093,6 @@ module.exports = {
         const zipPath = path.join(exportDir, `${emName.replace(/[^a-zA-Z0-9_\-\u4e00-\u9fa5]/g, '_')}.mrpack`);
         zip.writeZip(zipPath);
 
-        console.log('[Export] Export completed:', zipPath);
         sendJSON(res, { success: true, path: zipPath });
       } catch (e) {
         console.error('[Export] Error:', e);
@@ -1269,7 +1262,6 @@ module.exports = {
             'X-VersionIcon-Custom': 'true'
           });
           res.end(customIconData.data);
-          console.log(`[VersionIcon] ${versionId} -> 自定义图标`);
           return;
         }
 
@@ -1309,7 +1301,6 @@ module.exports = {
           res.end();
         }
       } catch (e) {
-        console.log('[VersionIcon] 错误:', e.message);
         res.writeHead(302, { Location: '/img/Grass.png' });
         res.end();
       }
@@ -1492,7 +1483,6 @@ module.exports = {
         if (session.versionId) {
           const vd = path.join(ctx.dirs.VERSIONS_DIR, session.versionId);
           fs.promises.rm(vd, { recursive: true, force: true }).then(() => {
-            console.log(`[Cancel] 已清理安装目录: ${session.versionId}`);
           }).catch(() => {});
         }
       } else if (ctx.sessions.modDownloadSessions.has(sessionId)) {

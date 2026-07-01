@@ -58,7 +58,6 @@ function getNativesFolder(versionId) {
  */
 function extractNatives(versionJson, versionId, externalVersionDir = null) {
   const nativesDir = getNativesFolder(versionId);
-  console.log(`[Natives] 目录: ${nativesDir}`);
   const nativeJars = [];
 
   const libraries = versionJson.libraries || [];
@@ -128,13 +127,11 @@ function extractNatives(versionJson, versionId, externalVersionDir = null) {
               bytes += data.length;
             }
           } catch (writeErr) {
-            console.log(`[Natives] 写入失败 ${fileName}: ${writeErr.message}`);
           }
         }
       }
       return { count: extracted, bytes: bytes };
     } catch (e) {
-      console.log(`[Natives] AdmZip失败: ${e.message}，尝试系统解压`);
       try {
         const tempDir = nativesDir + '_temp';
         if (fs.existsSync(tempDir)) {
@@ -176,7 +173,6 @@ function extractNatives(versionJson, versionId, externalVersionDir = null) {
         try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch (e3) {}
         return { count: extracted, bytes: bytes };
       } catch (e2) {
-        console.log(`[Natives] 系统解压也失败: ${e2.message}`);
         throw e2;
       }
     }
@@ -239,7 +235,6 @@ function extractNatives(versionJson, versionId, externalVersionDir = null) {
 
     if (!nativePath || !fs.existsSync(nativePath)) continue;
 
-    console.log(`[Natives] 提取: ${path.basename(nativePath)}`);
     nativeJars.push(nativePath);
   }
 
@@ -263,7 +258,6 @@ function extractNatives(versionJson, versionId, externalVersionDir = null) {
         return false;
       });
       if (parentNativesLibs.length > 0) {
-        console.log(`[Natives] 从父版本 ${currentNativesJson.inheritsFrom || currentNativesJson.id} 合并 ${parentNativesLibs.length} 个 native 库`);
       }
       for (const lib of parentNativesLibs) {
         let nativePath = null;
@@ -305,7 +299,6 @@ function extractNatives(versionJson, versionId, externalVersionDir = null) {
           }
         }
         if (!nativePath || !fs.existsSync(nativePath)) continue;
-        console.log(`[Natives] 提取(父版本): ${path.basename(nativePath)}`);
         nativeJars.push(nativePath);
       }
     } catch (e) { console.error(`[Natives] 父版本加载失败: ${e.message}`); break; }
@@ -333,7 +326,6 @@ function extractNatives(versionJson, versionId, externalVersionDir = null) {
     } catch (_) {}
 
     if (maxJarMtime <= maxFileMtime) {
-      console.log('[Natives] Natives 未变化，跳过解压');
       return nativesDir;
     }
 
@@ -354,21 +346,17 @@ function extractNatives(versionJson, versionId, externalVersionDir = null) {
     }
   }
 
-  console.log('[Natives] 开始解压 native 文件...');
   try {
     doExtractAll();
   } catch (e) {
-    console.log(`[Natives] 解压失败，强制重新解压: ${e.message}`);
     try { fs.rmSync(nativesDir, { recursive: true, force: true }); } catch (_) {}
     fs.mkdirSync(nativesDir, { recursive: true });
     fileCount = 0;
     totalBytes = 0;
     doExtractAll();
   }
-  console.log(`[Natives] 解压完成，共 ${fileCount} 个文件，${totalBytes} 字节`);
 
   const extractedFiles = fs.existsSync(nativesDir) ? fs.readdirSync(nativesDir) : [];
-  console.log(`[Natives] 提取完成，共 ${extractedFiles.length} 个文件: ${extractedFiles.join(', ')}`);
 
   return nativesDir;
 }
@@ -453,7 +441,6 @@ function injectOfflineSkin(versionJson, account, assetsRoot) {
               }
               fs.copyFileSync(skinPath, objectPath);
               backups.push({ type: 'object', path: objectPath, backup: backupPath });
-              console.log(`[Skin] 已注入 ${targetPath} -> objects/${subDir}/${hash}`);
             }
           }
         }
@@ -489,7 +476,6 @@ function injectOfflineSkin(versionJson, account, assetsRoot) {
         fs.copyFileSync(vPath, vBackup);
         fs.copyFileSync(skinPath, vPath);
         backups.push({ type: 'virtual', path: vPath, backup: vBackup });
-        console.log(`[Skin] 已注入 virtual ${path.basename(vPath)}`);
       }
     }
 
@@ -509,7 +495,6 @@ function injectOfflineSkin(versionJson, account, assetsRoot) {
         }
         fs.copyFileSync(skinPath, gPath);
         backups.push({ type: 'gamedir_inject', path: gPath, backup: null });
-        console.log(`[Skin] 已注入 gamedir ${path.basename(gPath)}`);
       }
     }
   } catch (e) {
@@ -685,7 +670,6 @@ function buildClasspath(versionJson, versionId, externalVersionDir = null) {
             const parentJson = JSON.parse(fs.readFileSync(extParentPath, 'utf8'));
             currentJson = parentJson;
             const parentLibCount = (parentJson.libraries || []).length;
-            console.log(`[Classpath] 从外部目录加载父版本 ${currentJson.inheritsFrom}: ${parentLibCount} 库`);
             for (const lib of (parentJson.libraries || [])) {
               if (lib.rules && !versions.evaluateRules(lib.rules)) continue;
               const libName = lib.name || '';
@@ -728,7 +712,6 @@ function buildClasspath(versionJson, versionId, externalVersionDir = null) {
       const parentJson = JSON.parse(fs.readFileSync(parentJsonPath, 'utf8'));
       currentJson = parentJson;
       const parentLibCount = (parentJson.libraries || []).length;
-      console.log(`[Classpath] 合并父版本 ${currentJson.id || currentJson.inheritsFrom || '?'}: ${parentLibCount} 库`);
       for (const lib of (parentJson.libraries || [])) {
         if (lib.rules && !versions.evaluateRules(lib.rules)) continue;
         const libName = lib.name || '';
@@ -864,7 +847,6 @@ function buildClasspath(versionJson, versionId, externalVersionDir = null) {
           const uniJar = path.join(base, 'net', 'neoforged', 'neoforge', neoforgeVersion, `neoforge-${neoforgeVersion}-universal.jar`);
           if (fs.existsSync(uniJar)) {
             dedupedClasspath.push(uniJar);
-            console.log(`[Classpath] 自动添加 NeoForge universal jar: ${uniJar}`);
             break;
           }
         }
@@ -878,7 +860,6 @@ function buildClasspath(versionJson, versionId, externalVersionDir = null) {
     console.error(`[Classpath] 主JAR未找到: ${actualVersionId}, jar=${versionJson.jar || '无'}, inheritsFrom: ${versionJson.inheritsFrom || '无'}`);
   }
 
-  console.log(`[Classpath] 构建: ${foundCount} 找到, ${missingCount} 缺失, 去重后: ${dedupedClasspath.length}`);
   return dedupedClasspath.join(process.platform === 'win32' ? ';' : ':');
 }
 

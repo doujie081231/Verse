@@ -49,8 +49,6 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
       }
     }
 
-    console.log(`[LaunchGame] 版本: ${versionId}, 外部目录: ${externalVersionDir || '无'}`);
-
     // 路径合法性检查：! 与 ; 在 Windows classpath 中有特殊含义，必须拒绝
     const versionDirPath = externalVersionDir || path.join(ctx.dirs.VERSIONS_DIR, cleanVersionId);
     if (versionDirPath.includes('!') || versionDirPath.includes(';')) {
@@ -103,7 +101,6 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
             if (!raw.inheritsFrom) {
               raw.inheritsFrom = parentVer;
               fs.writeFileSync(jp, JSON.stringify(raw, null, 2));
-              console.log(`[LaunchGame] 已修正 inheritsFrom: ${parentVer}`);
             }
           }
         } catch (e) {
@@ -111,8 +108,6 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
         }
       }
     }
-
-    console.log(`[LaunchGame] JSON已解析, mainClass: ${versionJson.mainClass}, inheritsFrom: ${versionJson.inheritsFrom}`);
 
     // 启动前验证 Natives 完整性，缺失时自动重新解压
     {
@@ -125,7 +120,6 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
         return !fs.existsSync(path.join(nativesDir, n.replace('.dll', '.so')));
       });
       if (missingNatives.length > 0 && missingNatives.length < 6) {
-        console.log(`[LaunchGame] 检测到 ${missingNatives.length} 个缺失Natives: ${missingNatives.join(', ')}，尝试重新解压...`);
         try {
           natives.extractNatives(versionJson, cleanVersionId, externalVersionDir);
           const recheckMissing = criticalNatives.filter((n) => {
@@ -135,8 +129,6 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
           });
           if (recheckMissing.length > 0) {
             console.warn(`[LaunchGame] 重新解压后仍有 ${recheckMissing.length} 个Natives缺失: ${recheckMissing.join(', ')}`);
-          } else {
-            console.log(`[LaunchGame] Natives重新解压成功`);
           }
         } catch (e) {
           console.error(`[LaunchGame] Natives重新解压失败: ${e.message}`);
@@ -230,7 +222,6 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
     }
 
     if (extraMissing.length > 0) {
-      console.log(`[Launch] 二次扫描发现 ${extraMissing.length} 个额外缺失库: ${extraMissing.map((f) => f.name).join(', ')}`);
       depCheck.missingFiles = [...depCheck.missingFiles.filter((f) => f.type !== 'library'), ...extraMissing];
       depCheck.libraries.missing = extraMissing;
       depCheck.libraries.ok = false;
@@ -268,14 +259,12 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
             `https://maven.neoforged.net/releases/${relPath}`,
             `https://bmclapi2.bangbang93.com/maven/${relPath}`
           ];
-          console.log(`[LaunchGame] 尝试补下载NeoForge核心JAR: ${path.basename(m.path)}`);
           let neoOk = false;
           for (const url of neoUrls) {
             try {
               if (!fs.existsSync(path.dirname(m.path))) fs.mkdirSync(path.dirname(m.path), { recursive: true });
               await http.downloadFile(url, m.path);
               if (fs.existsSync(m.path) && utils.isJarIntact(m.path)) {
-                console.log(`[LaunchGame] NeoForge核心JAR补下载成功: ${path.basename(m.path)} (from ${url})`);
                 neoOk = true;
                 break;
               }
@@ -316,12 +305,10 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
           if (mvi >= 0 && mvi + 1 < gArgs.length) mvMcVer = gArgs[mvi + 1];
         }
         if (mvForgeVer && mvMcVer) {
-          console.log(`[LaunchGame] 尝试Maven直接下载Forge核心库 (${mvMcVer}-forge-${mvForgeVer})...`);
           const mvResult = await modloaders.downloadForgeCoreLibsFromMaven(`${mvMcVer}-${mvForgeVer}`);
           if (mvResult.failed === 0) {
             const stillMissing = (depCheck.forgeCore.missing || []).filter((m) => !fs.existsSync(m.path));
             if (stillMissing.length === 0) {
-              console.log(`[LaunchGame] Maven直接下载修复成功!`);
               forgeRepaired = true;
             }
           } else {
@@ -330,11 +317,9 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
 
           if (!forgeRepaired) {
             // 补丁 JAR 不在 Maven 上，需重装 Forge 重新生成
-            console.log(`[LaunchGame] 补丁JAR不在Maven上，重装Forge以重新生成...`);
             try {
               const baseJar = path.join(ctx.dirs.VERSIONS_DIR, mvMcVer, `${mvMcVer}.jar`);
               if (!fs.existsSync(baseJar)) {
-                console.log(`[LaunchGame] 原版JAR缺失，先下载 ${mvMcVer}.jar...`);
                 try {
                   await modloaders.ensureBaseVersionInstalled(mvMcVer);
                 } catch (e) {
@@ -345,7 +330,6 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
               if (fiResult && fiResult.success) {
                 const stillMissing = (depCheck.forgeCore.missing || []).filter((m) => !fs.existsSync(m.path));
                 if (stillMissing.length === 0) {
-                  console.log(`[LaunchGame] Forge重装修复成功!`);
                   forgeRepaired = true;
                 } else {
                   console.warn(`[LaunchGame] Forge重装后仍有${stillMissing.length}个缺失文件`);
@@ -379,27 +363,19 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
           const forgeVer = forgeMatch[2];
           const baseJarPath = path.join(ctx.dirs.VERSIONS_DIR, mcVer, `${mcVer}.jar`);
           if (!fs.existsSync(baseJarPath)) {
-            console.log(`[LaunchGame] 原版JAR缺失 (${mcVer}.jar)，先下载再重装Forge...`);
             try {
               await modloaders.ensureBaseVersionInstalled(mcVer);
             } catch (e) {
               console.warn(`[LaunchGame] 下载原版JAR失败: ${e.message}`);
             }
           }
-          console.log(`[LaunchGame] 尝试重新安装Forge ${mcVer}-${forgeVer}来修复核心文件`);
-          let repairResult = await modloaders.installForge(mcVer, forgeVer, (p, msg) => {
-            console.log(`[LaunchGame] 修复进度: ${Math.round(p * 100)}% - ${msg || ''}`);
-          });
+          let repairResult = await modloaders.installForge(mcVer, forgeVer, (p, msg) => {});
           if (!repairResult.success) {
-            console.log(`[LaunchGame] 主源修复失败，尝试BMCLAPI镜像...`);
-            repairResult = await modloaders.installForge(mcVer, forgeVer, (p, msg) => {
-              console.log(`[LaunchGame] BMCLAPI镜像修复进度: ${Math.round(p * 100)}% - ${msg || ''}`);
-            }, 'https://bmclapi2.bangbang93.com/maven/net/minecraftforge/forge');
+            repairResult = await modloaders.installForge(mcVer, forgeVer, (p, msg) => {}, 'https://bmclapi2.bangbang93.com/maven/net/minecraftforge/forge');
           }
           if (repairResult.success) {
             const stillMissing = (depCheck.forgeCore.missing || []).filter((m) => !fs.existsSync(m.path));
             if (stillMissing.length === 0) {
-              console.log(`[LaunchGame] Forge核心文件自动修复成功!`);
               forgeRepaired = true;
             } else {
               console.warn(`[LaunchGame] 修复后仍有 ${stillMissing.length} 个文件缺失`);
@@ -438,7 +414,6 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
           if (altCopied > 0) {
             const stillMissing = (depCheck.forgeCore.missing || []).filter((m) => !fs.existsSync(m.path));
             if (stillMissing.length === 0) {
-              console.log(`[LaunchGame] 从.minecraft复制修复成功!`);
               forgeRepaired = true;
             }
           }
@@ -503,7 +478,6 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
                     fs.copyFileSync(candidatePath, m.path);
                     if (fs.existsSync(m.path) && (!m.path.endsWith('.jar') || utils.isJarIntact(m.path))) {
                       deepCopied++;
-                      console.log(`[LaunchGame] 深度搜索修复: ${basename} (来源: ${candidatePath})`);
                     } else {
                       try {
                         fs.unlinkSync(m.path);
@@ -520,7 +494,6 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
         if (deepCopied > 0) {
           const stillMissing = (depCheck.forgeCore.missing || []).filter((m) => !fs.existsSync(m.path));
           if (stillMissing.length === 0) {
-            console.log(`[LaunchGame] 深度搜索修复成功!`);
             forgeRepaired = true;
           }
         }
@@ -626,21 +599,14 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
           if (!forgeMatch) continue;
           const mcVer = forgeMatch[1];
           const forgeVer = forgeMatch[2];
-          console.log(`[LaunchGame] 兜底修复: 重新安装Forge ${mcVer}-${forgeVer}`);
           try {
-            let repairResult = await modloaders.installForge(mcVer, forgeVer, (p, msg) => {
-              console.log(`[LaunchGame] 兜底修复进度: ${Math.round(p * 100)}%`);
-            });
+            let repairResult = await modloaders.installForge(mcVer, forgeVer, (p, msg) => {});
             if (!repairResult.success) {
-              console.log(`[LaunchGame] 兜底修复主源失败，尝试BMCLAPI镜像...`);
-              repairResult = await modloaders.installForge(mcVer, forgeVer, (p, msg) => {
-                console.log(`[LaunchGame] 兜底BMCLAPI修复进度: ${Math.round(p * 100)}%`);
-              }, 'https://bmclapi2.bangbang93.com/maven/net/minecraftforge/forge');
+              repairResult = await modloaders.installForge(mcVer, forgeVer, (p, msg) => {}, 'https://bmclapi2.bangbang93.com/maven/net/minecraftforge/forge');
             }
             if (repairResult.success) {
               const stillMissing = forgeSafeMissing.filter((f) => !fs.existsSync(f.path) || !utils.isJarIntact(f.path));
               if (stillMissing.length === 0) {
-                console.log(`[LaunchGame] 兜底修复成功!`);
                 safeRepaired = true;
               }
             }
@@ -698,10 +664,6 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
 
       if (criticalMissing.length === 0 && coreLibMissing.length === 0 && nonCoreLibMissing.length > 0) {
         // 仅非核心库缺失时跳过下载直接启动，避免阻塞整合包大体积可选库
-        console.log(`[LaunchGame] 跳过非核心库自动下载 (${nonCoreLibMissing.length}个)，直接尝试启动`);
-        for (const f of nonCoreLibMissing) {
-          console.log(`[LaunchGame] 非核心库缺失(不影响启动): ${f.name || f.path}`);
-        }
       } else {
         // 启动后台下载会话，前端可通过 sessionId 跟踪进度
         const sessionId = `launch-${Date.now()}`;
@@ -716,7 +678,6 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
           versionId
         });
 
-        console.log(`[LaunchGame] 缺失 ${nonForgeCoreMissing.length} 个文件，启动后台下载...`);
         const _bgDlVersionJson = versionJson;
         const _bgDlExternalDir = externalVersionDir;
         const _bgDlCleanId = cleanVersionId;
@@ -745,7 +706,6 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
               sess.status = 'completed';
               sess.message = '缺失文件下载完成';
             }
-            console.log(`[LaunchGame] 后台下载完成，缓存已失效`);
             java.invalidateDepCheckCache(_bgDlCleanId);
           } catch (dlErr) {
             console.error(`[LaunchGame] 后台下载失败: ${dlErr.message}`);

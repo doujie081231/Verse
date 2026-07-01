@@ -1,9 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { APP_STORE_FILE } = require('../main/paths');
 
 const _schemaVer = 3;
-const _storePath = path.join(os.homedir(), '.versepc', 'app-store.json');
+const _storePath = APP_STORE_FILE;
 
 function _readStore() {
     try {

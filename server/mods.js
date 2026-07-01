@@ -354,7 +354,6 @@ function getInstalledMods() {
     }
 
     if (warnings.length > 0) {
-        console.log(`[Mods] 检测到 ${warnings.length} 个模组警告`);
     }
 
     return { mods, warnings };

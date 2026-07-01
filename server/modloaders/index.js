@@ -59,7 +59,6 @@ async function performInstallation(sessionId, versionDetails) {
     if (speedSyncTimer) clearInterval(speedSyncTimer);
     const vd = path.join(ctx.dirs.VERSIONS_DIR, versionDetails.id);
     fs.promises.rm(vd, { recursive: true, force: true }).then(() => {
-      console.log(`[Install] 已清理中止的安装: ${versionDetails.id}`);
     }).catch(() => {});
   };
 
@@ -89,7 +88,6 @@ async function performInstallation(sessionId, versionDetails) {
       if (fs.existsSync(backupDir)) fs.rmSync(backupDir, { recursive: true, force: true });
       fs.renameSync(versionDir, backupDir);
       hasBackup = true;
-      console.log(`[Install] Backed up existing version: ${versionId}`);
     } catch (e) {
       console.warn(`[Install] Failed to backup version: ${e.message}`);
     }
@@ -451,7 +449,6 @@ async function performInstallation(sessionId, versionDetails) {
             }
           }
         }
-        console.log(`[Assets] map_to_resources: 映射了 ${mappedCount} 个资源文件`);
       }
 
       // 处理 virtual：将资源对象映射到 virtual/legacy 目录
@@ -478,7 +475,6 @@ async function performInstallation(sessionId, versionDetails) {
             }
           }
         }
-        console.log(`[Assets] virtual: 映射了 ${virtualCount} 个虚拟资源文件`);
       }
     }
 
@@ -600,7 +596,6 @@ async function performInstallation(sessionId, versionDetails) {
           if (msg) session.message = msg;
         });
         if (apiResult.success && apiResult.fileName) {
-          console.log(`[Install] Fabric API 已安装: ${apiResult.fileName}`);
         }
       } catch (apiErr) {
         console.warn(`[Install] Fabric API 自动下载失败 (非致命): ${apiErr.message}`);
@@ -621,8 +616,6 @@ async function performInstallation(sessionId, versionDetails) {
     ctx.caches._versionsCache = null;
     ctx.caches._versionsCacheTime = 0;
 
-    console.log(`Installation completed: ${versionId}`);
-
   } catch (e) {
     if (speedSyncTimer) clearInterval(speedSyncTimer);
     session.status = 'failed';
@@ -637,10 +630,8 @@ async function performInstallation(sessionId, versionDetails) {
       if (hasBackup && fs.existsSync(backupDir)) {
         if (fs.existsSync(failedDir)) fs.rmSync(failedDir, { recursive: true, force: true });
         fs.renameSync(backupDir, failedDir);
-        console.log(`[Install] Restored backup for: ${versionId}`);
       } else if (fs.existsSync(failedDir)) {
         fs.rmSync(failedDir, { recursive: true, force: true });
-        console.log(`[Install] Cleaned up failed version directory: ${failedDir}`);
       }
     } catch (cleanupErr) {
       console.error(`[Install] Failed to cleanup/restore:`, cleanupErr.message);

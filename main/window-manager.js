@@ -21,10 +21,11 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { safeReadJsonFile, safeWriteFileSync } = require('./store');
+const { WINDOW_CONFIG_FILE } = require('./paths');
 const sharedState = require('./shared-state');
 
-// 窗口配置文件路径和缓存
-const CONFIG_PATH = path.join(os.homedir(), '.versepc', 'window-config.json');
+// 窗口配置文件路径（便携模式下跟 exe 同目录）
+const CONFIG_PATH = WINDOW_CONFIG_FILE;
 let windowConfigCache = null;     // 配置缓存对象
 let windowConfigCacheTime = 0;    // 缓存时间戳
 const CONFIG_CACHE_DURATION = 1000; // 缓存有效期（1秒）

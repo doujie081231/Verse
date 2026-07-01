@@ -22,6 +22,7 @@ const { app } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const sharedState = require('./shared-state');
+const { DATA_DIR } = require('./paths');
 
 // 默认指向项目根（main.js 所在目录），避免 setup 调用前的时序问题
 let _appRoot = path.resolve(__dirname, '..');
@@ -324,6 +325,8 @@ function getAllowedPathRoots() {
     path.join(homeDir, '.minecraft'),
     path.join(homeDir, 'AppData', 'Local', 'VersePC'),
   ];
+  // 便携模式数据目录（可能是 exe 同目录/data，也可能是 ~/.versepc）
+  try { roots.push(path.resolve(DATA_DIR)); } catch (e) {}
   try { roots.push(path.resolve(_appRoot)); } catch (e) {}
   try { roots.push(app.getPath('userData')); } catch (e) {}
   try { roots.push(app.getPath('temp')); } catch (e) {}

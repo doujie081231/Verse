@@ -7,10 +7,11 @@
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const { APP_STORE_FILE, WINDOW_CONFIG_FILE, SETTINGS_FILE, DATA_DIR, VERSIONS_DIR } = require('./paths');
 
-// 与 main.js 中的 CONFIG_PATH / STORE_PATH 保持一致
-const CONFIG_PATH = path.join(os.homedir(), '.versepc', 'window-config.json');
-const STORE_PATH = path.join(os.homedir(), '.versepc', 'app-store.json');
+// 与 main/store.js、main/window-manager.js 保持一致（便携模式下跟 exe 同目录）
+const CONFIG_PATH = WINDOW_CONFIG_FILE;
+const STORE_PATH = APP_STORE_FILE;
 
 /**
  * 自动修复单个 JSON 文件
@@ -30,7 +31,6 @@ async function autoRepairJsonFileAsync(filePath, backupSuffix) {
     try {
       const backupPath = filePath + backupSuffix;
       await fs.promises.copyFile(filePath, backupPath);
-      console.log(`[AutoRepair] Backup created: ${backupPath}`);
     } catch (backupErr) {
       console.error(`[AutoRepair] Backup failed:`, backupErr.message);
     }
@@ -41,7 +41,6 @@ async function autoRepairJsonFileAsync(filePath, backupSuffix) {
       const bakContent = await fs.promises.readFile(bakPath, 'utf8');
       JSON.parse(bakContent);
       await fs.promises.writeFile(filePath, bakContent);
-      console.log(`[AutoRepair] Recovered from .bak: ${bakPath}`);
       return true;
     } catch (bakErr) {
       console.error(`[AutoRepair] .bak recovery failed:`, bakErr.message);
@@ -54,7 +53,6 @@ async function autoRepairJsonFileAsync(filePath, backupSuffix) {
         ? JSON.stringify({ fullscreen: false, windowMode: true, windowWidth: 1200, windowHeight: 800 }, null, 2)
         : '{}';
       await fs.promises.writeFile(filePath, defaultContent);
-      console.log(`[AutoRepair] File reset to defaults: ${filePath}`);
     } catch (resetErr) {
       console.error(`[AutoRepair] Reset failed:`, resetErr.message);
     }
@@ -67,13 +65,12 @@ async function autoRepairJsonFileAsync(filePath, backupSuffix) {
  * @returns {Promise<void>}
  */
 async function repairVersePCDataAsync() {
-  const dataDir = path.join(os.homedir(), '.versepc');
+  const dataDir = DATA_DIR;
   try { await fs.promises.access(dataDir); } catch { return; }
   await autoRepairJsonFileAsync(CONFIG_PATH, '.corrupted.json');
   await autoRepairJsonFileAsync(STORE_PATH, '.corrupted.json');
   try {
-    const settingsFile = path.join(dataDir, 'settings.json');
-    await autoRepairJsonFileAsync(settingsFile, '.corrupted.json');
+    await autoRepairJsonFileAsync(SETTINGS_FILE, '.corrupted.json');
   } catch (e) {}
   try {
     const accountsFile = path.join(dataDir, 'accounts.json');
@@ -81,11 +78,10 @@ async function repairVersePCDataAsync() {
   } catch (e) {}
   // 扫描 versions 目录下的 version.json
   try {
-    const versionsDir = path.join(dataDir, 'versions');
-    await fs.promises.access(versionsDir);
-    const versions = await fs.promises.readdir(versionsDir);
+    await fs.promises.access(VERSIONS_DIR);
+    const versions = await fs.promises.readdir(VERSIONS_DIR);
     for (const ver of versions) {
-      const verPath = path.join(versionsDir, ver);
+      const verPath = path.join(VERSIONS_DIR, ver);
       const stat = await fs.promises.stat(verPath);
       if (stat.isDirectory()) {
         const versionJson = path.join(verPath, 'version.json');
@@ -95,7 +91,6 @@ async function repairVersePCDataAsync() {
   } catch (e) {
     console.error('[AutoRepair] Version scan error:', e.message);
   }
-  console.log('[AutoRepair] Data integrity check completed');
 }
 
 // 私有函数：通过 setImmediate 延迟执行数据修复，避免阻塞当前调用栈

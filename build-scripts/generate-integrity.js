@@ -20,7 +20,7 @@ function computeHash(filePath) {
 }
 
 function main() {
-    const projectRoot = __dirname;
+    const projectRoot = path.join(__dirname, '..');
     const manifest = {};
     const isBeta = process.env.IS_BETA === 'true';
 

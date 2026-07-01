@@ -41,7 +41,7 @@ function _curlDownload(url, destPath) {
 // ============================================================================
 
 async function ensureBaseVersionInstalled(gameVersion, onProgress = null) {
-    const baseLog = (msg) => { console.log(`[BaseVersion-DEBUG] ${msg}`); utils._writeImportLog(`[基础版本] ${msg}`); };
+    const baseLog = (msg) => { utils._writeImportLog(`[基础版本] ${msg}`); };
     baseLog(`ensureBaseVersionInstalled: ${gameVersion}`);
     const baseJsonPath = path.join(ctx.dirs.VERSIONS_DIR, gameVersion, `${gameVersion}.json`);
     const baseJarPath = path.join(ctx.dirs.VERSIONS_DIR, gameVersion, `${gameVersion}.jar`);
@@ -129,7 +129,6 @@ async function ensureBaseVersionInstalled(gameVersion, onProgress = null) {
 
             if (!fs.existsSync(clientJarPath) || (clientInfo.sha1 && !(await utils.verifyFileSha1(clientJarPath, clientInfo.sha1)))) {
                 report('正在下载客户端...', 25);
-                console.log(`[BaseVersion] Downloading client JAR for ${gameVersion}...`);
                 await http.downloadFileSyncAsync(clientInfo.url, clientJarPath);
                 if (clientInfo.sha1 && !(await utils.verifyFileSha1(clientJarPath, clientInfo.sha1))) {
                     console.warn(`[BaseVersion] Client JAR SHA1 mismatch after download!`);
@@ -212,7 +211,6 @@ async function ensureBaseVersionInstalled(gameVersion, onProgress = null) {
                                 if (fs.existsSync(task.libPath)) fs.unlinkSync(task.libPath);
                                 await http.downloadFileWithMirror(task.lib.downloads.artifact.url, task.libPath, null, 3, null, 60000);
                             } catch (e) {
-                                console.log(`[BaseVersion] 下载库失败 ${task.lib.name}: ${e.message}, 尝试curl...`);
                                 const _bmcl = task.lib.downloads.artifact.url.replace('https://libraries.minecraft.net/', 'https://bmclapi2.bangbang93.com/maven/');
                                 const _fm = task.lib.downloads.artifact.url.replace('https://libraries.minecraft.net/', 'https://maven.minecraftforge.net/');
                                 try { utils.ensureDirForFile(task.libPath); await _curlDownload(_bmcl, task.libPath); } catch (_) {}
@@ -229,7 +227,6 @@ async function ensureBaseVersionInstalled(gameVersion, onProgress = null) {
                             try {
                                 await http.downloadFileWithMirror(downloadUrl, task.libFile);
                             } catch (e) {
-                                console.log(`[BaseVersion] 下载库失败 ${task.lib.name}: ${e.message}, 尝试curl...`);
                                 const _bmcl2 = downloadUrl.replace('https://libraries.minecraft.net/', 'https://bmclapi2.bangbang93.com/maven/');
                                 const _fm2 = downloadUrl.replace('https://libraries.minecraft.net/', 'https://maven.minecraftforge.net/');
                                 try { utils.ensureDirForFile(task.libFile); await _curlDownload(_bmcl2, task.libFile); } catch (_) {}
@@ -244,7 +241,6 @@ async function ensureBaseVersionInstalled(gameVersion, onProgress = null) {
                             try {
                                 await http.downloadFileWithMirror(task.nativeDownload.url, task.nativeFile);
                             } catch (e) {
-                                console.log(`[BaseVersion] Failed to download native ${path.basename(task.nativeDownload.path)}: ${e.message}`);
                             }
                         }
                     })().finally(() => {
@@ -273,7 +269,6 @@ async function ensureBaseVersionInstalled(gameVersion, onProgress = null) {
                                 try {
                                     await http.downloadFileWithMirror(nativeDownload.url, nativeFile);
                                 } catch (e) {
-                                    console.log(`[BaseVersion] Failed to download native ${path.basename(nativeDownload.path)}: ${e.message}`);
                                 }
                             }
                         }
@@ -311,7 +306,6 @@ async function ensureBaseVersionInstalled(gameVersion, onProgress = null) {
             return { error: msg };
         }
 
-        console.log(`[BaseVersion] ${gameVersion} installed successfully`);
         return { alreadyInstalled: false, success: true };
     } catch (e) {
         console.error(`[BaseVersion] Failed to install ${gameVersion}:`, e.message);
@@ -319,7 +313,6 @@ async function ensureBaseVersionInstalled(gameVersion, onProgress = null) {
             const versionDir = path.join(ctx.dirs.VERSIONS_DIR, gameVersion);
             if (fs.existsSync(versionDir)) {
                 fs.rmSync(versionDir, { recursive: true, force: true });
-                console.log(`[BaseVersion] Cleaned up failed version directory: ${versionDir}`);
             }
         } catch (cleanupErr) {
             console.error(`[BaseVersion] Failed to cleanup version directory:`, cleanupErr.message);
@@ -369,7 +362,6 @@ function verifyLoaderLibs(versionId) {
             }
         }
         if (missing > 0) {
-            console.log(`[verifyLoaderLibs] ${versionId}: ${checked}个库, ${missing}个缺失 (${missingPaths.join(', ')}...)`);
             return false;
         }
 
@@ -442,16 +434,12 @@ function verifyLoaderLibs(versionId) {
             } catch (_) {}
 
             if (forgeCoreMissing > 0) {
-                console.log(`[verifyLoaderLibs] ${versionId}: 基础库存在但Forge核心文件缺失(${forgeCoreMissing}): ${missingForgeCores.join(', ')}`);
                 return false;
             }
-            console.log(`[verifyLoaderLibs] ${versionId}: 包含Forge核心文件(${forgeCoreFiles.length}个)全部存在`);
         }
 
-        console.log(`[verifyLoaderLibs] ${versionId}: ${checked}个库全部存在`);
         return checked > 0;
     } catch (e) {
-        console.log(`[verifyLoaderLibs] ${versionId}: error ${e.message}`);
         return false;
     }
 }
@@ -525,7 +513,6 @@ async function ensureLoaderCompat(versionId, versionDir, mcVersion, currentLoade
     const needed = loaderType === 'fabric' ? reqs.fabric : (loaderType === 'forge' ? reqs.forge : null);
     if (!needed || !currentLoaderVer) return { upgraded: false };
     if (compareSemver(needed, currentLoaderVer) <= 0) return { upgraded: false };
-    console.log(`[Modpack] 模组需要 ${loaderType} ≥ ${needed}，当前安装 ${currentLoaderVer}，正在升级...`);
     progress('loader-upgrade', `正在升级 ${loaderType === 'fabric' ? 'Fabric' : 'Forge'} 加载器到 ${needed}...`, 88, [], '');
     let newLoaderVersionId;
     try {
@@ -556,7 +543,6 @@ async function ensureLoaderCompat(versionId, versionDir, mcVersion, currentLoade
             } catch (_) {}
             if (newMainClass) oldJson.mainClass = newMainClass;
             fs.writeFileSync(oldJsonPath, JSON.stringify(oldJson, null, 2));
-            console.log(`[Modpack] 版本JSON已更新: inheritsFrom → ${newLoaderVersionId}, mainClass → ${newMainClass || '未变更'}`);
         }
         progress('loader-upgrade', `${loaderType === 'fabric' ? 'Fabric' : 'Forge'} 已升级到 ${needed}`, 90, [], '');
         return { upgraded: true, newVersion: needed };
@@ -640,8 +626,6 @@ async function verifyImportLibs(versionId, progress, abortSignal) {
             }
         }
     }
-    console.log(`[verifyImport] ${versionId}: 检查${libChecked}个库, 核心缺失${coreLibMissing}个, 非核心缺失${nonCoreLibMissing}个`);
-
     if (coreLibMissing > 0) {
         if (progress) progress('verify', `正在补全 ${coreLibMissing} 个核心缺失库文件...`, 91, [], '');
         const dlResult = await dependencies.downloadMissingDependencies(coreMissingLibFiles, (p) => {
@@ -650,7 +634,6 @@ async function verifyImportLibs(versionId, progress, abortSignal) {
                 progress('verify', `补全核心依赖 (${(p.completed || 0) + (p.failed || 0)}/${coreLibMissing})`, Math.min(pct, 97), [], '');
             }
         }, mergedJson);
-        console.log(`[verifyImport] 核心库补全结果: ${dlResult.completed}成功 ${dlResult.failed}失败`);
         if (dlResult.failed > 0) {
             return { ok: false, checked: libChecked, missing: dlResult.failed };
         }
@@ -664,7 +647,6 @@ async function verifyImportLibs(versionId, progress, abortSignal) {
                 progress('verify', `补全非核心依赖 (${(p.completed || 0) + (p.failed || 0)}/${nonCoreLibMissing})`, Math.min(pct, 97), [], '');
             }
         }, mergedJson);
-        console.log(`[verifyImport] 非核心库补全结果: ${dlResult.completed}成功 ${dlResult.failed}失败`);
         if (dlResult.failed > 0) {
             if (progress) progress('verify', `警告: ${dlResult.failed} 个非核心库补全失败，将继续导入`, 93, [], '');
             return { ok: true, checked: libChecked, missing: dlResult.failed, warning: `${dlResult.failed} 个非核心库文件缺失（如 org.apache、com.google 等），导入将继续但可能影响部分功能` };

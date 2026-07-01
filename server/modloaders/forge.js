@@ -50,7 +50,6 @@ async function downloadForgeCoreLibsFromMaven(forgeVersionStr, onProgress) {
         if (fs.existsSync(targetPath) && utils.isJarIntact(targetPath)) {
           ok = true;
           downloaded++;
-          console.log(`[Forge] Maven下载成功: ${artifact.file} (from ${mavenBase})`);
           break;
         }
       } catch (_) {}
@@ -63,7 +62,6 @@ async function downloadForgeCoreLibsFromMaven(forgeVersionStr, onProgress) {
   }
 
   if (downloaded > 0 || failed === 0) {
-    console.log(`[Forge] 核心库Maven补全: 下载${downloaded}个, 失败${failed}个`);
   } else {
     console.warn(`[Forge] 核心库Maven补全失败: ${failed}个文件无法下载`);
   }
@@ -107,7 +105,6 @@ async function downloadForgePatchingJars(mcVersion, forgeVersion, mcpVersion) {
           if (!fs.existsSync(path.dirname(targetPath))) fs.mkdirSync(path.dirname(targetPath), { recursive: true });
           await http.downloadFileWithMirror(url, targetPath, null, 1, null, FORGE_JAR_DL_TIMEOUT);
           if (fs.existsSync(targetPath) && utils.isJarIntact(targetPath)) {
-            console.log(`[Forge] Maven下载成功: ${art.file}`);
             gotForge = true;
             break;
           }
@@ -137,11 +134,10 @@ async function downloadForgePatchingJars(mcVersion, forgeVersion, mcpVersion) {
         try {
           if (!fs.existsSync(clientDir)) fs.mkdirSync(clientDir, { recursive: true });
           await http.downloadFileWithMirror(url, targetPath, null, 1, null, PATCHING_DL_TIMEOUT);
-          if (fs.existsSync(targetPath) && utils.isJarIntact(targetPath)) {
-            console.log(`[Forge] Maven下载成功: ${jarName}`);
-            ok = true;
-            break;
-          }
+            if (fs.existsSync(targetPath) && utils.isJarIntact(targetPath)) {
+              ok = true;
+              break;
+            }
         } catch (_) {}
         try { if (fs.existsSync(targetPath) && !utils.isJarIntact(targetPath)) fs.unlinkSync(targetPath); } catch (_) {}
       }
@@ -153,7 +149,6 @@ async function downloadForgePatchingJars(mcVersion, forgeVersion, mcpVersion) {
     console.warn(`[Forge] Forge关键JAR补全失败: ${missing.join(', ')}`);
     return { ok: false, reason: `缺失: ${missing.join(', ')}` };
   }
-  console.log(`[Forge] Forge关键JAR补全检查通过`);
   return { ok: true, reason: 'Forge关键JAR已就绪' };
 }
 
@@ -172,8 +167,6 @@ function findForgeCoreJars(versionJson, searchBases) {
   const isNeoForgeVersion = gameArgs.some((a) => typeof a === 'string' && a === '--fml.neoForgeVersion') ||
     (versionJson.libraries || []).some((l) => l.name && l.name.startsWith('net.neoforged.fancymodloader:loader'));
   const isForge = hasForgeLaunch || isBootStrap;
-
-  console.log(`[findForgeCoreJars] versionId=${versionJson.id} isNeoForge=${isNeoForgeVersion} isForge=${isForge} gameArgsLen=${gameArgs.length} hasForgeLaunch=${hasForgeLaunch} isBootStrap=${isBootStrap}`);
 
   if (!isForge && !isNeoForgeVersion) return [];
 
@@ -275,7 +268,6 @@ function findForgeCoreJars(versionJson, searchBases) {
   }
 
   if (result.length > 0) {
-    console.log(`[Classpath] 自动添加Forge核心JAR (${result.length}): ${result.map((r) => path.basename(r)).join(', ')}`);
   }
 
   return result;
@@ -308,10 +300,6 @@ async function runForgeInstallerJar(installerJarPath, mcDir, onProgress = null, 
   if (!javaPath) {
     throw new Error('未找到 Java 8 或更高版本，无法安装 Forge。请先在设置中安装或配置 Java。');
   }
-  console.log(`[Forge] 使用 Java: ${javaPath}`);
-  console.log(`[Forge] Forge installer: ${installerJarPath}`);
-  console.log(`[Forge] Minecraft 目录: ${mcDir}`);
-  console.log(`[Forge] 原生模式: ${useNative}`);
 
   let javaMajor = 8;
   try {
@@ -339,13 +327,8 @@ async function runForgeInstallerJar(installerJarPath, mcDir, onProgress = null, 
 
   return new Promise((resolve, reject) => {
     const cmd = `"${javaPath}" ${args}`;
-    console.log(`[ForgeInstaller] 执行命令: ${cmd.slice(0, 200)}...`);
 
     exec(cmd, { timeout: 600000, maxBuffer: 1024 * 1024 * 10, windowsHide: true }, (error, stdout, stderr) => {
-      console.log(`[ForgeInstaller] 进程完成`);
-      if (stdout) console.log(`[ForgeInstaller] stdout (最后500字): ${stdout.slice(-500)}`);
-      if (stderr) console.log(`[ForgeInstaller] stderr (最后500字): ${stderr.slice(-500)}`);
-
       const allOutput = (stdout || '') + (stderr || '');
       const outputLines = allOutput.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
       if (allOutput.includes('Extracting json')) report('提取 JSON 配置...', 10);
@@ -557,7 +540,6 @@ async function installForge(gameVersion, forgeVersion, onProgress = null, mirror
             } catch (_) {}
         }
     }
-    console.log(`[Forge] Extracted ${extractedCount} maven entries`);
 
     if (!ip.data) ip.data = {};
     ip.data.BINPATCH = ip.data.BINPATCH || { client: '', server: '' };
@@ -635,14 +617,17 @@ async function installForge(gameVersion, forgeVersion, onProgress = null, mirror
 
     if (onProgress) onProgress(0.3, 'Running Forge processors...');
 
-    const installerScriptSrc = path.join(SERVER_DIR, 'forge-installer.js');
+    const installerScriptSrc = path.join(SERVER_DIR, 'server', 'modloaders', 'scripts', 'forge-installer.js');
     const installerScriptDst = path.join(ctx.dirs.DATA_DIR, 'temp', `forge-installer-${versionId}.js`);
     try {
         fs.mkdirSync(path.dirname(installerScriptDst), { recursive: true });
         if (fs.existsSync(installerScriptDst)) { try { fs.unlinkSync(installerScriptDst); } catch(_) {} }
         const _srcContent = fs.readFileSync(installerScriptSrc, 'utf8');
         fs.writeFileSync(installerScriptDst, _srcContent, 'utf8');
-    } catch(_) {}
+    } catch(e) {
+        resolve({ success: false, error: `forge-installer.js 脚本文件不存在或无法读取: ${installerScriptSrc} (${e.message})` });
+        return;
+    }
 
     let nodeExe = 'node';
     let nodeEnv = { ...process.env, ELECTRON_RUN_AS_NODE: '' };
@@ -852,7 +837,6 @@ async function mergeForgeLoaderToVersion(versionId, gameVersion, forgeVersion) {
     const mergeLog = (msg) => {
         const line = `[${new Date().toISOString()}] ${msg}\n`;
         try { fs.appendFileSync(mergeLogFile, line); } catch(_) {}
-        console.log(`[Forge-MERGE] ${msg}`);
     };
     try { fs.mkdirSync(path.dirname(mergeLogFile), { recursive: true }); } catch(_) {}
     try { fs.writeFileSync(mergeLogFile, ''); } catch(_) {}
@@ -885,7 +869,6 @@ async function mergeForgeLoaderToVersion(versionId, gameVersion, forgeVersion) {
         fs.writeFileSync(jsonPath, JSON.stringify(currentJson, null, 2));
 
         const mavenEntries2 = zip.getEntries().filter(e => e.entryName.startsWith('maven/'));
-        console.log(`[Forge-merge] 先提取 maven 文件: ${mavenEntries2.length} entries`);
         let mergeYieldCounter = 0;
         for (const entry of mavenEntries2) {
             const relativePath = entry.entryName.replace('maven/', '');

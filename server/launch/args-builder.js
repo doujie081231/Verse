@@ -13,6 +13,8 @@ const http = require('../http-client');
 const versions = require('../versions');
 const java = require('../java');
 const natives = require('../natives');
+const { resolveMaxMemory } = require('./memory-resolver');
+const { resolveMemoryMode } = require('./memory-mode-resolver');
 
 /* 构建启动参数 */
 /**
@@ -66,7 +68,6 @@ function buildLaunchArguments(versionJson, settings, account, versionId, customG
     if (!fs.existsSync(gameLog4jPath)) {
       try {
         fs.copyFileSync(forgeLog4jPath, gameLog4jPath);
-        console.log(`[Launch] log4j2.xml 已复制到游戏目录`);
       } catch (e) {
         console.error(`[Launch] log4j2.xml 复制失败: ${e.message}`);
       }
@@ -142,37 +143,45 @@ function buildLaunchArguments(versionJson, settings, account, versionId, customG
 
   const jvmArgs = [];
 
+  // 计算版本 mods 数量（用于内存分配与 GC 选择）
+  let modCount = 0;
+  try {
+    const versionDir = path.join(ctx.dirs.VERSIONS_DIR, actualVersionId || versionId);
+    const modsDir = path.join(versionDir, 'mods');
+    if (fs.existsSync(modsDir)) {
+      modCount = fs.readdirSync(modsDir).filter((f) => f.endsWith('.jar') && !f.endsWith('.jar.disabled')).length;
+    }
+  } catch (e) {}
+
   // 读取启动器存储中的内存配置，支持 auto / custom 两种模式
-  let maxMemMB = settings.maxMemory || 4096;
+  // [关键修复 2026-06-30] 通过 resolveMemoryMode 纯函数决策模式：
+  // 旧逻辑 `if (settings.maxMemory)` 因 settings.maxMemory 默认 4096 始终为真，
+  // 导致 312 个 mod 的大型整合包在 4096MB 下 OOM 崩溃，绕过 auto 自动提高逻辑。
+  let hasLaunchSettings = false;
+  let launchMemoryMode = null;
+  let launchMemoryValue = null;
   try {
     const storePath = path.join(ctx.dirs.DATA_DIR, 'app-store.json');
     if (fs.existsSync(storePath)) {
       const store = JSON.parse(fs.readFileSync(storePath, 'utf8'));
       const launchStr = store['versepc_launch_settings'];
       if (launchStr) {
+        hasLaunchSettings = true;
         const launchSettings = JSON.parse(launchStr);
-        const memMode = launchSettings.memoryMode || 'auto';
-        if (memMode === 'auto') {
-          // 自动模式：根据物理内存大小按比例分配，并预留系统占用
-          const totalMB = Math.floor(os.totalmem() / 1024 / 1024);
-          const freeMB = Math.floor(os.freemem() / 1024 / 1024);
-          let autoMB;
-          if (totalMB <= 4096) autoMB = Math.min(1024, totalMB - 1024);
-          else if (totalMB <= 8192) autoMB = Math.floor(totalMB * 0.55);
-          else if (totalMB <= 16384) autoMB = Math.floor(totalMB * 0.6);
-          else autoMB = Math.floor(totalMB * 0.65);
-          if (freeMB < 1024 && totalMB > 4096) autoMB = Math.min(autoMB, freeMB + 512);
-          autoMB = Math.max(512, Math.min(autoMB, totalMB - 1536));
-          autoMB = Math.max(autoMB, 512);
-          autoMB = Math.min(autoMB, 32768);
-          autoMB = Math.floor(autoMB / 256) * 256;
-          maxMemMB = autoMB;
-        } else if (memMode === 'custom') {
-          maxMemMB = parseInt(launchSettings.memoryValue, 10) || 4096;
-        }
+        launchMemoryMode = launchSettings.memoryMode || 'auto';
+        launchMemoryValue = launchSettings.memoryValue;
       }
     }
   } catch (e) {}
+  const { memoryMode, memoryValue } = resolveMemoryMode({
+    settingsMaxMemory: settings.maxMemory,
+    hasLaunchSettings,
+    launchMemoryMode,
+    launchMemoryValue
+  });
+  const totalMB = Math.floor(os.totalmem() / 1024 / 1024);
+  const freeMB = Math.floor(os.freemem() / 1024 / 1024);
+  const maxMemMB = resolveMaxMemory({ memoryMode, memoryValue, totalMB, freeMB, modCount });
   const minMemMB = maxMemMB;
   jvmArgs.push(`-Xmx${maxMemMB}M`, `-Xms${minMemMB}M`);
   jvmArgs.push('-Dlog4j2.formatMsgNoLookups=true');
@@ -182,15 +191,6 @@ function buildLaunchArguments(versionJson, settings, account, versionId, customG
   // 注意：ZGC/ShenandoahGC 在 Forge 整合包短生命周期对象较多时易引发卡顿，默认使用 G1GC
   const hasUserGc = jvmArgs.some((a) => /^-XX:\+?Use/.test(a) || /-XX:Use/.test(a));
   if (!hasUserGc) {
-    let modCount = 0;
-    try {
-      const versionDir = path.join(ctx.dirs.VERSIONS_DIR, actualVersionId || versionId);
-      const modsDir = path.join(versionDir, 'mods');
-      if (fs.existsSync(modsDir)) {
-        modCount = fs.readdirSync(modsDir).filter((f) => f.endsWith('.jar') && !f.endsWith('.jar.disabled')).length;
-      }
-    } catch (e) {}
-
     // 小内存场景使用 SerialGC；其余使用 G1GC（含 Aikar's Flags 风格调优参数）
     if (maxMemMB <= 1024) {
       jvmArgs.push('-XX:+UseSerialGC');
@@ -239,7 +239,6 @@ function buildLaunchArguments(versionJson, settings, account, versionId, customG
   const _verJvmArgs = _verSettings.jvmArgs;
   const _useVersionJvm = _verJvmArgs && _verJvmArgs.trim();
   const _effectiveJavaArgs = _useVersionJvm ? _verJvmArgs : settings.javaArgs;
-  console.log(`[Launch] 使用${_useVersionJvm ? '单版本' : '全局'} JVM 参数`);
   if (_effectiveJavaArgs && _effectiveJavaArgs.trim()) {
     const userArgs = _effectiveJavaArgs.split(' ').filter((a) => a);
     for (const arg of userArgs) {
@@ -271,10 +270,8 @@ function buildLaunchArguments(versionJson, settings, account, versionId, customG
       const stat = fs.statSync(cdsArchive);
       if (stat.size > 1024) {
         jvmArgs.push(`-Xshare:on`, `-XX:SharedArchiveFile=${cdsArchive}`);
-        console.log(`[CDS] 使用共享归档: ${cdsArchive} (${Math.round(stat.size / 1024)}KB)`);
       }
     } catch (e) {
-      console.log(`[CDS] 归档文件不可用: ${e.message}`);
     }
   }
 
@@ -424,7 +421,6 @@ function buildLaunchArguments(versionJson, settings, account, versionId, customG
           const gcPatterns = ['-XX:\\+Use', '-XX:-Use'];
           const isGcArg = gcPatterns.some((p) => new RegExp(`^${p}`).test(replaced));
           if (isGcArg && natives.hasGarbageCollectorArg(jvmArgs)) {
-            console.log(`[Launch] 跳过重复GC参数: ${replaced}`);
             continue;
           }
           if (replaced.startsWith('-Xmx') || replaced.startsWith('-Xms')) {
@@ -489,7 +485,6 @@ function buildLaunchArguments(versionJson, settings, account, versionId, customG
   const hasJvmLibraryPath = jvmArgs.some((a) => typeof a === 'string' && a.includes('java.library.path'));
   if (!hasJvmLibraryPath) {
     jvmArgs.push(`-Djava.library.path=${nativesDir}`);
-    console.log(`[Launch] 补充 java.library.path=${nativesDir}`);
   } else {
     // 修复 JSON 中未替换的 ${natives_directory} 变量
     const existingIdx = jvmArgs.findIndex((a) => typeof a === 'string' && a.includes('java.library.path'));
@@ -497,7 +492,6 @@ function buildLaunchArguments(versionJson, settings, account, versionId, customG
       const val = jvmArgs[existingIdx];
       if (val.includes('${natives_directory}') || val.includes('$natives_directory')) {
         jvmArgs[existingIdx] = val.replace(/\$\{?natives_directory\}?/g, nativesDir);
-        console.log(`[Launch] 修复未替换的 natives_directory 变量 -> ${nativesDir}`);
       }
     }
   }
@@ -529,15 +523,11 @@ function buildLaunchArguments(versionJson, settings, account, versionId, customG
       // 去除 serverUrl 中可能附加的认证元数据分隔符
       if (serverUrlArg.includes('@@@') || serverUrlArg.includes('@@')) {
         serverUrlArg = serverUrlArg.split('@@@')[0].split('@@')[0];
-        console.log(`[Launch] Cleaned serverUrl: ${account.serverUrl} -> ${serverUrlArg}`);
       }
       const javaAgentIdx = jvmArgs.findIndex((a) => a.startsWith('-javaagent:'));
       if (javaAgentIdx === -1) {
         jvmArgs.unshift(`-javaagent:${aiJarPath}=${serverUrlArg}`);
       }
-      console.log(`[Launch] authlib-injector: ${aiJarPath} -> ${serverUrlArg}`);
-    } else {
-      console.log('[Launch] authlib-injector not found');
     }
   }
 
@@ -616,14 +606,12 @@ function buildLaunchArguments(versionJson, settings, account, versionId, customG
   // 确保 --gameDir 已设置且变量已替换
   if (!gameArgs.some((a, i) => a === '--gameDir' && i + 1 < gameArgs.length)) {
     gameArgs.push('--gameDir', gameDir);
-    console.log(`[Launch] 补充 --gameDir ${gameDir}`);
   } else {
     const gdi = gameArgs.indexOf('--gameDir');
     if (gdi !== -1 && gdi + 1 < gameArgs.length) {
       const existingGd = gameArgs[gdi + 1];
       if (existingGd.includes('${') || existingGd.includes('$game_directory')) {
         gameArgs[gdi + 1] = gameDir;
-        console.log(`[Launch] 修复未替换的 gameDir 变量 -> ${gameDir}`);
       }
     }
   }
@@ -631,12 +619,6 @@ function buildLaunchArguments(versionJson, settings, account, versionId, customG
   // 去重游戏参数（保留首次出现的键值对）
   const finalGameArgs = versions.deduplicateGameArgs(gameArgs);
 
-  console.log(`[Launch] Args built: ${jvmArgs.length} JVM, ${finalGameArgs.length} game (${gameArgs.length - finalGameArgs.length} duplicates removed)`);
-  console.log(`[Launch] mainClass: ${mainClass}`);
-  console.log(`[Launch] classpath len: ${classpath.length}`);
-  console.log(`[Launch] gameDir: ${gameDir}`);
-  console.log(`[Launch] nativesDir: ${nativesDir}`);
-  console.log(`[Launch] loader: ${isForge ? 'Forge' : isNeoForge ? 'NeoForge' : isFabric ? 'Fabric' : 'Vanilla'}`);
   return { args: [...jvmArgs, ...finalGameArgs], maxMemMB };
 }
 

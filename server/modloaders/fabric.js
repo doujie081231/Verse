@@ -34,7 +34,6 @@ async function installFabric(gameVersion, loaderVersion, onProgress = null) {
     // 优先尝试 profile/json 端点（包含完整版本配置）
     const profileJsonUrl = `${ctx.urls.FABRIC_META_URL}/versions/loader/${gameVersion}/${loaderVersion}/profile/json`;
     const baseMetaUrl = `${ctx.urls.FABRIC_META_URL}/versions/loader/${gameVersion}/${loaderVersion}`;
-    console.log(`[Fabric] Fetching profile/json from: ${profileJsonUrl}`);
 
     let fullProfile = null;
     try {
@@ -42,16 +41,13 @@ async function installFabric(gameVersion, loaderVersion, onProgress = null) {
       fullProfile.id = versionId;
       fullProfile.inheritsFrom = gameVersion;
       if (!fullProfile.time) fullProfile.time = fullProfile.releaseTime || new Date().toISOString();
-      console.log(`[Fabric] profile/json returned ${fullProfile.libraries?.length || 0} libraries`);
     } catch (profileErr) {
       console.warn(`[Fabric] profile/json failed (${profileErr.message}), falling back to base endpoint`);
     }
 
     // profile/json 失败时回退到基础端点，手动构造版本配置
     if (!fullProfile || !fullProfile.libraries || fullProfile.libraries.length === 0) {
-      console.log(`[Fabric] Falling back to base endpoint: ${baseMetaUrl}`);
       const profileData = await http.fetchJSON(baseMetaUrl);
-      console.log(`[Fabric] Profile data keys: ${Object.keys(profileData).join(', ')}`);
 
       fullProfile = {
         id: versionId,
@@ -70,7 +66,6 @@ async function installFabric(gameVersion, loaderVersion, onProgress = null) {
           const common = launcherMeta.libraries.common || [];
           const client = launcherMeta.libraries.client || [];
           fullProfile.libraries = [...common, ...client];
-          console.log(`[Fabric] Libraries from launcherMeta: ${fullProfile.libraries.length}`);
         }
         if (launcherMeta.mainClass) {
           const metaMainClass = typeof launcherMeta.mainClass === 'string'
@@ -101,7 +96,6 @@ async function installFabric(gameVersion, loaderVersion, onProgress = null) {
             name: profileData.loader.maven,
             url: 'https://maven.fabricmc.net/'
           });
-          console.log(`[Fabric] Added fabric-loader library: ${profileData.loader.maven}`);
         }
       }
       // 添加 intermediary 中间映射库
@@ -112,7 +106,6 @@ async function installFabric(gameVersion, loaderVersion, onProgress = null) {
             name: profileData.intermediary.maven,
             url: 'https://maven.fabricmc.net/'
           });
-          console.log(`[Fabric] Added intermediary library: ${profileData.intermediary.maven}`);
         }
       }
 
@@ -135,9 +128,6 @@ async function installFabric(gameVersion, loaderVersion, onProgress = null) {
 
     const versionDir = path.join(ctx.dirs.VERSIONS_DIR, versionId);
     if (!fs.existsSync(versionDir)) fs.mkdirSync(versionDir, { recursive: true });
-
-    console.log(`[Fabric] Final mainClass: ${fullProfile.mainClass}`);
-    console.log(`[Fabric] Final libraries count: ${fullProfile.libraries.length}`);
 
     // 收集需要下载的 Fabric 库文件
     const fabLibsToDownload = [];
@@ -243,7 +233,6 @@ async function installFabric(gameVersion, loaderVersion, onProgress = null) {
             completed++;
           }).catch((e) => {
             fabLibFailures++;
-            console.log(`[Fabric] Failed to download ${item.lib.name}: ${e.message}`);
             failed++;
           }).finally(() => {
             active--;
@@ -275,7 +264,6 @@ async function installFabric(gameVersion, loaderVersion, onProgress = null) {
     const jsonPath = path.join(versionDir, `${versionId}.json`);
     fs.writeFileSync(jsonPath, JSON.stringify(fullProfile, null, 2));
 
-    console.log(`[Fabric] Installation complete: ${versionId}`);
     return { success: true, versionId: versionId, libsMissing: fabMissing.length };
   } catch (e) {
     console.error(`[Fabric] Installation failed: ${e.message}`);
@@ -284,7 +272,6 @@ async function installFabric(gameVersion, loaderVersion, onProgress = null) {
       const versionDir = path.join(ctx.dirs.VERSIONS_DIR, `fabric-loader-${loaderVersion}-${gameVersion}`);
       if (fs.existsSync(versionDir)) {
         fs.rmSync(versionDir, { recursive: true, force: true });
-        console.log(`[Fabric] Cleaned up failed version directory: ${versionDir}`);
       }
     } catch (cleanupErr) {
       console.error(`[Fabric] Failed to cleanup version directory:`, cleanupErr.message);
@@ -308,13 +295,11 @@ async function mergeFabricLoaderToVersion(versionId, gameVersion, loaderVersion,
 
   // 获取 Fabric Loader 的 profile 数据，主源失败时回退到 BMCLAPI 镜像
   const metaUrl = `${ctx.urls.FABRIC_META_URL}/versions/loader/${gameVersion}/${loaderVersion}`;
-  console.log(`[Fabric] Fetching profile for merge: ${metaUrl}`);
   let profileData;
   try {
     profileData = await http.fetchJSON(metaUrl);
   } catch (e) {
     const mirrorMetaUrl = `https://bmclapi2.bangbang93.com/fabric-meta/v2/versions/loader/${gameVersion}/${loaderVersion}`;
-    console.log(`[Fabric] Retrying with mirror: ${mirrorMetaUrl}`);
     profileData = await http.fetchJSON(mirrorMetaUrl);
   }
 
@@ -346,15 +331,12 @@ async function mergeFabricLoaderToVersion(versionId, gameVersion, loaderVersion,
               lib.downloads.artifact.path = `${groupPath}/${name}/${ver}/${name}-${ver}.jar`;
               const baseUrl = lib.url || 'https://maven.fabricmc.net/';
               lib.downloads.artifact.url = `${baseUrl}${groupPath}/${name}/${ver}/${name}-${ver}.jar`;
-              console.log(`[Fabric] 构造库URL: ${lib.name} -> ${lib.downloads.artifact.url}`);
             }
           }
         } else if (lib.downloads?.artifact?.url) {
-          console.log(`[Fabric] 库已有URL: ${lib.name} -> ${lib.downloads.artifact.url}`);
         }
       }
       versionJson.libraries = [...(versionJson.libraries || []), ...fabricLibs];
-      console.log(`[Fabric] 添加了 ${fabricLibs.length} 个库到版本 ${versionId}`);
 
       // 添加 fabric-loader 主库
       if (profileData.loader && profileData.loader.maven) {
@@ -376,7 +358,6 @@ async function mergeFabricLoaderToVersion(versionId, gameVersion, loaderVersion,
               }
             }
           });
-          console.log(`[Fabric] 添加 fabric-loader: ${profileData.loader.maven}`);
         }
       }
 
@@ -400,7 +381,6 @@ async function mergeFabricLoaderToVersion(versionId, gameVersion, loaderVersion,
               }
             }
           });
-          console.log(`[Fabric] 添加 intermediary: ${profileData.intermediary.maven}`);
         }
       }
     }
@@ -416,9 +396,6 @@ async function mergeFabricLoaderToVersion(versionId, gameVersion, loaderVersion,
   if (!versionJson.mainClass) {
     versionJson.mainClass = 'net.fabricmc.loader.impl.launch.knot.KnotClient';
   }
-
-  console.log(`[Fabric] 主类: ${versionJson.mainClass}`);
-  console.log(`[Fabric] 开始下载库文件...`);
 
   // 过滤出需要下载的库（按 rules 与文件是否存在）
   const libsToDownload = (versionJson.libraries || []).filter((lib) => {
@@ -446,9 +423,7 @@ async function mergeFabricLoaderToVersion(versionId, gameVersion, loaderVersion,
           const libPath = path.join(ctx.dirs.LIBRARIES_DIR, lib.downloads.artifact.path);
           const libUrl = lib.downloads.artifact.url
             || `https://maven.fabricmc.net/${lib.downloads.artifact.path}`;
-          console.log(`[Fabric] 下载库: ${lib.name || lib.downloads.artifact.path}`);
           await http.downloadFileWithMirror(libUrl, libPath);
-          console.log(`[Fabric] 下载成功: ${lib.name}`);
         })().then(() => {
           completed++;
         }).catch((e) => {
@@ -478,7 +453,6 @@ async function mergeFabricLoaderToVersion(versionId, gameVersion, loaderVersion,
 
   fs.writeFileSync(jsonPath, JSON.stringify(versionJson, null, 2));
   versions._invalidateResolvedJsonCache(versionId);
-  console.log(`[Fabric] Loader merged into version: ${versionId}`);
 }
 
 /**
@@ -498,7 +472,6 @@ async function getFabricLoaderVersions() {
         label: '[Racing] BMCLAPI Fabric Meta'
       }
     ]);
-    console.log('[Racing] getFabricLoaderVersions 成功');
     return data.map((v) => ({
       version: v.version,
       stable: v.stable
@@ -526,7 +499,6 @@ async function getFabricLoaderVersionsForGame(gameVersion) {
         label: `[Racing] BMCLAPI Fabric Meta (${gameVersion})`
       }
     ]);
-    console.log(`[Racing] getFabricLoaderVersionsForGame(${gameVersion}) 成功`);
     return data.map((v) => ({
       version: v.loader.version,
       stable: v.loader.stable
@@ -547,7 +519,6 @@ async function getFabricLoaderVersionsForGame(gameVersion) {
 async function autoDownloadFabricApi(gameVersion, versionId, onProgress = null) {
   try {
     if (onProgress) onProgress(0, '正在获取最新 Fabric API...');
-    console.log(`[FabricAPI] 搜索兼容 MC ${gameVersion} 的 Fabric API...`);
 
     // 通过 Modrinth API 查询兼容当前 MC 版本的 Fabric API 版本
     const searchUrl = `${ctx.urls.MODRINTH_API}/project/fabric-api/version?loaders=["fabric"]&game_versions=["${gameVersion}"]`;
@@ -556,25 +527,21 @@ async function autoDownloadFabricApi(gameVersion, versionId, onProgress = null) 
       versions = await http.fetchJSON(searchUrl);
     } catch (e) {
       const mirrorUrl = `${ctx.urls.MODRINTH_API_MIRROR}/project/fabric-api/version?loaders=["fabric"]&game_versions=["${gameVersion}"]`;
-      console.log(`[FabricAPI] 主API失败，尝试镜像: ${e.message}`);
       versions = await http.fetchJSON(mirrorUrl);
     }
 
     if (!versions || versions.length === 0) {
-      console.log(`[FabricAPI] 未找到兼容 MC ${gameVersion} 的 Fabric API 版本`);
       return { success: false, message: '未找到兼容版本' };
     }
 
     const latestVersion = versions[0];
     const primaryFile = latestVersion.files?.find((f) => f.primary) || latestVersion.files?.[0];
     if (!primaryFile) {
-      console.log(`[FabricAPI] 版本 ${latestVersion.version_number} 没有可下载文件`);
       return { success: false, message: '无可下载文件' };
     }
 
     const modsDir = versions.getVersionModsDir(versionId);
     if (!modsDir) {
-      console.log(`[FabricAPI] 无法确定版本 ${versionId} 的 mods 目录`);
       return { success: false, message: '无法确定mods目录' };
     }
     if (!fs.existsSync(modsDir)) fs.mkdirSync(modsDir, { recursive: true });
@@ -582,18 +549,15 @@ async function autoDownloadFabricApi(gameVersion, versionId, onProgress = null) 
     const destPath = path.join(modsDir, primaryFile.filename);
     // 已存在则跳过下载
     if (fs.existsSync(destPath)) {
-      console.log(`[FabricAPI] ${primaryFile.filename} 已存在，跳过下载`);
       return { success: true, message: '已存在', fileName: primaryFile.filename };
     }
 
     if (onProgress) onProgress(0.3, `下载 Fabric API ${latestVersion.version_number}...`);
-    console.log(`[FabricAPI] 下载: ${primaryFile.filename} (${primaryFile.url})`);
 
     await http.downloadFileWithMirror(primaryFile.url, destPath, (p) => {
       if (onProgress) onProgress(0.3 + p.progress * 0.007, `下载 Fabric API...`);
     });
 
-    console.log(`[FabricAPI] 下载完成: ${primaryFile.filename}`);
     if (onProgress) onProgress(1, `Fabric API 安装完成`);
     return { success: true, fileName: primaryFile.filename, version: latestVersion.version_number };
   } catch (e) {

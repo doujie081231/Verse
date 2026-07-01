@@ -127,14 +127,11 @@ module.exports = {
       if (cdsMajorVer < 8) { sendJSON(res, { success: false, error: 'CDS requires Java 8+' }); return; }
 
       try {
-        console.log(`[CDS] 开始为 ${cdsVersionId} 生成类共享归档...`);
-
         // 优先复用 JDK 自带的默认归档
         const defaultJsa = path.join(path.dirname(path.dirname(cdsJavaPath)), 'lib', 'server', 'classes.jsa');
         if (fs.existsSync(defaultJsa)) {
           try {
             fs.copyFileSync(defaultJsa, cdsArchive);
-            console.log(`[CDS] 已复制默认CDS归档: ${defaultJsa}`);
             sendJSON(res, { success: true, archive: cdsArchive, source: 'default' });
             return;
           } catch (e) {}
@@ -143,7 +140,6 @@ module.exports = {
         // 调用 java -Xshare:dump 生成归档
         const dumpArgs = [cdsJavaPath, '-Xshare:dump', `-XX:SharedArchiveFile=${cdsArchive}`];
         const dumpResult = execSync(dumpArgs.join(' '), { encoding: 'utf8', timeout: 60000, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
-        console.log(`[CDS] 默认归档生成完成`);
 
         if (fs.existsSync(cdsArchive) && fs.statSync(cdsArchive).size > 1024) {
           sendJSON(res, { success: true, archive: cdsArchive, source: 'generated', sizeKB: Math.round(fs.statSync(cdsArchive).size / 1024) });

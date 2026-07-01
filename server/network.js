@@ -72,7 +72,6 @@ function createLANRoom(roomName, gamePort, playerName) {
     const mcServer = net.createConnection({ host: '127.0.0.1', port: room.gamePort }, () => {
       room.connections.set(peerId, { client: clientSocket, server: mcServer, connected: true });
       room.peers.set(peerId, { id: peerId, name: `玩家${room.peers.size + 1}`, connectedAt: Date.now() });
-      console.log(`[LAN] Peer ${peerId} connected, forwarding to MC server :${room.gamePort}`);
     });
 
     clientSocket.on('data', (data) => {
@@ -87,7 +86,6 @@ function createLANRoom(roomName, gamePort, playerName) {
       mcServer.destroy();
       room.connections.delete(peerId);
       room.peers.delete(peerId);
-      console.log(`[LAN] Peer ${peerId} disconnected`);
     });
 
     mcServer.on('close', () => {
@@ -100,7 +98,6 @@ function createLANRoom(roomName, gamePort, playerName) {
   });
 
   relayServer.listen(relayPort, '0.0.0.0', () => {
-    console.log(`[LAN] Room ${code} relay listening on port ${relayPort}`);
     room.status = 'active';
   });
 
@@ -139,7 +136,6 @@ function destroyLANRoom(code) {
   }
 
   ctx.network.lanRooms.delete(code);
-  console.log(`[LAN] Room ${code} destroyed`);
 }
 
 /**
@@ -222,7 +218,6 @@ async function discoverUPnPGateway() {
         return result;
       }
     } catch (e) {
-      console.log(`[UPnP] SSDP search for ${st} failed:`, e.message);
     }
   }
 
@@ -283,7 +278,6 @@ function _ssdpSearch(searchType, maxRetries) {
       try {
         socket.addMembership('239.255.255.250');
       } catch (e) {
-        console.log('[UPnP] addMembership failed (non-fatal):', e.message);
       }
       socket.setBroadcast(true);
       socket.setMulticastTTL(4);
@@ -598,7 +592,6 @@ function startWSRelayServer(port) {
 
     ctx.network.wsRelayServer.on('close', () => clearInterval(interval));
 
-    console.log(`[WS-Relay] Server started on port ${port}`);
     return { success: true, port };
   } catch (e) {
     return { success: false, error: e.message };

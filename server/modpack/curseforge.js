@@ -26,7 +26,6 @@ const { _dedupeVersionId, isModpackPathSafe, _repairCorruptedModJars } = require
  * @returns {Promise<{success: boolean, versionId?: string, name?: string, mcVersion?: string, error?: string, warning?: string, failedMods?: Array, loaderVersionId?: string, targetVersion?: string}>}
  */
 async function _importCurseForge(zip, manifestEntry, filePath, progress, targetVersion = '', abortSignal = null) {
-  console.log(`[CurseForge] ========== 开始解析 CurseForge 整合包 ==========`);
   const settings = versions.loadSettingsCached();
   let manifest;
   try {
@@ -64,12 +63,6 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
     fabricVerCF = mlParts[0].toLowerCase() === 'fabric' ? mlParts.slice(1).join('-') : mlParts.join('-').replace(/^fabric/i, '');
   }
 
-  console.log(`[CurseForge] 解析 modLoader: "${modLoader}" -> forge=${forgeVerCF}, fabric=${fabricVerCF}, neoforge=${neoforgeVerCF}`);
-
-  console.log(`[CurseForge] 整合包: ${packName}`);
-  console.log(`[CurseForge] MC版本: ${mcVersion || '(未指定)'}`);
-  console.log(`[CurseForge] Mod数量: ${(manifest.files || []).length}`);
-
   progress('prepare', `整合包: ${packName}  MC: ${mcVersion}`, 8);
 
   let versionId;
@@ -81,7 +74,6 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
     if (fs.existsSync(existingDir)) {
       versionId = cleanTargetId;
       versionDir = existingDir;
-      console.log(`[Modpack] 安装到现有版本: ${versionId}`);
     } else {
       const extFolders = versions.loadExternalFolders();
       for (const folder of extFolders) {
@@ -91,7 +83,6 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
         if (extV) {
           versionId = cleanTargetId;
           versionDir = extV.externalVersionDir;
-          console.log(`[Modpack] 安装到外部版本: ${versionId}`);
           break;
         }
       }
@@ -99,12 +90,10 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
     if (!versionDir) {
       versionId = _dedupeVersionId(packName);
       versionDir = path.join(ctx.dirs.VERSIONS_DIR, versionId);
-      console.log(`[Modpack] 目标版本不存在，创建新版本: ${versionId}`);
     }
   } else {
     versionId = _dedupeVersionId(packName);
     versionDir = path.join(ctx.dirs.VERSIONS_DIR, versionId);
-    console.log(`[Modpack] 未指定目标版本，创建新版本: ${versionId}`);
   }
 
   const isNewVersionDirCF = !fs.existsSync(path.join(versionDir, `${versionId}.json`));
@@ -118,7 +107,6 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
   let loaderVersionId = null;
 
   if (isNewVersionDirCF) {
-    console.log(`[CurseForge] 确保基础版本存在: ${mcVersion}`);
     progress('base', '正在准备基础版本...', 5);
     const baseResult = await modloaders.ensureBaseVersionInstalled(mcVersion, (msg, pct) => {
       progress('base', msg || '正在准备基础版本...', 5 + Math.min(pct, 100) * 0.15);
@@ -136,32 +124,24 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
           const lvJson = path.join(ctx.dirs.VERSIONS_DIR, loaderVersionId, `${loaderVersionId}.json`);
           if (!fs.existsSync(lvJson) || !modloaders.verifyLoaderLibs(loaderVersionId)) {
             if (fs.existsSync(lvJson) && !modloaders.verifyLoaderLibs(loaderVersionId)) {
-              console.log(`[CurseForge] Forge ${loaderVersionId} 库文件缺失，重新安装`);
               try { fs.rmSync(path.join(ctx.dirs.VERSIONS_DIR, loaderVersionId), { recursive: true, force: true }); } catch (e) {}
             }
-            console.log(`[CurseForge] 安装模组加载器: Forge ${forgeVerCF} (MC ${mcVersion})`);
             const ir = await modloaders.installForge(mcVersion, forgeVerCF, (p, msg) => {
               progress('loader-install', msg || '正在安装Forge...', 20 + p * 15);
             });
             if (!ir.success) throw new Error(ir.error);
-          } else {
-            console.log(`[CurseForge] Forge ${loaderVersionId} 已安装，跳过`);
           }
         } else if (neoforgeVerCF) {
           loaderVersionId = `${mcVersion}-neoforge-${neoforgeVerCF}`;
           const lvJson = path.join(ctx.dirs.VERSIONS_DIR, loaderVersionId, `${loaderVersionId}.json`);
           if (!fs.existsSync(lvJson) || !modloaders.verifyLoaderLibs(loaderVersionId)) {
             if (fs.existsSync(lvJson) && !modloaders.verifyLoaderLibs(loaderVersionId)) {
-              console.log(`[CurseForge] NeoForge ${loaderVersionId} 库文件缺失，重新安装`);
               try { fs.rmSync(path.join(ctx.dirs.VERSIONS_DIR, loaderVersionId), { recursive: true, force: true }); } catch (e) {}
             }
-            console.log(`[CurseForge] 安装模组加载器: NeoForge ${neoforgeVerCF} (MC ${mcVersion})`);
             const ir = await modloaders.installNeoForge(mcVersion, neoforgeVerCF, (p, msg) => {
               progress('loader-install', msg || '正在安装NeoForge...', 20 + p * 15);
             });
             if (!ir.success) throw new Error(ir.error);
-          } else {
-            console.log(`[CurseForge] NeoForge ${loaderVersionId} 已安装，跳过`);
           }
         } else if (fabricVerCF) {
           loaderVersionId = `fabric-loader-${fabricVerCF}-${mcVersion}`;
@@ -175,7 +155,6 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
                 const existingJson = JSON.parse(fs.readFileSync(lvJson, 'utf-8'));
                 const hasFabricLoader = (existingJson.libraries || []).some((l) => l.name && l.name.startsWith('net.fabricmc:fabric-loader'));
                 if (!hasFabricLoader) {
-                  console.log(`[CurseForge] Fabric ${loaderVersionId} 缺少 fabric-loader 库，重新安装`);
                   fabricNeedInstall = true;
                 }
               } catch (_) { fabricNeedInstall = true; }
@@ -183,16 +162,12 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
           }
           if (fabricNeedInstall) {
             if (fs.existsSync(lvJson)) {
-              console.log(`[CurseForge] Fabric ${loaderVersionId} 需要重新安装`);
               try { fs.rmSync(path.join(ctx.dirs.VERSIONS_DIR, loaderVersionId), { recursive: true, force: true }); } catch (e) {}
             }
-            console.log(`[CurseForge] 安装模组加载器: Fabric ${fabricVerCF} (MC ${mcVersion})`);
             const ir = await modloaders.installFabric(mcVersion, fabricVerCF, (p, msg) => {
               progress('loader-install', msg || '正在安装Fabric...', 20 + p * 15);
             });
             if (!ir.success) throw new Error(ir.error);
-          } else {
-            console.log(`[CurseForge] Fabric ${loaderVersionId} 已安装，跳过`);
           }
         }
       } catch (e) {
@@ -223,7 +198,6 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
       if (cfLoaderMainClass) versionJson.mainClass = cfLoaderMainClass;
       fs.writeFileSync(path.join(versionDir, `${versionId}.json`), JSON.stringify(versionJson, null, 2));
       versions._invalidateResolvedJsonCache(versionId);
-      console.log(`[CurseForge] 创建版本JSON: ${versionId}.json (继承 ${loaderVersionId}, mainClass: ${cfLoaderMainClass || '未设置'})`);
     } else {
       const versionJson = {
         id: versionId,
@@ -235,7 +209,6 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
       };
       fs.writeFileSync(path.join(versionDir, `${versionId}.json`), JSON.stringify(versionJson, null, 2));
       versions._invalidateResolvedJsonCache(versionId);
-      console.log(`[CurseForge] 创建版本JSON: ${versionId}.json (无加载器)`);
     }
 
     progress('loader', '模组加载器就绪', 40);
@@ -248,7 +221,6 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
       if (fs.existsSync(existingModsDir)) {
         _cfBackupDir = versionDir + '.backup_' + Date.now();
         fs.cpSync(existingModsDir, path.join(_cfBackupDir, 'mods'), { recursive: true });
-        console.log(`[CurseForge] 已备份 mods 目录到 ${_cfBackupDir}`);
       }
     } catch (bkErr) {
       console.warn(`[CurseForge] 备份 mods 目录失败 (非致命): ${bkErr.message}`);
@@ -353,7 +325,6 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
       if (abortSignal && abortSignal.aborted) { cfInFlight--; cfUpdateOverall(); return; }
       const projectID = file.projectID;
       const fileID    = file.fileID;
-      console.log(`[CurseForge] 下载 [${index + 1}/${cfFiles.length}] project=${projectID} file=${fileID}`);
       const fileSize  = file.fileLength || 0;
       if (cfModFiles[index]) { cfModFiles[index].status = 'downloading'; cfModFiles[index].progress = 0; }
       cfUpdateOverall();
@@ -364,7 +335,6 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
       for (let round = 0; round < MAX_CF_ROUNDS && !cfDownloaded; round++) {
         if (abortSignal && abortSignal.aborted) break;
         if (round > 0) {
-          console.log(`[CurseForge] Mod ${projectID}:${fileID} 第${round + 1}轮重试...`);
           if (cfModFiles[index]) { cfModFiles[index].status = 'downloading'; cfModFiles[index].progress = 0; }
           await new Promise((r) => setTimeout(r, 3000 + round * 2000 + Math.random() * 2000));
         }
@@ -443,7 +413,6 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
       }
 
       if (!cfDownloaded && !(abortSignal && abortSignal.aborted) && cfApiKey) {
-        console.log(`[CurseForge] Mod ${projectID}:${fileID} 常规下载失败，尝试通过API获取其他版本...`);
         try {
           let cfLoaderTypeFilter = '';
           if (forgeVerCF) cfLoaderTypeFilter = '&modLoaderType=1';
@@ -451,7 +420,6 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
           else if (neoforgeVerCF) cfLoaderTypeFilter = '&modLoaderType=5';
           const allFilesRes = await http.fetchJSON(`${ctx.urls.CURSEFORGE_API}/mods/${projectID}/files?gameVersion=${mcVersion}${cfLoaderTypeFilter}`, { 'x-api-key': cfApiKey });
           if (allFilesRes && allFilesRes.data && Array.isArray(allFilesRes.data)) {
-            console.log(`[CurseForge] 查询到 ${allFilesRes.data.length} 个备用版本 (mc=${mcVersion}, loader=${cfLoaderTypeFilter || 'any'})`);
             const mcVer = mcVersion;
             const matchingFiles = allFilesRes.data.filter((f) =>
               f.gameVersions && f.gameVersions.includes(mcVer) &&
@@ -475,7 +443,6 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
                 });
                 if (utils.isJarIntact(destPath)) {
                   cfDownloaded = true;
-                  console.log(`[CurseForge] 通过备用版本下载成功: ${altFile.fileName}`);
                 } else {
                   try { fs.unlinkSync(destPath); } catch (_) {}
                 }
@@ -525,7 +492,6 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
           console.warn(`[CurseForge] 批量获取文件信息失败: ${e.message}，将逐个获取`);
         }
       }
-      console.log(`[CurseForge] 预获取文件信息: ${Object.keys(_cfFileInfoMap).length}/${cfFiles.length}`);
     }
 
     let cfTaskIdx = 0;
@@ -593,7 +559,6 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
             }
           }
           if (cfMissingAssets.length > 0) {
-            console.log(`[CurseForge] 资源文件缺失 ${cfMissingAssets.length}/${cfAssetEntries.length} 个，开始下载...`);
             const CF_ASSET_PARALLEL = Math.min(parseInt(settings.maxThreads, 10) || 64, 64);
             let cfAssetDone = 0;
             const cfAssetTotal = cfMissingAssets.length;
@@ -619,9 +584,6 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
             const cfAssetPool = [];
             for (let i = 0; i < Math.min(CF_ASSET_PARALLEL, cfAssetTotal); i++) cfAssetPool.push(runCfAssetBatch());
             await Promise.all(cfAssetPool);
-            console.log(`[CurseForge] 资源下载完成: ${cfAssetDone}/${cfAssetTotal}`);
-          } else {
-            console.log(`[CurseForge] 所有 ${cfAssetEntries.length} 个资源文件已就绪`);
           }
         }
       } catch (e) {
@@ -717,8 +679,6 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
       failWarning = `${cfFailedCount}/${cfFiles.length} 个Mod下载失败: ${failedModNames}。请检查网络后重试。`;
       console.warn(`[CurseForge] Mod下载汇总: ${cfFiles.length - cfFailedCount}成功 ${cfFailedCount}失败`);
       console.warn(`[CurseForge] 失败的模组: ${failedModNames}`);
-    } else {
-      console.log(`[CurseForge] Mod下载完成: 全部${cfFiles.length}个成功`);
     }
     return {
       success: true, name: packName, versionId, mcVersion, targetVersion: targetVersion || '',
@@ -735,7 +695,6 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
           const currentModsDir = path.join(versionDir, 'mods');
           if (fs.existsSync(currentModsDir)) fs.rmSync(currentModsDir, { recursive: true, force: true });
           fs.cpSync(restoredModsDir, currentModsDir, { recursive: true });
-          console.log(`[CurseForge] 已从备份恢复 mods 目录`);
         }
         fs.rmSync(_cfBackupDir, { recursive: true, force: true });
       } catch (rbErr) {

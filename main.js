@@ -1,5 +1,9 @@
 // 崩溃日志模块 - 必须在所有其他代码之前 require，以捕获最早期的启动错误
 const { _writeCrashLog, _crashLogPath } = require('./main/crash-log');
+// 临时启动诊断时间戳（测完删除）
+const _bootT0 = Date.now();
+const _bootLog = (msg) => { try { _writeCrashLog(`[BOOT+${Date.now() - _bootT0}ms] ${msg}`); } catch (e) {} };
+_bootLog('main.js start');
 
 // 共享状态中介层 - 必须在所有其他 main/ 模块之前加载，提供跨模块共享状态
 const sharedState = require('./main/shared-state');
@@ -40,54 +44,59 @@ const sharedState = require('./main/shared-state');
 const { app } = require('electron');
 const { checkTampering: _chkTamper, autoRecover: _autoRecover } = require('./activation/activation-verify');
 
-// 单实例锁第一阶段：清理遗留的旧进程和占用 3001-3010 端口的进程
-try {
-  const { exec: _execAsync } = require('child_process');
-  const _currentPid = process.pid;
-  _execAsync('chcp 65001 >nul 2>nul && wmic process where "name=\'VersePC.exe\'" get ProcessId,ParentProcessId,CommandLine /format:csv 2>nul', { encoding: 'utf8', timeout: 5000, windowsHide: true }, (_err, _wmicOut) => {
-    try {
-      if (_wmicOut) {
-        for (const _line of _wmicOut.split('\n')) {
-          const _trim = _line.trim();
-          if (!_trim || _trim.startsWith('Node')) continue;
-          const _parts = _trim.split(',');
-          if (_parts.length < 4) continue;
-          const _pid = parseInt(_parts[_parts.length - 2]);
-          const _ppid = parseInt(_parts[_parts.length - 1]);
-          if (!_pid || _pid === _currentPid) continue;
-          if (_ppid && _ppid !== 0) continue;
-          try { process.kill(_pid); } catch (e) {}
-        }
-      }
-    } catch (e) {}
-  });
-  _execAsync('netstat -ano | findstr LISTENING', { encoding: 'utf8', timeout: 5000, windowsHide: true }, (_err, _netOut) => {
-    try {
-      if (_netOut) {
-        for (let _port = 3001; _port <= 3010; _port++) {
-          const _regex = new RegExp(`:${_port}\\s.*LISTENING\\s+(\\d+)`, 'g');
-          let _match;
-          while ((_match = _regex.exec(_netOut)) !== null) {
-            const _pid = parseInt(_match[1]);
-            if (_pid && _pid !== _currentPid) {
-              try { process.kill(_pid); } catch (e) {}
-            }
-          }
-        }
-      }
-    } catch (e) {}
-  });
-} catch (e) {}
-
 const gotTheLockEarly = app.requestSingleInstanceLock();
 if (!gotTheLockEarly) {
   process.exit(0);
 }
 
+// 单实例锁第一阶段：清理遗留的旧进程和占用 3001-3010 端口的进程
+// 移到 setImmediate 中，不阻塞 app.requestSingleInstanceLock 和后续窗口创建
+setImmediate(() => {
+  try {
+    const { exec: _execAsync } = require('child_process');
+    const _currentPid = process.pid;
+    _execAsync('chcp 65001 >nul 2>nul && wmic process where "name=\'VersePC.exe\'" get ProcessId,ParentProcessId,CommandLine /format:csv 2>nul', { encoding: 'utf8', timeout: 5000, windowsHide: true }, (_err, _wmicOut) => {
+      try {
+        if (_wmicOut) {
+          for (const _line of _wmicOut.split('\n')) {
+            const _trim = _line.trim();
+            if (!_trim || _trim.startsWith('Node')) continue;
+            const _parts = _trim.split(',');
+            if (_parts.length < 4) continue;
+            const _pid = parseInt(_parts[_parts.length - 2]);
+            const _ppid = parseInt(_parts[_parts.length - 1]);
+            if (!_pid || _pid === _currentPid) continue;
+            if (_ppid && _ppid !== 0) continue;
+            try { process.kill(_pid); } catch (e) {}
+          }
+        }
+      } catch (e) {}
+    });
+    _execAsync('netstat -ano | findstr LISTENING', { encoding: 'utf8', timeout: 5000, windowsHide: true }, (_err, _netOut) => {
+      try {
+        if (_netOut) {
+          for (let _port = 3001; _port <= 3010; _port++) {
+            const _regex = new RegExp(`:${_port}\\s.*LISTENING\\s+(\\d+)`, 'g');
+            let _match;
+            while ((_match = _regex.exec(_netOut)) !== null) {
+              const _pid = parseInt(_match[1]);
+              if (_pid && _pid !== _currentPid) {
+                try { process.kill(_pid); } catch (e) {}
+              }
+            }
+          }
+        }
+      } catch (e) {}
+    });
+  } catch (e) {}
+});
+
 /* V8 Code Cache - 首次启动后缓存编译结果，后续启动提速 40-60% */
+// 缓存目录放在 DATA_DIR 下，避免系统清理临时目录导致缓存失效
 try {
   const v8 = require('v8');
-  const cacheDir = require('path').join(require('os').tmpdir(), 'versepc-v8-cache');
+  const { DATA_DIR } = require('./main/paths');
+  const cacheDir = require('path').join(DATA_DIR, 'v8-cache');
   try { require('fs').mkdirSync(cacheDir, { recursive: true }); } catch (e) {}
   v8.setFlagsFromString('--compile-cache-dir=' + cacheDir);
 } catch (e) {}
@@ -108,7 +117,7 @@ try {
   } catch (e) {}
 } catch (e) {}
 
-// 运行时完整性自检模块 - 延迟到窗口显示后执行，避免阻塞启动
+// 运行时完整性自检模块
 const { _runIntegrityCheckAsync } = require('./main/integrity');
 
 /* 模块导入 */
@@ -131,17 +140,17 @@ if (process.platform === 'win32') {
   app.setAppUserModelId('com.versepc.launcher');
 }
 
-// JSON 自动修复模块 - 检测并修复损坏的配置/数据文件
+// JSON 自动修复模块
 const { autoRepairJsonFileAsync, repairVersePCDataAsync, _deferredRepairData } = require('./main/json-repair');
 
-// 持久化存储 + 激活验证 IPC（从 main.js 抽离）
+// 持久化存储 - 启动时立即需要（窗口配置/主题），保留同步加载
 const { STORE_PATH, safeWriteFileSync, safeReadJsonFile, loadStore, registerStoreIPC } = require('./main/store');
 
-// 自动更新模块（从 main.js 抽离）
+// 自动更新模块
 const updaterModule = require('./main/updater');
 const { initAutoUpdater, registerUpdaterIPC } = updaterModule;
 
-// 窗口管理模块（从 main.js 抽离：窗口配置 + 窗口控制 IPC + 关闭动画）
+// 窗口管理模块 - 启动时立即需要（createWindow 用 loadWindowConfig）
 const {
   loadWindowConfig, saveWindowConfig, animateCloseWindow,
   getSavedWindowBounds, setSavedWindowBounds,
@@ -149,14 +158,15 @@ const {
   registerWindowManagerIPC
 } = require('./main/window-manager');
 
-// 编辑器窗口 + 终端会话模块（从 main.js 抽离）
+// 编辑器窗口 + 终端会话模块
 const { setupEditorTerminal, registerEditorTerminalIPC, cleanupTerminals } = require('./main/editor-terminal');
 
-// versepc:// 协议处理模块（从 main.js 抽离：协议路由 + API/SSE + 静态文件 + 路径白名单）
+// versepc:// 协议处理模块 - 启动时立即需要（协议注册）
 const {
   setupProtocolHandler, handleVersePCProtocol,
   isPathAllowed
 } = require('./main/protocol-handler');
+_bootLog('top-level requires done');
 
 /* 全局错误处理 */
 process.on('unhandledRejection', (reason) => {
@@ -208,10 +218,12 @@ protocol.registerSchemesAsPrivileged([
  * @throws {Error} 当窗口配置加载或 BrowserWindow 构造失败时抛出。
  */
 async function createWindow() {
+  try { _bootLog('createWindow enter'); } catch (e) {}
   const [configResult, storeResult] = await Promise.allSettled([
     Promise.resolve().then(() => loadWindowConfig()),
     fs.promises.readFile(STORE_PATH, 'utf-8').then(raw => JSON.parse(raw)).catch(() => null)
   ]);
+  try { _bootLog('createWindow config loaded'); } catch (e) {}
   const config = configResult.status === 'fulfilled' ? configResult.value : { fullscreen: false, windowMode: true, windowWidth: 1200, windowHeight: 800 };
   const storeData = storeResult.status === 'fulfilled' ? storeResult.value : null;
   const primaryDisplay = screen.getPrimaryDisplay();
@@ -256,13 +268,19 @@ async function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       webSecurity: true,
-      webviewTag: true,
+      webviewTag: false,
       preload: path.join(__dirname, 'preload.cjs')
     }
   });
   // 同步主窗口实例到共享状态，供 window-manager 等抽离模块访问
   sharedState.setMainWindow(mainWindow);
+  try { _bootLog('BrowserWindow created'); } catch (e) {}
+
+  // 立即显示窗口：index.html 内置纯 CSS 的 splash 启动画面（内联样式，立即渲染），
+  // 背景色匹配主题，可遮挡加载过程，避免白屏/蓝屏闪烁。
+  // 不再等待 ready-to-show（该事件要等所有 defer 脚本执行完，会延迟数秒）。
   mainWindow.show();
+  try { _bootLog('mainWindow.show() (immediate)'); } catch (e) {}
 
   // 根据保存的配置恢复窗口状态
   if (config.fullscreen && !config.windowMode) {
@@ -272,8 +290,10 @@ async function createWindow() {
     mainWindow.maximize();
   }
 
-  // 使用 versepc:// 协议加载首页
+  // 加载渲染进程：直接加载根目录 index.html（Vue 迁移已放弃，vite 已移除）
+  try { _bootLog('before loadURL'); } catch (e) {}
   mainWindow.loadURL('versepc://app/index.html');
+  try { _bootLog('after loadURL'); } catch (e) {}
 
   // GPU 黑屏检测看门狗：15 秒内页面若未渲染出任何子节点，则判定 GPU 加速异常
   // 写入 .disable-gpu 标记文件，下次启动自动禁用 GPU 加速并显示降级提示页
@@ -711,6 +731,7 @@ function reloadServerModule() {
 }
 
 /* 抽离模块的 IPC 注册与依赖注入（顶层执行，在 app.whenReady 之前完成） */
+try { _bootLog('before top-level IPC registration'); } catch (e) {}
 // 窗口控制 IPC（window-minimize/maximize/close/...、app-quit、relaunch-app）
 registerWindowManagerIPC(app);
 // 编辑器窗口 + 终端 IPC，注入项目根目录用于路径白名单校验
@@ -723,9 +744,11 @@ setupProtocolHandler({
   getServerCrashCount: () => _serverCrashCount,
   SERVER_MAX_CRASHES
 });
+try { _bootLog('after top-level IPC registration'); } catch (e) {}
 
 /* GPU 硬件加速 + 高帧率支持 - 默认启用以获得流畅界面 */
-const disableGpuFile = path.join(app.getPath('userData'), '.disable-gpu');
+const { DATA_DIR } = require('./main/paths');
+const disableGpuFile = path.join(DATA_DIR, '.disable-gpu');
 const safeMode = process.argv.includes('--safe-mode') || process.argv.includes('--disable-gpu');
 const forceDisableGpu = process.argv.includes('--disable-gpu');
 
@@ -736,6 +759,10 @@ app.commandLine.appendSwitch('disable-frame-rate-limit');
 app.commandLine.appendSwitch('enable-gpu-rasterization');
 app.commandLine.appendSwitch('enable-zero-copy');
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
+// 后台节流优化：窗口被遮挡/最小化时不降低定时器和渲染频率
+app.commandLine.appendSwitch('disable-background-timer-throttling');
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
 
 // 命令行 --safe-mode / --disable-gpu 或存在 .disable-gpu 标记文件时禁用 GPU 加速
 const shouldDisableGpu = forceDisableGpu || safeMode || require('fs').existsSync(disableGpuFile);
@@ -784,9 +811,12 @@ app.on('second-instance', () => {
 /* 应用就绪 - Electron 启动完成后的初始化流程 */
 app.whenReady().then(async () => {
   try {
+    try { _bootLog('app.whenReady enter'); } catch (e) {}
     console.log('VersePC starting...');
 
+    try { _bootLog('before _autoRecover'); } catch (e) {}
     _autoRecover();
+    try { _bootLog('after _autoRecover'); } catch (e) {}
 
     // versepc:// 协议处理器：server.js 未就绪时对 /api/ 请求返回 503
     let _serverReady = false;
@@ -801,12 +831,16 @@ app.whenReady().then(async () => {
       }
       return handleVersePCProtocol(request);
     });
+    try { _bootLog('protocol.handle registered'); } catch (e) {}
 
     // 创建窗口（最优先）
+    try { _bootLog('before createWindow'); } catch (e) {}
     await createWindow();
+    try { _bootLog('after createWindow'); } catch (e) {}
 
     // 启动成功，清除崩溃日志
-    try { require('fs').writeFileSync(_crashLogPath, '', 'utf8'); } catch (e) {}
+    // 临时注释：启动诊断期间保留 crash.log 以便读取时间戳（测完恢复）
+    // try { require('fs').writeFileSync(_crashLogPath, '', 'utf8'); } catch (e) {}
 
     // 窗口显示后再做一切非关键初始化
     setImmediate(() => {

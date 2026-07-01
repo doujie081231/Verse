@@ -324,7 +324,6 @@ module.exports = {
           if (normalizedSettingsPath.startsWith(normalizedJavaHome)) {
             settings.javaPath = '';
             accounts.saveSettings(settings);
-            console.log(`[Java] 已清除设置中引用的Java路径: ${javaHome}`);
           }
         }
 
@@ -347,7 +346,6 @@ module.exports = {
                 `powershell -Command "[Environment]::SetEnvironmentVariable('Path', '${newPath.replace(/'/g, "''")}', 'Machine')"`,
                 { encoding: 'utf8', timeout: 15000, windowsHide: true }
               );
-              console.log(`[Java] 已从系统PATH移除: ${javaBinDir}`);
             }
           } catch (envErr) {
             console.warn(`[Java] 从系统PATH移除失败(不影响): ${envErr.message}`);
@@ -370,7 +368,6 @@ module.exports = {
                 `powershell -Command "[Environment]::SetEnvironmentVariable('Path', '${newUserPath.replace(/'/g, "''")}', 'User')"`,
                 { encoding: 'utf8', timeout: 15000, windowsHide: true }
               );
-              console.log(`[Java] 已从用户PATH移除: ${javaBinDir}`);
             }
           } catch (envErr) {
             console.warn(`[Java] 从用户PATH移除失败(不影响): ${envErr.message}`);
@@ -387,7 +384,6 @@ module.exports = {
                 `powershell -Command "[Environment]::SetEnvironmentVariable('JAVA_HOME', $null, 'Machine')"`,
                 { encoding: 'utf8', timeout: 15000, windowsHide: true }
               );
-              console.log(`[Java] 已清除JAVA_HOME环境变量`);
             }
           } catch (envErr) {
             console.warn(`[Java] 清除JAVA_HOME失败(不影响): ${envErr.message}`);
@@ -395,7 +391,6 @@ module.exports = {
         }
 
         fs.rmSync(javaHome, { recursive: true, force: true });
-        console.log(`[Java] 已删除Java: ${javaHome}`);
 
         sendJSON(res, { success: true, message: `已删除Java: ${path.basename(javaHome)}` });
       } catch (e) {

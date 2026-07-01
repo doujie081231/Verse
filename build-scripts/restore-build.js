@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const root = __dirname;
+const root = path.join(__dirname, '..');
 
 const avBak = path.join(root, 'activation', 'activation-verify.js.bak');
 const avOrig = path.join(root, 'activation', 'activation-verify.js');
