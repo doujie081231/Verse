@@ -59,23 +59,18 @@ class FileBrowser {
         this.callback = null;       // 用户确认后的回调函数
         this.options = {};          // 当前打开配置
         this.showHidden = false;    // 是否显示隐藏文件
-        
+        this._htmlLoaded = false;   // HTML 是否已加载（含失败标记，避免重复 fetch）
+        this._htmlLoadFailed = false;
+
         this.init();
     }
 
     /**
      * 初始化文件浏览器
-     * 加载 HTML 结构和 CSS 样式，绑定事件监听器
+     * HTML 改为懒加载（在 open() 时按需拉取），事件绑定统一在 loadFromHTML() 中执行
      */
     init() {
-        if (!document.getElementById('fileBrowserOverlay')) {
-            this.loadFromHTML();
-        }
-        
-        this.overlay = document.getElementById('fileBrowserOverlay');
-        this.browser = document.getElementById('fileBrowser');
-        
-        this.bindEvents();
+        // DOM 尚未加载，overlay/browser 在 loadFromHTML() 中赋值
     }
 
     /**
@@ -83,13 +78,21 @@ class FileBrowser {
      * 同时加载对应的 CSS 文件
      */
     async loadFromHTML() {
+        if (this._htmlLoaded || this._htmlLoadFailed) return !this._htmlLoadFailed;
         try {
             const response = await fetch('file-browser.html');
+            if (!response.ok) {
+                throw new Error(`file-browser.html 加载失败: ${response.status}`);
+            }
             const html = await response.text();
             const tempDiv = document.createElement('div');
             tempDiv.innerHTML = html;
-            document.body.appendChild(tempDiv.firstElementChild);
-            
+            const firstEl = tempDiv.firstElementChild;
+            if (!firstEl) {
+                throw new Error('file-browser.html 不包含有效的根元素');
+            }
+            document.body.appendChild(firstEl);
+
             // 按需加载 CSS（避免重复加载）
             if (!document.querySelector('link[href*="file-browser.css"]')) {
                 const link = document.createElement('link');
@@ -97,17 +100,17 @@ class FileBrowser {
                 link.href = 'css/file-browser.css';
                 document.head.appendChild(link);
             }
-        } catch (e) {
-            console.error('[FileBrowser] Failed to load HTML:', e);
-            this.createFallbackUI();
-        }
-    }
 
-    /**
-     * 如果 HTML 加载失败，提示使用系统原生对话框作为备选方案
-     */
-    createFallbackUI() {
-        console.warn('[FileBrowser] Using fallback native dialog');
+            this.overlay = document.getElementById('fileBrowserOverlay');
+            this.browser = document.getElementById('fileBrowser');
+            this.bindEvents();
+            this._htmlLoaded = true;
+            return true;
+        } catch (e) {
+            // 静默失败：HTML 不存在时直接走原生对话框回退，避免污染控制台
+            this._htmlLoadFailed = true;
+            return false;
+        }
     }
 
     /**
@@ -207,6 +210,17 @@ class FileBrowser {
         };
         this.callback = callback;
 
+        // 懒加载 HTML：第一次调用时才拉取，失败则走原生对话框回退
+        if (!this.overlay && !this._htmlLoaded) {
+            const ok = await this.loadFromHTML();
+            if (!ok) {
+                return this._fallbackToNativeDialog();
+            }
+        } else if (!this.overlay) {
+            // 之前加载失败过，直接走回退
+            return this._fallbackToNativeDialog();
+        }
+
         // 更新标题栏和文件名输入框
         document.getElementById('fbDialogTitle').textContent = this.options.title;
         document.getElementById('fbFileNameInput').value = this.options.defaultName;
@@ -214,7 +228,7 @@ class FileBrowser {
         // 更新文件类型下拉框
         const typeSelect = document.getElementById('fbFileTypeSelect');
         if (typeSelect && this.options.filters.length > 0) {
-            typeSelect.innerHTML = this.options.filters.map(f => 
+            typeSelect.innerHTML = this.options.filters.map(f =>
                 `<option value="*.${f.extensions[0]}">${f.name} (*.${f.extensions[0]})</option>`
             ).join('') + '<option value="*.*">所有文件 (*.*)</option>';
         }
@@ -227,6 +241,36 @@ class FileBrowser {
         await this.navigateTo(startPath);
 
         await this.loadSidebar();
+    }
+
+    /**
+     * 自定义 HTML 加载失败时，回退到 Electron 原生对话框
+     */
+    async _fallbackToNativeDialog() {
+        if (window.electronAPI && window.electronAPI.showOpenDialog) {
+            try {
+                const props = this.options.mode === 'folder' ? ['openDirectory'] : ['openFile'];
+                const result = await window.electronAPI.showOpenDialog({
+                    title: this.options.title,
+                    defaultPath: this.options.defaultPath || undefined,
+                    properties: props
+                });
+                if (this.callback) {
+                    const filePath = (!result.canceled && result.filePaths && result.filePaths[0]) ? result.filePaths[0] : '';
+                    const fileName = filePath ? filePath.split(/[\\/]/).pop() : '';
+                    this.callback({ canceled: result.canceled, filePath, fileName });
+                    this.callback = null;
+                }
+            } catch (e) {
+                if (this.callback) {
+                    this.callback({ canceled: true, filePath: '', fileName: '' });
+                    this.callback = null;
+                }
+            }
+        } else if (this.callback) {
+            this.callback({ canceled: true, filePath: '', fileName: '' });
+            this.callback = null;
+        }
     }
 
     /**
