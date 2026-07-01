@@ -182,10 +182,12 @@ function extractNatives(versionJson, versionId, externalVersionDir = null) {
     if (lib.rules && !versions.evaluateRules(lib.rules)) continue;
 
     let nativePath = null;
+    let isNativeLib = false;
 
     if (lib.natives) {
       const nativeKey = lib.natives[currentPlatform];
       if (!nativeKey) continue;
+      isNativeLib = true;
 
       const classifier = nativeKey.replace('${arch}', process.arch === 'x64' ? '64' : '32');
       const nativeDownload = lib.downloads?.classifiers?.[classifier];
@@ -210,6 +212,7 @@ function extractNatives(versionJson, versionId, externalVersionDir = null) {
       }
 
       if (!isValidPlatform) continue;
+      isNativeLib = true;
 
       if (lib.downloads?.artifact?.path) {
         nativePath = findNativeJar(lib.downloads.artifact.path);
@@ -233,7 +236,16 @@ function extractNatives(versionJson, versionId, externalVersionDir = null) {
       }
     }
 
-    if (!nativePath || !fs.existsSync(nativePath)) continue;
+    if (!isNativeLib) continue;
+
+    if (!nativePath || !fs.existsSync(nativePath)) {
+      console.warn(`[Natives] ⚠ Native jar 缺失: ${lib.name || path.basename(nativePath || '')} (解压将被跳过，可能导致游戏崩溃)`);
+      continue;
+    }
+    if (nativePath.endsWith('.jar') && !utils.isJarIntact(nativePath)) {
+      console.warn(`[Natives] ⚠ Native jar 损坏: ${path.basename(nativePath)} (解压将被跳过，可能导致游戏崩溃)`);
+      continue;
+    }
 
     nativeJars.push(nativePath);
   }
@@ -298,7 +310,14 @@ function extractNatives(versionJson, versionId, externalVersionDir = null) {
             }
           }
         }
-        if (!nativePath || !fs.existsSync(nativePath)) continue;
+        if (!nativePath || !fs.existsSync(nativePath)) {
+          console.warn(`[Natives] ⚠ 父版本 Native jar 缺失: ${lib.name || path.basename(nativePath || '')}`);
+          continue;
+        }
+        if (nativePath.endsWith('.jar') && !utils.isJarIntact(nativePath)) {
+          console.warn(`[Natives] ⚠ 父版本 Native jar 损坏: ${path.basename(nativePath)}`);
+          continue;
+        }
         nativeJars.push(nativePath);
       }
     } catch (e) { console.error(`[Natives] 父版本加载失败: ${e.message}`); break; }
@@ -616,7 +635,9 @@ function buildClasspath(versionJson, versionId, externalVersionDir = null) {
     const libName = lib.name || '';
     const nameSuffix = libName ? libName.split(':').pop() : '';
 
-    if (lib.natives) continue;
+    // 仅跳过纯 native 条目（无 artifact）。若条目同时含 natives 和 artifact
+    // （如合并后的 LWJGL 库），仍需将 artifact JAR 加入 classpath
+    if (lib.natives && !lib.downloads?.artifact?.path) continue;
 
     if (nameSuffix.startsWith('natives-')) {
       const platformNative = nameSuffix.replace('natives-', '');
@@ -674,7 +695,7 @@ function buildClasspath(versionJson, versionId, externalVersionDir = null) {
               if (lib.rules && !versions.evaluateRules(lib.rules)) continue;
               const libName = lib.name || '';
               const nameSuffix = libName ? libName.split(':').pop() : '';
-              if (lib.natives) continue;
+              if (lib.natives && !lib.downloads?.artifact?.path) continue;
               if (nameSuffix.startsWith('natives-')) {
                 let isValidPlatform = false;
                 const platformNative = nameSuffix.replace('natives-', '');
@@ -716,7 +737,7 @@ function buildClasspath(versionJson, versionId, externalVersionDir = null) {
         if (lib.rules && !versions.evaluateRules(lib.rules)) continue;
         const libName = lib.name || '';
         const nameSuffix = libName ? libName.split(':').pop() : '';
-        if (lib.natives) continue;
+        if (lib.natives && !lib.downloads?.artifact?.path) continue;
         if (nameSuffix.startsWith('natives-')) {
           let isValidPlatform = false;
           const platformNative = nameSuffix.replace('natives-', '');
@@ -818,15 +839,12 @@ function buildClasspath(versionJson, versionId, externalVersionDir = null) {
     const baseName = path.basename(cp, '.jar');
     const dashParts = baseName.split('-');
     if (dashParts.length >= 2) {
-      const libKey = dashParts.slice(0, -1).join('-');
+      // 使用完整 baseName 作为去重键，避免将同库不同 classifier（如
+      // neoforge-21.1.172-universal 与 neoforge-21.1.172-client）误判为重复。
+      // 旧逻辑用 dashParts.slice(0, -1).join('-') 作为键会把 classifier 当作
+      // 版本号比较，导致 :client jar 被错误跳过，进而 ModLauncher 无法注册 neoforge mod。
+      const libKey = baseName;
       if (seenLibBases.has(libKey)) {
-        const existingIdx = seenLibBases.get(libKey);
-        const existingBase = path.basename(dedupedClasspath[existingIdx], '.jar');
-        const existingVer = existingBase.split('-').pop();
-        const newVer = dashParts[dashParts.length - 1];
-        if (newVer > existingVer) {
-          dedupedClasspath[existingIdx] = cp;
-        }
         continue;
       }
       seenLibBases.set(libKey, dedupedClasspath.length);
@@ -838,7 +856,12 @@ function buildClasspath(versionJson, versionId, externalVersionDir = null) {
   const jarPath = versions.findMainJar(versionJson, actualVersionId, externalVersionDir);
 
   const hasNeoforgeLib = dedupedClasspath.some((cp) => cp.includes('neoforge') && cp.includes('universal'));
-  if (!hasNeoforgeLib) {
+  // 若已注册 neoforge:<ver>:client (patched jar) 库条目，不再添加 universal jar。
+  // 否则两者 JPMS 自动模块名均为 'neoforge'，触发 "reads more than one module named neoforge" 冲突。
+  const hasNeoClientLib = (versionJson.libraries || []).some((l) =>
+    l.name && /^net\.neoforged:neoforge:[^:]+:client$/.test(l.name)
+  );
+  if (!hasNeoforgeLib && !hasNeoClientLib) {
     const isNeoForge = (versionJson.mainClass || '').includes('neoforge') || (versionJson.mainClass || '').includes('bootstraplauncher');
     if (isNeoForge || (versionJson.libraries || []).some((l) => (l.name || '').includes('neoforged'))) {
       const neoforgeVersion = (versionJson.id || '').match(/NeoForge[_-]?([\d.]+)/i)?.[1] || '';
@@ -855,7 +878,17 @@ function buildClasspath(versionJson, versionId, externalVersionDir = null) {
   }
 
   if (jarPath && fs.existsSync(jarPath)) {
-    dedupedClasspath.push(jarPath);
+    // NeoForge/Forge: 若 classpath 中已存在 patched jar，跳过 mainJar 避免重复
+    // 否则两个 patched jar 同时在 classpath 会触发 JPMS 模块冲突：
+    //   "Modules minecraft and minecraft.client.patched export package ..."
+    const hasPatched = dedupedClasspath.some((cp) => /minecraft-client-patched|neoforge-[\d.]+-client\.jar|forge-[\d.]+-[\d.]+-client\.jar/.test(path.basename(cp)));
+    const isModloader = (versionJson.mainClass || '').includes('bootstraplauncher') ||
+      (versionJson.libraries || []).some((l) => (l.name || '').includes('neoforged') || (l.name || '').includes('minecraftforge'));
+    if (hasPatched && isModloader) {
+      console.log(`[Classpath] NeoForge/Forge: 跳过 mainJar (classpath 已含 patched jar): ${path.basename(jarPath)}`);
+    } else {
+      dedupedClasspath.push(jarPath);
+    }
   } else {
     console.error(`[Classpath] 主JAR未找到: ${actualVersionId}, jar=${versionJson.jar || '无'}, inheritsFrom: ${versionJson.inheritsFrom || '无'}`);
   }

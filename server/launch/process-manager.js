@@ -66,6 +66,7 @@ async function preheatJvm(javaPath, maxMemMB) {
     ctx.jvm.preheatedJvm = { pid: proc.pid, javaPath, startTime: Date.now() };
     // 加入全局列表，应用退出时统一清理
     if (proc.pid) global._preheatPids.push(proc.pid);
+    console.log(`[Preheat] JVM 预热进程已启动, PID: ${proc.pid}`);
 
     proc.on('exit', () => {
       ctx.jvm.preheatedJvm = null;
@@ -82,9 +83,11 @@ async function preheatJvm(javaPath, maxMemMB) {
           process.kill(ctx.jvm.preheatedJvm.pid);
         } catch (e) {}
         ctx.jvm.preheatedJvm = null;
+        console.log('[Preheat] 预热进程已超时清理');
       }
     }, 300000);
   } catch (e) {
+    console.log(`[Preheat] JVM 预热失败: ${e.message}`);
   }
 }
 
@@ -104,12 +107,14 @@ function cleanupPreheatedJvm() {
         const idx = global._preheatPids.indexOf(preheated.pid);
         if (idx >= 0) global._preheatPids.splice(idx, 1);
       }
+      console.log('[Preheat] 游戏已启动，预热进程已清理');
     }
     if (ctx.jvm.preheatTimer) {
       clearTimeout(ctx.jvm.preheatTimer);
       ctx.jvm.preheatTimer = null;
     }
   } catch (e) {
+    console.log(`[Preheat] 清理预热进程时出错: ${e.message}`);
   }
 }
 
@@ -146,43 +151,32 @@ async function applyPerformanceOptimizations(pid) {
   // 优先尝试 HIGH 优先级，失败则回退到 ABOVE_NORMAL
   try {
     os.setPriority(pid, os.constants.priority.PRIORITY_HIGH);
+    console.log(`[Perf] 进程 ${pid} 优先级设为 HIGH`);
   } catch (e) {
     try {
       os.setPriority(pid, os.constants.priority.PRIORITY_ABOVE_NORMAL);
+      console.log(`[Perf] 进程 ${pid} 优先级设为 ABOVE_NORMAL`);
     } catch (e2) {
+      console.log(`[Perf] 设置进程优先级失败: ${e2.message}`);
     }
   }
 
   // Windows 平台额外通过 PowerShell 设置 CPU 亲和性（使用 75% 核心数）与 I/O 优先级
   try {
     if (process.platform === 'win32') {
-      const psScript = `
-$proc = Get-Process -Id ${pid} -ErrorAction SilentlyContinue
-if ($proc) {
-    $cpu = Get-CimInstance Win32_Processor
-    $coreCount = $cpu.NumberOfLogicalProcessors
-    if ($coreCount -ge 8) {
-        $pCores = [math]::Floor($coreCount * 0.75)
-        $mask = [math]::Pow(2, $pCores) - 1
-        $proc.ProcessorAffinity = $mask
-    }
-    try {
-        $proc.PriorityClass = 'High'
-    } catch {}
-    try {
-        $proc.IOPriority = [System.Diagnostics.ProcessPriorityClass]::High
-    } catch {}
-}
-`.trim();
-      const tmpScript = path.join(os.tmpdir(), `versepc_perf_${pid}.ps1`);
-      fs.writeFileSync(tmpScript, psScript, 'utf8');
-      exec(`powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${tmpScript}"`, { timeout: 10000 }, (err) => {
-        try {
-          fs.unlinkSync(tmpScript);
-        } catch (e) {}
+      // 使用 -Command 内联脚本，避免临时 PS1 文件被杀软或 ExecutionPolicy 拦截
+      const psInline = `$p=Get-Process -Id ${pid} -ErrorAction SilentlyContinue; if($p){ $c=(Get-CimInstance Win32_Processor).NumberOfLogicalProcessors; if($c -ge 8){ $p.ProcessorAffinity=[math]::Pow(2,[math]::Floor($c*0.75))-1 }; try{$p.PriorityClass='High'}catch{} }`;
+      const psCmd = `powershell -NoProfile -NonInteractive -Command "${psInline.replace(/"/g, '\\"').replace(/`/g, '``')}"`;
+      exec(psCmd, { timeout: 10000, windowsHide: true }, (err) => {
+        if (err) {
+          console.log(`[Perf] CPU亲和性设置失败（非致命）: ${err.message}`);
+        } else {
+          console.log(`[Perf] CPU亲和性和I/O优先级已优化 for PID ${pid}`);
+        }
       });
     }
   } catch (e) {
+    console.log(`[Perf] 性能优化脚本执行失败（非致命）: ${e.message}`);
   }
 }
 
@@ -198,6 +192,12 @@ if ($proc) {
  * @returns {Promise<{success:boolean,error?:string,sessionId?:string,pid?:number,...}>} 启动结果
  */
 async function doLaunch(versionId, versionJson, settings, account, externalVersionDir = null, fullVersionId = null) {
+  console.log(`[Launch] ========== 开始启动流程 ==========`);
+  console.log(`[Launch] 版本ID: ${versionId}`);
+  console.log(`[Launch] 完整版本ID: ${fullVersionId || versionId}`);
+  console.log(`[Launch] 外部版本目录: ${externalVersionDir || '无'}`);
+  console.log(`[Launch] 主类: ${versionJson.mainClass || '未设置'}`);
+
   let launchVersionId = versionId;
 
   let javaPath = java.selectJavaForVersion(versionId, settings, versionJson);
@@ -206,11 +206,13 @@ async function doLaunch(versionId, versionJson, settings, account, externalVersi
     console.error(`[Launch] 错误: ${errorMsg}`);
     return { success: false, error: errorMsg, details: { versionId, mainClass: versionJson.mainClass } };
   }
+  console.log(`[Launch] Java路径: ${javaPath}`);
 
   // 解析游戏目录：外部版本优先；否则按版本隔离或全局 gameDir
   let gameDir;
   if (externalVersionDir) {
     gameDir = externalVersionDir;
+    console.log(`[Launch] 外部版本游戏目录(版本隔离): ${gameDir}`);
   } else {
     const settingsVersionId = fullVersionId || versionId;
     const effectiveIsolation = versions.resolveVersionIsolation(settingsVersionId);
@@ -225,12 +227,15 @@ async function doLaunch(versionId, versionJson, settings, account, externalVersi
     } else {
       gameDir = settings.gameDir || ctx.dirs.DATA_DIR;
     }
+    console.log(`[Launch] 游戏目录: ${gameDir}`);
+    console.log(`[Launch] 版本隔离: ${effectiveIsolation ? '是' : '否'}`);
   }
 
   const nativesDir = natives.getNativesFolder(versionId);
   const launchResult = buildLaunchArguments(versionJson, settings, account, versionId, gameDir, externalVersionDir);
   const args = launchResult.args;
   const maxMemMB = launchResult.maxMemMB;
+  console.log(`[Launch] 启动参数数量: ${args.length}`);
 
   // 写入启动调试日志：完整 JVM 参数 + classpath 条目 + 缺失文件清单
   {
@@ -263,6 +268,7 @@ async function doLaunch(versionId, versionJson, settings, account, externalVersi
       }
 
       fs.writeFileSync(debugLogPath, debugLines.join('\n'), 'utf-8');
+      console.log(`[Launch] 调试日志已保存: ${debugLogPath}`);
     } catch (e) {
       console.error(`[Launch] 调试日志写入失败: ${e.message}`);
     }
@@ -274,6 +280,7 @@ async function doLaunch(versionId, versionJson, settings, account, externalVersi
     const classpathStr = args[cpIdx + 1];
     const separator = process.platform === 'win32' ? ';' : ':';
     const classpathEntries = classpathStr.split(separator);
+    console.log(`[Launch] Classpath 条目数: ${classpathEntries.length}`);
 
     const mainClass = versionJson.mainClass || '';
     const isForgeLike = mainClass.includes('modlauncher') || mainClass.includes('fmlloader') ||
@@ -283,6 +290,7 @@ async function doLaunch(versionId, versionJson, settings, account, externalVersi
       const criticalLibs = ['securejarhandler', 'forge', 'neoforge', 'fmlloader', 'modlauncher'];
       for (const crit of criticalLibs) {
         const found = classpathEntries.some((e) => e.toLowerCase().includes(crit));
+        console.log(`[Launch] 关键库 [${crit}]: ${found ? '✓ 找到' : '✗ 缺失!'}`);
       }
       const missingEntries = classpathEntries.filter((e) => !fs.existsSync(e));
       if (missingEntries.length > 0) {
@@ -297,9 +305,14 @@ async function doLaunch(versionId, versionJson, settings, account, externalVersi
       const fabricLibs = classpathEntries.filter((e) =>
         e.includes('fabric') || e.includes('fabricmc') || e.includes('intermediary')
       );
+      console.log(`[Launch] Fabric库数量: ${fabricLibs.length}`);
       if (fabricLibs.length === 0) {
         console.error(`[Launch] 警告: Fabric版本但没有找到Fabric库!`);
       }
+      fabricLibs.forEach((lib, i) => {
+        const exists = fs.existsSync(lib);
+        console.log(`[Launch] Fabric库[${i}]: ${path.basename(lib)} - ${exists ? '存在' : '缺失!'}`);
+      });
     }
   }
 
@@ -318,12 +331,30 @@ async function doLaunch(versionId, versionJson, settings, account, externalVersi
 
     const mainClass = versionJson.mainClass || 'net.minecraft.client.main.Main';
 
+    console.log(`[Launch] 主类: ${mainClass}`);
+    console.log(`[Launch] 参数总数: ${args.length}`);
+
     // 再次校验 classpath：检查主类对应 JAR 是否存在
     const cpIdx = args.indexOf('-cp');
     if (cpIdx !== -1 && cpIdx + 1 < args.length) {
       const cpStr = args[cpIdx + 1];
       const cpEntries = cpStr.split(';');
       const missingCp = cpEntries.filter((e) => !fs.existsSync(e));
+      console.log(`[Launch] Classpath: ${cpEntries.length}个条目, ${missingCp.length}个不存在`);
+      if (missingCp.length > 0 && missingCp.length <= 10) {
+        missingCp.forEach((m) => console.log(`[Launch]   缺失: ${m}`));
+      }
+
+      const mainClassInCp = cpEntries.some((e) => {
+        const basename = path.basename(e).toLowerCase();
+        if (mainClass.includes('knot') && basename.includes('fabric-loader')) return true;
+        if (mainClass.includes('modlauncher') && basename.includes('securejarhandler')) return true;
+        if (mainClass.includes('launchwrapper') && basename.includes('launchwrapper')) return true;
+        // NeoForge/Forge 1.20.2+ 使用 BootstrapLauncher，主类位于 bootstrap-loader.jar
+        if (mainClass.includes('bootstraplauncher') && basename.includes('bootstrap')) return true;
+        return false;
+      });
+      console.log(`[Launch] 主类对应JAR在classpath中: ${mainClassInCp}`);
     }
 
     const spawnOptions = {
@@ -356,12 +387,14 @@ async function doLaunch(versionId, versionJson, settings, account, externalVersi
       }
       if (shouldOptimizeMemory) {
         const freeMB = Math.floor(os.freemem() / 1024 / 1024);
+        const totalMB = Math.floor(os.totalmem() / 1024 / 1024);
+        console.log(`[Launch] 启动前内存优化: 可用 ${freeMB}MB / 总计 ${totalMB}MB`);
         try {
           const tmpScript = path.join(os.tmpdir(), 'versepc_memopt.ps1');
           const psScript = DoRound;
           fs.writeFileSync(tmpScript, psScript, 'utf8');
           const { execFile } = require('child_process');
-          await new Promise((resolve) => {
+          const afterMB = await new Promise((resolve) => {
             execFile('powershell', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', tmpScript], { timeout: 90000, windowsHide: true }, (err, stdout) => {
               try {
                 fs.unlinkSync(tmpScript);
@@ -373,7 +406,13 @@ async function doLaunch(versionId, versionJson, settings, account, externalVersi
               resolve(parseInt(stdout.trim(), 10) || null);
             });
           });
+          if (afterMB) {
+            console.log(`[Launch] 内存优化完成: 可用 ${afterMB}MB (释放 ${afterMB - freeMB}MB)`);
+          } else {
+            console.log(`[Launch] 内存优化已执行`);
+          }
         } catch (e) {
+          console.log(`[Launch] 内存优化失败，继续启动: ${e.message}`);
         }
       }
     }
@@ -394,6 +433,7 @@ async function doLaunch(versionId, versionJson, settings, account, externalVersi
       try {
         const detectedHome = path.dirname(path.dirname(javaPath));
         spawnOptions.env.JAVA_HOME = detectedHome;
+        console.log(`[Launch] 自动设置 JAVA_HOME: ${detectedHome}`);
       } catch (e) {}
     }
 
@@ -405,12 +445,14 @@ async function doLaunch(versionId, versionJson, settings, account, externalVersi
       }).join(' ');
       const debugPath = path.join(ctx.dirs.DATA_DIR, 'launch-debug.txt');
       fs.writeFileSync(debugPath, utils.filterSensitiveInfo(debugCmd), 'utf-8');
+      console.log(`[Launch] 调试命令行已写入: ${debugPath}`);
     } catch (e) {}
 
     // 命令行过长时使用 @argfile 方式启动（Windows 限制 ~25K，通用限制 ~30K）
     const totalCmdLength = args.reduce((sum, a) => sum + a.length + 3, javaPath.length + 3);
 
     if (totalCmdLength > 30000 || (process.platform === 'win32' && totalCmdLength > 25000)) {
+      console.log(`[Launch] 命令行过长(${totalCmdLength}字符)，使用@argfile方式启动`);
       const tmpDir = path.join(os.tmpdir(), 'versepc-launch');
       if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
       const argFilePath = path.join(tmpDir, `args-${Date.now()}.txt`);
@@ -425,6 +467,7 @@ async function doLaunch(versionId, versionJson, settings, account, externalVersi
       }
       fs.writeFileSync(argFilePath, argFileLines.join('\r\n'), 'utf-8');
       const newArgs = [`@${argFilePath}`];
+      console.log(`[Launch] @argfile: ${argFilePath}, 参数数量: ${args.length}`);
 
       let skinBackups = [];
       try {
@@ -456,17 +499,20 @@ async function doLaunch(versionId, versionJson, settings, account, externalVersi
           if (lanMatch) {
             instanceInfo.lanPort = parseInt(lanMatch[1], 10);
             ctx.sessions.detectedLanPort = parseInt(lanMatch[1], 10);
+            console.log(`[LAN] Detected LAN port: ${instanceInfo.lanPort} (session: ${sessionId})`);
           }
           // 启动阶段识别：5 个关键节点用于前端进度展示
           if (instanceInfo.loadStage < 1) { instanceInfo.loadStage = 1; }
-          if (instanceInfo.loadStage < 2 && line.includes('Setting user:')) { instanceInfo.loadStage = 2; }
-          if (instanceInfo.loadStage < 3 && /lwjgl version/i.test(line)) { instanceInfo.loadStage = 3; }
-          if (instanceInfo.loadStage < 4 && (line.includes('OpenAL initialized') || line.includes('Starting up SoundSystem'))) { instanceInfo.loadStage = 4; }
+          if (instanceInfo.loadStage < 2 && line.includes('Setting user:')) { instanceInfo.loadStage = 2; console.log(`[Launch] 阶段 2/5: 用户已设置 (session: ${sessionId})`); }
+          if (instanceInfo.loadStage < 3 && /lwjgl version/i.test(line)) { instanceInfo.loadStage = 3; console.log(`[Launch] 阶段 3/5: LWJGL 已初始化 (session: ${sessionId})`); }
+          if (instanceInfo.loadStage < 4 && (line.includes('OpenAL initialized') || line.includes('Starting up SoundSystem'))) { instanceInfo.loadStage = 4; console.log(`[Launch] 阶段 4/5: 音频系统就绪 (session: ${sessionId})`); }
           if (instanceInfo.loadStage < 5 && ((line.includes('Created') && line.includes('textures') && line.includes('-atlas')) || line.includes('Found animation info'))) {
             instanceInfo.loadStage = 5;
             if (!instanceInfo.gameReady) {
               instanceInfo.gameReady = true;
               instanceInfo.readyTime = Date.now();
+              const launchDuration = instanceInfo.readyTime - instanceInfo.startTime;
+              console.log(`[Launch] 阶段 5/5: 材质加载完成(Manifest模式), 耗时: ${(launchDuration / 1000).toFixed(1)}s`);
             }
           }
         }
@@ -483,10 +529,11 @@ async function doLaunch(versionId, versionJson, settings, account, externalVersi
         try { natives.restoreOfflineSkin(skinBackups); } catch (e) {}
       });
 
+      console.log(`[Launch] 进程已启动(@argfile模式), PID: ${gameProcess.pid}`);
       cleanupPreheatedJvm();
 
       setTimeout(() => {
-        try { applyPerformanceOptimizations(gameProcess.pid); } catch (e) {}
+        try { applyPerformanceOptimizations(gameProcess.pid); } catch (e) { console.log(`[Perf] 设置进程优先级失败: ${e.message}`); }
       }, 500);
 
       const instanceInfo = {
@@ -512,6 +559,7 @@ async function doLaunch(versionId, versionJson, settings, account, externalVersi
       };
 
       ctx.sessions.gameInstances.set(sessionId, instanceInfo);
+      console.log(`[Launch] 游戏进程已创建, PID: ${gameProcess.pid}, Session: ${sessionId}`);
 
       // 周期性保存游戏日志：启动器最小化时暂停写盘以减少 IO
       const _gameLogsDir = path.join(gameDir, 'logs');
@@ -698,10 +746,12 @@ async function doLaunch(versionId, versionJson, settings, account, externalVersi
 
     const gameProcess = spawn(javaPath, args, spawnOptions);
 
+    console.log(`[Launch] 进程已启动, PID: ${gameProcess.pid}`);
+
     cleanupPreheatedJvm();
 
     setTimeout(() => {
-      try { applyPerformanceOptimizations(gameProcess.pid); } catch (e) {}
+      try { applyPerformanceOptimizations(gameProcess.pid); } catch (e) { console.log(`[Perf] 设置进程优先级失败: ${e.message}`); }
     }, 500);
 
     // 日志批量节流：累积到缓冲区，每 500ms 批量处理一次，降低高频日志时的 CPU 占用
@@ -727,17 +777,20 @@ async function doLaunch(versionId, versionJson, settings, account, externalVersi
         if (lanMatch) {
           instanceInfo.lanPort = parseInt(lanMatch[1], 10);
           ctx.sessions.detectedLanPort = parseInt(lanMatch[1], 10);
+          console.log(`[LAN] Detected LAN port: ${instanceInfo.lanPort} (session: ${sessionId})`);
         }
         // 启动阶段识别：5 个关键节点用于前端进度展示
         if (instanceInfo.loadStage < 1) { instanceInfo.loadStage = 1; }
-        if (instanceInfo.loadStage < 2 && line.includes('Setting user:')) { instanceInfo.loadStage = 2; }
-        if (instanceInfo.loadStage < 3 && /lwjgl version/i.test(line)) { instanceInfo.loadStage = 3; }
-        if (instanceInfo.loadStage < 4 && (line.includes('OpenAL initialized') || line.includes('Starting up SoundSystem'))) { instanceInfo.loadStage = 4; }
+        if (instanceInfo.loadStage < 2 && line.includes('Setting user:')) { instanceInfo.loadStage = 2; console.log(`[Launch] 阶段 2/5: 用户已设置 (session: ${sessionId})`); }
+        if (instanceInfo.loadStage < 3 && /lwjgl version/i.test(line)) { instanceInfo.loadStage = 3; console.log(`[Launch] 阶段 3/5: LWJGL 已初始化 (session: ${sessionId})`); }
+        if (instanceInfo.loadStage < 4 && (line.includes('OpenAL initialized') || line.includes('Starting up SoundSystem'))) { instanceInfo.loadStage = 4; console.log(`[Launch] 阶段 4/5: 音频系统就绪 (session: ${sessionId})`); }
         if (instanceInfo.loadStage < 5 && ((line.includes('Created') && line.includes('textures') && line.includes('-atlas')) || line.includes('Found animation info'))) {
           instanceInfo.loadStage = 5;
           if (!instanceInfo.gameReady) {
             instanceInfo.gameReady = true;
             instanceInfo.readyTime = Date.now();
+            const launchDuration = instanceInfo.readyTime - instanceInfo.startTime;
+            console.log(`[Launch] 阶段 5/5: 材质加载完成, 耗时: ${(launchDuration / 1000).toFixed(1)}s`);
           }
         }
       }
@@ -770,6 +823,7 @@ async function doLaunch(versionId, versionJson, settings, account, externalVersi
     };
 
     ctx.sessions.gameInstances.set(sessionId, instanceInfo);
+    console.log(`[Launch] 游戏进程已创建, PID: ${gameProcess.pid}, Session: ${sessionId}`);
 
     if (gameProcess.stdout) {
       gameProcess.stdout.on('data', (data) => {

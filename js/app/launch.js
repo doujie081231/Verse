@@ -99,7 +99,7 @@ async function handleLaunch() {
       });
       if (downloadable.length > 0) {
         setLaunchStep('files-check', 'warning', `Forge核心库缺失 ${depCheck.forgeCore.missing.length} 个，正在自动修复...`);
-        const dlResult = await API.launchGame(versionId, { checkOnly: true });
+        const dlResult = await API.launchGame(versionId, { checkOnly: true }, 120000);
         if (dlResult.needDownload && dlResult.sessionId) {
           pollLaunchDownload(dlResult.sessionId, versionId, requiredJava);
           window._versepc_launching = false;
@@ -142,7 +142,7 @@ async function handleLaunch() {
     if (hasMissing || assetsMissing) {
       const missingCount = (depCheck.missingFiles && depCheck.missingFiles.length) || (depCheck.assets ? depCheck.assets.missing : 0);
       setLaunchStep('download', 'running', `正在下载 ${missingCount} 个缺失文件...`);
-      const dlResult = await API.launchGame(versionId, { checkOnly: true });
+      const dlResult = await API.launchGame(versionId, { checkOnly: true }, 120000);
       if (dlResult.needDownload && dlResult.sessionId) {
         pollLaunchDownload(dlResult.sessionId, versionId, requiredJava);
         window._versepc_launching = false;

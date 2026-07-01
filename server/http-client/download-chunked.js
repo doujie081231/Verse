@@ -60,7 +60,10 @@ async function downloadFileChunked(url, destPath, options = {}) {
           const crMatch = (probeR.headers['content-range'] || '').match(/\/(\d+)/);
           fileSize = crMatch ? parseInt(crMatch[1], 10) : probeR.contentLength;
         } else if (probeR.statusCode === 200) {
-          supportsRange = (probeR.headers['accept-ranges'] === 'bytes');
+          // 探针发送了 Range:0-0 却返回 200（而非 206），说明服务器实际不响应 Range 请求。
+          // 即使带 accept-ranges 头也不可信（部分 CDN 谎报），直接标记不支持，
+          // 避免后续分块下载必然失败再回退单流的浪费。
+          supportsRange = false;
           fileSize = probeR.contentLength;
           workingUrl = currentUrl;
         }
@@ -76,7 +79,8 @@ async function downloadFileChunked(url, destPath, options = {}) {
                 const crMatch = (r2.headers['content-range'] || '').match(/\/(\d+)/);
                 fileSize = crMatch ? parseInt(crMatch[1], 10) : r2.contentLength;
               } else if (r2.statusCode === 200) {
-                supportsRange = (r2.headers['accept-ranges'] === 'bytes');
+                // 同上：返回 200 说明不支持 Range，不信任 accept-ranges 头
+                supportsRange = false;
                 fileSize = r2.contentLength;
                 workingUrl = allUrls[probeIdx];
               }
@@ -136,12 +140,15 @@ async function downloadFileChunked(url, destPath, options = {}) {
               cr.stream.destroy();
               throw new Error('下载已中止');
             }
-            if (cr.statusCode !== 200 && cr.statusCode !== 206) throw new Error(`Chunk ${c.i}: HTTP ${cr.statusCode}`);
-            // 服务器返回 200 而非 206 时，忽略续传偏移，从头下载
-            const isChunkResume = (cr.statusCode === 206 && resumeOffset > 0);
-            if (resumeOffset > 0 && !isChunkResume) {
-              resumeOffset = 0;
+            // 分块下载必须返回 206 (Partial Content)，返回 200 说明服务器忽略了 Range 头，
+            // 会把整个文件写入单个分块临时文件，导致合并后大小不匹配 / 文件损坏。
+            // 429 限流也在此抛出，交由外层切镜像或重试。
+            if (cr.statusCode !== 206) {
+              cr.stream.destroy();
+              throw new Error(`Chunk ${c.i}: HTTP ${cr.statusCode} (expected 206)`);
             }
+            // 服务器返回 206 时，若带 resumeOffset 则追加写入
+            const isChunkResume = (resumeOffset > 0);
             // 续传时追加写入，否则覆盖写
             const ws = fs.createWriteStream(c.tmp, isChunkResume ? { flags: 'a' } : {});
             let dl = resumeOffset;
@@ -346,9 +353,19 @@ async function downloadFileChunked(url, destPath, options = {}) {
           _tryRemoveFile(destPath);
           await new Promise((r) => setTimeout(r, Math.min(1000 * (ra + 1), 5000) + Math.floor(Math.random() * 500)));
         } else {
-          // 所有重试耗尽，清理临时文件
+          // 所有重试耗尽：若因服务器不支持 Range (返回 200) 导致分块失败，回退到单流下载
           for (let i = 0; i < 64; i++) { _tryRemoveFile(`${destPath}.c${i}`); }
           _tryRemoveFile(destPath);
+          if (err.message && err.message.includes('expected 206')) {
+            console.warn(`[MultiThread] 服务器不支持 Range，回退单流下载: ${path.basename(destPath)}`);
+            for (const fallbackUrl of allUrls) {
+              try {
+                return await _dlSingle(fallbackUrl, destPath, { onProgress, sha1, timeout, abortSignal, agent: customAgent });
+              } catch (singleErr) {
+                console.warn(`[MultiThread] 单流回退失败 (${fallbackUrl}): ${singleErr.message}`);
+              }
+            }
+          }
           throw err;
         }
       }

@@ -49,6 +49,8 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
       }
     }
 
+    console.log(`[LaunchGame] 版本: ${versionId}, 外部目录: ${externalVersionDir || '无'}`);
+
     // 路径合法性检查：! 与 ; 在 Windows classpath 中有特殊含义，必须拒绝
     const versionDirPath = externalVersionDir || path.join(ctx.dirs.VERSIONS_DIR, cleanVersionId);
     if (versionDirPath.includes('!') || versionDirPath.includes(';')) {
@@ -101,6 +103,7 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
             if (!raw.inheritsFrom) {
               raw.inheritsFrom = parentVer;
               fs.writeFileSync(jp, JSON.stringify(raw, null, 2));
+              console.log(`[LaunchGame] 已修正 inheritsFrom: ${parentVer}`);
             }
           }
         } catch (e) {
@@ -109,32 +112,138 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
       }
     }
 
-    // 启动前验证 Natives 完整性，缺失时自动重新解压
-    {
+    console.log(`[LaunchGame] JSON已解析, mainClass: ${versionJson.mainClass}, inheritsFrom: ${versionJson.inheritsFrom}`);
+
+    // 修复早期 modpack 导入时 mergeVersionJson 去重逻辑丢失 natives 数据的问题：
+    // 若 libraries 中 LWJGL 库缺少 natives 字段，从原版父版本 JSON 补全 natives
+    // 和 downloads.classifiers，并写回磁盘（自愈：修复后下次启动不再触发）
+    try {
+      const lwjglMissingNatives = (versionJson.libraries || []).some((l) =>
+        l.name && l.name.startsWith('org.lwjgl:lwjgl') && !l.natives && !l.downloads?.classifiers);
+      if (lwjglMissingNatives) {
+        const parentId = versionJson.inheritsFrom || versionJson.clientVersion ||
+          (cleanVersionId.match(/^(\d+\.\d+(?:\.\d+)?)/) || [])[1];
+        if (parentId && parentId !== cleanVersionId) {
+          // 查找父版本 JSON（先内部 VERSIONS_DIR，再外部目录）
+          let parentJsonPath = path.join(ctx.dirs.VERSIONS_DIR, parentId, `${parentId}.json`);
+          if (!fs.existsSync(parentJsonPath)) {
+            for (const folder of versions.loadExternalFolders()) {
+              if (!fs.existsSync(folder.path)) continue;
+              const extPath = path.join(folder.path, 'versions', parentId, `${parentId}.json`);
+              if (fs.existsSync(extPath)) { parentJsonPath = extPath; break; }
+            }
+          }
+          if (fs.existsSync(parentJsonPath)) {
+            const vanillaLibs = (JSON.parse(fs.readFileSync(parentJsonPath, 'utf-8')).libraries || [])
+              .filter((l) => l.name && l.natives);
+            const vanillaByNatives = new Map(vanillaLibs.map((l) => [l.name, l]));
+            // 原地修复：给缺失 natives 的 LWJGL 条目补上 natives/classifiers
+            // 注意：versionJson.libraries 是 resolveVersionJson 合并后的数组（含父版本库），
+            // 仅修复内存对象供本次启动使用；写盘必须基于 child JSON 原始 libraries，
+            // 否则会把父版本库内联进 modpack 文件、破坏 inheritsFrom 机制。
+            const repairLibs = (libs) => {
+              let repaired = 0;
+              for (const cur of libs) {
+                const vanilla = vanillaByNatives.get(cur.name);
+                if (vanilla && !cur.natives && !cur.downloads?.classifiers) {
+                  // 合并 natives 和 classifiers 到现有条目，保留原有 artifact（class JAR）
+                  cur.natives = vanilla.natives;
+                  if (vanilla.downloads?.classifiers) {
+                    if (!cur.downloads) cur.downloads = {};
+                    cur.downloads.classifiers = vanilla.downloads.classifiers;
+                  }
+                  repaired++;
+                }
+              }
+              return repaired;
+            };
+            const repairedInMemory = repairLibs(versionJson.libraries);
+            // 写回 child JSON 原始 libraries（仅修复缺失 natives 的条目，不内联父版本库）
+            const writePath = externalVersionDir
+              ? versions.findVersionJson(externalVersionDir)
+              : path.join(ctx.dirs.VERSIONS_DIR, cleanVersionId, `${cleanVersionId}.json`);
+            if (writePath && fs.existsSync(writePath)) {
+              const raw = JSON.parse(fs.readFileSync(writePath, 'utf-8'));
+              const repairedOnDisk = repairLibs(raw.libraries || []);
+              if (repairedOnDisk > 0) {
+                fs.writeFileSync(writePath, JSON.stringify(raw, null, 2));
+                console.log(`[LaunchGame] 已修复 ${repairedOnDisk} 个库的 natives 数据（来源: ${parentId}），内存修复 ${repairedInMemory} 个`);
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn(`[LaunchGame] 修复 natives 数据失败: ${e.message}`);
+    }
+
+    // 构建 critical natives 列表与缺失检测（启动前自愈与最终安全检查共用）
+    // LWJGL 3.x 的 native DLL 名：glfw.dll（非 lwjgl_glfw.dll）
+    // jinput native DLL 仅旧版本（<1.13，LWJGL 2.x 时代）需要，1.16.5 不含 jinput natives
+    const checkCriticalNatives = (vJson) => {
       const nativesDir = natives.getNativesFolder(cleanVersionId);
-      const criticalNatives = ['lwjgl.dll', 'lwjgl_opengl.dll', 'lwjgl_glfw.dll', 'lwjgl_stb.dll', 'lwjgl_tinyfd.dll',
-        'openal.dll', 'jinput-dx8.dll', 'jinput-raw.dll'];
-      const missingNatives = criticalNatives.filter((n) => {
+      const criticalNatives = ['lwjgl.dll', 'lwjgl_opengl.dll', 'glfw.dll', 'lwjgl_stb.dll', 'lwjgl_tinyfd.dll',
+        'openal.dll'];
+      const hasJinputNatives = (vJson.libraries || []).some((l) =>
+        l.name && l.name.includes('jinput') && l.natives);
+      if (hasJinputNatives) criticalNatives.push('jinput-dx8.dll', 'jinput-raw.dll');
+      const filterMissing = (list) => list.filter((n) => {
         if (process.platform === 'win32') return !fs.existsSync(path.join(nativesDir, n));
         if (process.platform === 'darwin') return !fs.existsSync(path.join(nativesDir, n.replace('.dll', '.dylib')));
         return !fs.existsSync(path.join(nativesDir, n.replace('.dll', '.so')));
       });
-      if (missingNatives.length > 0 && missingNatives.length < 6) {
+      return { nativesDir, criticalNatives, filterMissing };
+    };
+
+    // 启动前验证 Natives 完整性，缺失时自动重新解压
+    {
+      const { criticalNatives, filterMissing } = checkCriticalNatives(versionJson);
+      const missingNatives = filterMissing(criticalNatives);
+      if (missingNatives.length > 0) {
+        if (missingNatives.length < 6) {
+          console.log(`[LaunchGame] 检测到 ${missingNatives.length} 个缺失Natives: ${missingNatives.join(', ')}，尝试重新解压...`);
+        } else {
+          console.warn(`[LaunchGame] ⚠ 大量Natives缺失(${missingNatives.length}个)，尝试重新解压...`);
+        }
         try {
           natives.extractNatives(versionJson, cleanVersionId, externalVersionDir);
-          const recheckMissing = criticalNatives.filter((n) => {
-            if (process.platform === 'win32') return !fs.existsSync(path.join(nativesDir, n));
-            if (process.platform === 'darwin') return !fs.existsSync(path.join(nativesDir, n.replace('.dll', '.dylib')));
-            return !fs.existsSync(path.join(nativesDir, n.replace('.dll', '.so')));
-          });
+          const recheckMissing = filterMissing(criticalNatives);
           if (recheckMissing.length > 0) {
+            // 重新解压后仍缺失：检查 native jar 是否损坏，删除损坏的 jar 让 depCheck 重新下载
             console.warn(`[LaunchGame] 重新解压后仍有 ${recheckMissing.length} 个Natives缺失: ${recheckMissing.join(', ')}`);
+            const currentPlatform = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'osx' : 'linux';
+            // 注意：必须传入 externalVersionDir，否则外部版本会找不到 JSON 而返回 null
+            const allLibs = versions.resolveVersionJson(cleanVersionId, externalVersionDir)?.libraries || [];
+            for (const lib of allLibs) {
+              if (lib.rules && !versions.evaluateRules(lib.rules)) continue;
+              let nativePath = null;
+              if (lib.natives) {
+                const nativeKey = lib.natives[currentPlatform];
+                if (!nativeKey) continue;
+                const classifier = nativeKey.replace('${arch}', process.arch === 'x64' ? '64' : '32');
+                const nativeDownload = lib.downloads?.classifiers?.[classifier];
+                if (!nativeDownload) continue;
+                nativePath = path.join(ctx.dirs.LIBRARIES_DIR, nativeDownload.path);
+              } else if (lib.name && lib.name.includes(':natives-')) {
+                const nameSuffix = lib.name.split(':').pop();
+                if (!nameSuffix.startsWith('natives-')) continue;
+                const plat = nameSuffix.replace('natives-', '');
+                if (plat !== currentPlatform && plat !== currentPlatform + '-x64') continue;
+                if (lib.downloads?.artifact?.path) {
+                  nativePath = path.join(ctx.dirs.LIBRARIES_DIR, lib.downloads.artifact.path);
+                }
+              }
+              if (nativePath && fs.existsSync(nativePath) && !utils.isJarIntact(nativePath)) {
+                console.warn(`[LaunchGame] Native jar 损坏，删除以触发重下载: ${path.basename(nativePath)}`);
+                try { fs.unlinkSync(nativePath); } catch (_) {}
+              }
+            }
+          } else {
+            console.log(`[LaunchGame] Natives重新解压成功 (${missingNatives.length}个已恢复)`);
           }
         } catch (e) {
           console.error(`[LaunchGame] Natives重新解压失败: ${e.message}`);
         }
-      } else if (missingNatives.length >= 6) {
-        console.warn(`[LaunchGame] ⚠ 大量Natives缺失(${missingNatives.length}个)，可能影响游戏启动`);
       }
     }
 
@@ -166,7 +275,7 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
       const extLibBase = externalVersionDir ? versions.findExternalRoot(externalVersionDir) : null;
       const libs = (data.libraries || []).map((l) => {
         if (l.rules && !versions.evaluateRules(l.rules)) return null;
-        if (l.natives) return null;
+        if (l.natives && !l.downloads?.artifact?.path) return null;
         if (l.downloads?.artifact?.path) {
           const relPath = l.downloads.artifact.path;
           const localPath = path.join(ctx.dirs.LIBRARIES_DIR, relPath);
@@ -222,6 +331,7 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
     }
 
     if (extraMissing.length > 0) {
+      console.log(`[Launch] 二次扫描发现 ${extraMissing.length} 个额外缺失库: ${extraMissing.map((f) => f.name).join(', ')}`);
       depCheck.missingFiles = [...depCheck.missingFiles.filter((f) => f.type !== 'library'), ...extraMissing];
       depCheck.libraries.missing = extraMissing;
       depCheck.libraries.ok = false;
@@ -259,12 +369,14 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
             `https://maven.neoforged.net/releases/${relPath}`,
             `https://bmclapi2.bangbang93.com/maven/${relPath}`
           ];
+          console.log(`[LaunchGame] 尝试补下载NeoForge核心JAR: ${path.basename(m.path)}`);
           let neoOk = false;
           for (const url of neoUrls) {
             try {
               if (!fs.existsSync(path.dirname(m.path))) fs.mkdirSync(path.dirname(m.path), { recursive: true });
               await http.downloadFile(url, m.path);
               if (fs.existsSync(m.path) && utils.isJarIntact(m.path)) {
+                console.log(`[LaunchGame] NeoForge核心JAR补下载成功: ${path.basename(m.path)} (from ${url})`);
                 neoOk = true;
                 break;
               }
@@ -305,10 +417,12 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
           if (mvi >= 0 && mvi + 1 < gArgs.length) mvMcVer = gArgs[mvi + 1];
         }
         if (mvForgeVer && mvMcVer) {
+          console.log(`[LaunchGame] 尝试Maven直接下载Forge核心库 (${mvMcVer}-forge-${mvForgeVer})...`);
           const mvResult = await modloaders.downloadForgeCoreLibsFromMaven(`${mvMcVer}-${mvForgeVer}`);
           if (mvResult.failed === 0) {
             const stillMissing = (depCheck.forgeCore.missing || []).filter((m) => !fs.existsSync(m.path));
             if (stillMissing.length === 0) {
+              console.log(`[LaunchGame] Maven直接下载修复成功!`);
               forgeRepaired = true;
             }
           } else {
@@ -317,9 +431,11 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
 
           if (!forgeRepaired) {
             // 补丁 JAR 不在 Maven 上，需重装 Forge 重新生成
+            console.log(`[LaunchGame] 补丁JAR不在Maven上，重装Forge以重新生成...`);
             try {
               const baseJar = path.join(ctx.dirs.VERSIONS_DIR, mvMcVer, `${mvMcVer}.jar`);
               if (!fs.existsSync(baseJar)) {
+                console.log(`[LaunchGame] 原版JAR缺失，先下载 ${mvMcVer}.jar...`);
                 try {
                   await modloaders.ensureBaseVersionInstalled(mvMcVer);
                 } catch (e) {
@@ -330,6 +446,7 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
               if (fiResult && fiResult.success) {
                 const stillMissing = (depCheck.forgeCore.missing || []).filter((m) => !fs.existsSync(m.path));
                 if (stillMissing.length === 0) {
+                  console.log(`[LaunchGame] Forge重装修复成功!`);
                   forgeRepaired = true;
                 } else {
                   console.warn(`[LaunchGame] Forge重装后仍有${stillMissing.length}个缺失文件`);
@@ -363,19 +480,27 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
           const forgeVer = forgeMatch[2];
           const baseJarPath = path.join(ctx.dirs.VERSIONS_DIR, mcVer, `${mcVer}.jar`);
           if (!fs.existsSync(baseJarPath)) {
+            console.log(`[LaunchGame] 原版JAR缺失 (${mcVer}.jar)，先下载再重装Forge...`);
             try {
               await modloaders.ensureBaseVersionInstalled(mcVer);
             } catch (e) {
               console.warn(`[LaunchGame] 下载原版JAR失败: ${e.message}`);
             }
           }
-          let repairResult = await modloaders.installForge(mcVer, forgeVer, (p, msg) => {});
+          console.log(`[LaunchGame] 尝试重新安装Forge ${mcVer}-${forgeVer}来修复核心文件`);
+          let repairResult = await modloaders.installForge(mcVer, forgeVer, (p, msg) => {
+            console.log(`[LaunchGame] 修复进度: ${Math.round(p * 100)}% - ${msg || ''}`);
+          });
           if (!repairResult.success) {
-            repairResult = await modloaders.installForge(mcVer, forgeVer, (p, msg) => {}, 'https://bmclapi2.bangbang93.com/maven/net/minecraftforge/forge');
+            console.log(`[LaunchGame] 主源修复失败，尝试BMCLAPI镜像...`);
+            repairResult = await modloaders.installForge(mcVer, forgeVer, (p, msg) => {
+              console.log(`[LaunchGame] BMCLAPI镜像修复进度: ${Math.round(p * 100)}% - ${msg || ''}`);
+            }, 'https://bmclapi2.bangbang93.com/maven/net/minecraftforge/forge');
           }
           if (repairResult.success) {
             const stillMissing = (depCheck.forgeCore.missing || []).filter((m) => !fs.existsSync(m.path));
             if (stillMissing.length === 0) {
+              console.log(`[LaunchGame] Forge核心文件自动修复成功!`);
               forgeRepaired = true;
             } else {
               console.warn(`[LaunchGame] 修复后仍有 ${stillMissing.length} 个文件缺失`);
@@ -414,6 +539,7 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
           if (altCopied > 0) {
             const stillMissing = (depCheck.forgeCore.missing || []).filter((m) => !fs.existsSync(m.path));
             if (stillMissing.length === 0) {
+              console.log(`[LaunchGame] 从.minecraft复制修复成功!`);
               forgeRepaired = true;
             }
           }
@@ -478,6 +604,7 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
                     fs.copyFileSync(candidatePath, m.path);
                     if (fs.existsSync(m.path) && (!m.path.endsWith('.jar') || utils.isJarIntact(m.path))) {
                       deepCopied++;
+                      console.log(`[LaunchGame] 深度搜索修复: ${basename} (来源: ${candidatePath})`);
                     } else {
                       try {
                         fs.unlinkSync(m.path);
@@ -494,6 +621,7 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
         if (deepCopied > 0) {
           const stillMissing = (depCheck.forgeCore.missing || []).filter((m) => !fs.existsSync(m.path));
           if (stillMissing.length === 0) {
+            console.log(`[LaunchGame] 深度搜索修复成功!`);
             forgeRepaired = true;
           }
         }
@@ -599,14 +727,21 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
           if (!forgeMatch) continue;
           const mcVer = forgeMatch[1];
           const forgeVer = forgeMatch[2];
+          console.log(`[LaunchGame] 兜底修复: 重新安装Forge ${mcVer}-${forgeVer}`);
           try {
-            let repairResult = await modloaders.installForge(mcVer, forgeVer, (p, msg) => {});
+            let repairResult = await modloaders.installForge(mcVer, forgeVer, (p, msg) => {
+              console.log(`[LaunchGame] 兜底修复进度: ${Math.round(p * 100)}%`);
+            });
             if (!repairResult.success) {
-              repairResult = await modloaders.installForge(mcVer, forgeVer, (p, msg) => {}, 'https://bmclapi2.bangbang93.com/maven/net/minecraftforge/forge');
+              console.log(`[LaunchGame] 兜底修复主源失败，尝试BMCLAPI镜像...`);
+              repairResult = await modloaders.installForge(mcVer, forgeVer, (p, msg) => {
+                console.log(`[LaunchGame] 兜底BMCLAPI修复进度: ${Math.round(p * 100)}%`);
+              }, 'https://bmclapi2.bangbang93.com/maven/net/minecraftforge/forge');
             }
             if (repairResult.success) {
               const stillMissing = forgeSafeMissing.filter((f) => !fs.existsSync(f.path) || !utils.isJarIntact(f.path));
               if (stillMissing.length === 0) {
+                console.log(`[LaunchGame] 兜底修复成功!`);
                 safeRepaired = true;
               }
             }
@@ -664,6 +799,10 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
 
       if (criticalMissing.length === 0 && coreLibMissing.length === 0 && nonCoreLibMissing.length > 0) {
         // 仅非核心库缺失时跳过下载直接启动，避免阻塞整合包大体积可选库
+        console.log(`[LaunchGame] 跳过非核心库自动下载 (${nonCoreLibMissing.length}个)，直接尝试启动`);
+        for (const f of nonCoreLibMissing) {
+          console.log(`[LaunchGame] 非核心库缺失(不影响启动): ${f.name || f.path}`);
+        }
       } else {
         // 启动后台下载会话，前端可通过 sessionId 跟踪进度
         const sessionId = `launch-${Date.now()}`;
@@ -678,6 +817,7 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
           versionId
         });
 
+        console.log(`[LaunchGame] 缺失 ${nonForgeCoreMissing.length} 个文件，启动后台下载...`);
         const _bgDlVersionJson = versionJson;
         const _bgDlExternalDir = externalVersionDir;
         const _bgDlCleanId = cleanVersionId;
@@ -706,6 +846,7 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
               sess.status = 'completed';
               sess.message = '缺失文件下载完成';
             }
+            console.log(`[LaunchGame] 后台下载完成，缓存已失效`);
             java.invalidateDepCheckCache(_bgDlCleanId);
           } catch (dlErr) {
             console.error(`[LaunchGame] 后台下载失败: ${dlErr.message}`);
@@ -729,6 +870,17 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
 
     if (checkOnly) {
       return { success: true, ready: true, message: '所有文件就绪，可以启动' };
+    }
+
+    // 最终安全检查：确保关键 natives (lwjgl.dll 等) 已解压，否则游戏会因 UnsatisfiedLinkError 崩溃
+    {
+      const { criticalNatives, filterMissing } = checkCriticalNatives(versionJson);
+      const stillMissing = filterMissing(criticalNatives);
+      if (stillMissing.length > 0) {
+        const msg = `关键原生库缺失，无法启动: ${stillMissing.join(', ')}。请重新下载整合包或检查网络后重试。`;
+        console.error(`[LaunchGame] ${msg}`);
+        return { success: false, error: msg, needDownload: true };
+      }
     }
 
     return doLaunch(cleanVersionId, versionJson, settings, account, externalVersionDir, versionId);

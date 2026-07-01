@@ -26,6 +26,8 @@ async function autoRepairJsonFileAsync(filePath, backupSuffix) {
     JSON.parse(content);
     return true;
   } catch (e) {
+    // 文件不存在不算损坏，直接视为正常
+    if (e.code === 'ENOENT') return true;
     console.error(`[AutoRepair] Detected corrupted file: ${filePath}`);
     // 先备份损坏文件
     try {

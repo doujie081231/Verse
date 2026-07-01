@@ -6,14 +6,13 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
 
 const ctx = require('../context');
 const utils = require('../utils');
 const http = require('../http-client');
 const versions = require('../versions');
 
-const { ensureBaseVersionInstalled, isLibValid, getNeoLibMirrorUrl, SERVER_DIR } = require('./shared');
+const { ensureBaseVersionInstalled, isLibValid, getNeoLibMirrorUrl, SERVER_DIR, runPatchProcessor } = require('./shared');
 
 /**
  * 从版本 JSON 和搜索路径中查找 NeoForge 核心库 JAR 文件。
@@ -23,11 +22,14 @@ const { ensureBaseVersionInstalled, isLibValid, getNeoLibMirrorUrl, SERVER_DIR }
  * @returns {string[]} 找到的 JAR 文件绝对路径数组
  */
 function findNeoForgeCoreJars(versionJson, searchBases, gameArgs) {
+  console.log(`[findNeoForgeCoreJars] called, versionId=${versionJson.id}, gameArgsLen=${gameArgs.length}, searchBasesLen=${searchBases.length}`);
   let neoForgeVersion = '';
   let mcVersion = '';
 
   const neoForgeVerIdx = gameArgs.findIndex((a) => typeof a === 'string' && a === '--fml.neoForgeVersion');
   const mcVerIdx = gameArgs.findIndex((a) => typeof a === 'string' && a === '--fml.mcVersion');
+
+  console.log(`[findNeoForgeCoreJars] neoForgeVerIdx=${neoForgeVerIdx} mcVerIdx=${mcVerIdx}`);
 
   if (neoForgeVerIdx >= 0 && neoForgeVerIdx + 1 < gameArgs.length) {
     neoForgeVersion = gameArgs[neoForgeVerIdx + 1];
@@ -70,6 +72,23 @@ function findNeoForgeCoreJars(versionJson, searchBases, gameArgs) {
   }
 
   if (!neoForgeVersion) {
+    console.log(`[findNeoForgeCoreJars] neoForgeVersion empty, returning []`);
+    return [];
+  }
+
+  console.log(`[findNeoForgeCoreJars] neoForgeVersion=${neoForgeVersion} mcVersion=${mcVersion}`);
+
+  // 检查 version JSON 的 libraries 是否已有 neoforge:<version>:client 库条目（patched jar）。
+  // patched jar（neoforge-<version>-client.jar，由 binarypatcher 输出）已包含 NeoForge mod
+  // 元数据（mods.toml + automatic-module-name），如果同时添加 universal jar 会导致 JPMS 冲突：
+  // "Module konkrete reads more than one module named neoforge"
+  // 因为两个 jar 的 JPMS 自动模块名都是 'neoforge'（从文件名 neoforge-<version>-*.jar 推导）。
+  // 标准 NeoForge 启动器只在 classpath 放 patched jar，不放 universal jar。
+  const hasPatchedClientLib = (versionJson.libraries || []).some((l) =>
+    l.name === `net.neoforged:neoforge:${neoForgeVersion}:client`
+  );
+  if (hasPatchedClientLib) {
+    console.log(`[findNeoForgeCoreJars] version JSON 已有 neoforge:${neoForgeVersion}:client 库条目（patched jar），跳过添加 universal jar 以避免 JPMS 模块冲突`);
     return [];
   }
 
@@ -107,7 +126,9 @@ function findNeoForgeCoreJars(versionJson, searchBases, gameArgs) {
   }
 
   if (result.length > 0) {
+    console.log(`[Classpath] 自动添加NeoForge核心JAR (${result.length}): ${result.map((r) => path.basename(r)).join(', ')}`);
   } else {
+    console.log(`[findNeoForgeCoreJars] no JAR found in searchBases, returning []`);
   }
 
   return result;
@@ -146,6 +167,7 @@ async function installNeoForge(gameVersion, neoVersion, onProgress = null) {
       `https://bmclapi2.bangbang93.com/maven/net/neoforged/${packageName}/${neoVersion}/${packageName}-${neoVersion}-installer.jar`,
       `${neoforgeMavenOfficial}/${packageName}/${neoVersion}/${packageName}-${neoVersion}-installer.jar`
     ];
+    console.log(`[NeoForge] Downloading installer: ${installerUrls[0]}`);
 
     let installerOk = false;
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -199,6 +221,7 @@ async function installNeoForge(gameVersion, neoVersion, onProgress = null) {
       const versionEntry = zip.getEntry('version.json');
       if (versionEntry) {
         versionJsonData = JSON.parse(versionEntry.getData().toString('utf8'));
+        console.log(`[NeoForge] 从 installer 中读取 version.json, mainClass=${versionJsonData.mainClass}`);
       }
     } catch (e) {}
 
@@ -231,8 +254,10 @@ async function installNeoForge(gameVersion, neoVersion, onProgress = null) {
         if (!fs.existsSync(binpatchPath)) {
           fs.mkdirSync(binpatchDir, { recursive: true });
           fs.writeFileSync(binpatchPath, clientLzma.getData());
+          console.log(`[NeoForge] 提取 client.lzma → ${binpatchPath}`);
           clientLzmaExtracted = true;
         } else {
+          console.log(`[NeoForge] client.lzma 已存在: ${binpatchPath}`);
           clientLzmaExtracted = true;
         }
       } else {
@@ -249,6 +274,7 @@ async function installNeoForge(gameVersion, neoVersion, onProgress = null) {
       if (!fs.existsSync(installerLibPath) && fs.existsSync(installerPath)) {
         fs.mkdirSync(installerLibDir, { recursive: true });
         fs.copyFileSync(installerPath, installerLibPath);
+        console.log(`[NeoForge] Copied installer -> ${installerLibPath}`);
       }
 
       if (!installProfile.data) installProfile.data = {};
@@ -261,6 +287,7 @@ async function installNeoForge(gameVersion, neoVersion, onProgress = null) {
           client: effectiveLzmaPath,
           server: effectiveLzmaPath
         };
+        console.log(`[NeoForge] BINPATCH set to: ${effectiveLzmaPath}`);
       } else {
         console.warn(`[NeoForge] WARNING: client.lzma not found at ${binpatchPath}`);
       }
@@ -285,6 +312,7 @@ async function installNeoForge(gameVersion, neoVersion, onProgress = null) {
 
       try {
         fs.writeFileSync(path.join(versionDir, 'install_profile.json'), JSON.stringify(installProfile, null, 2));
+        console.log(`[NeoForge] install_profile.json updated with correct paths`);
       } catch (_) {}
     }
 
@@ -307,45 +335,46 @@ async function installNeoForge(gameVersion, neoVersion, onProgress = null) {
           const mappingsPath = path.join(mappingsDir, mappingsFileName);
 
           if (!fs.existsSync(mappingsPath)) {
+            console.log(`[NeoForge] 预下载 MOJMAPS: ${mappingsFileName}`);
             if (onProgress) onProgress(0.15, '正在下载 MOJMAPS 映射文件...');
             const mcVer = installProfile.version || gameVersion;
-            const manifestBody = await http.httpGet('https://bmclapi2.bangbang93.com/mc/game/version_manifest_v2.json');
-            const manifest = JSON.parse(manifestBody);
+            const manifest = await http.fetchJSON('https://bmclapi2.bangbang93.com/mc/game/version_manifest_v2.json');
             const verEntry = manifest.versions.find((v) => v.id === mcVer);
             if (verEntry) {
               const verJsonUrl = verEntry.url.replace('https://piston-meta.mojang.com/', 'https://bmclapi2.bangbang93.com/');
-              const mcVerJson = JSON.parse(await http.httpGet(verJsonUrl));
+              const mcVerJson = await http.fetchJSON(verJsonUrl);
               const cm = mcVerJson.downloads?.client_mappings;
               if (cm) {
                 let cmUrl = cm.url.replace('https://piston-data.mojang.com/', 'https://bmclapi2.bangbang93.com/');
                 fs.mkdirSync(mappingsDir, { recursive: true });
                 await http.downloadFileWithMirror(cmUrl, mappingsPath);
+                console.log(`[NeoForge] MOJMAPS 下载完成: ${mappingsPath}`);
               }
             }
           }
         }
       } catch (e) {
-        console.warn(`[NeoForge] MOJMAPS 预下载失败: ${e.message}`);
+        // 错误信息兼容非 Error 抛出物（e.message 可能是对象导致显示 [object Object]）
+        const errMsg = (e instanceof Error) ? e.message : (typeof e === 'string' ? e : (e?.message ? String(e.message) : JSON.stringify(e)));
+        console.warn(`[NeoForge] MOJMAPS 预下载失败: ${errMsg}`);
       }
     }
 
-    // 7. 合并版本 JSON：version.json (来自 installer) + install_profile 中的额外 libraries
+    // 7. 合并版本 JSON：version.json (来自 installer) 已经包含所有 runtime 必需库
+    // （earlydisplay, loader, accesstransformers, modlauncher, asm 9.7 等）。
+    // 不合并 install_profile.json 的 libraries！
+    // install_profile.json 的 libraries 包含 processor 依赖（asm 9.3, guava 20.0,
+    // binarypatcher, AutoRenamingTool, installertools, SpecialSource 等），这些只在
+    // 安装阶段（运行 processor 时）需要，不应该出现在游戏 runtime classpath 中。
+    // 若合并会导致 JPMS 模块冲突：module path 已加载 asm 9.7 (org.objectweb.asm.commons),
+    // classpath 又出现 asm 9.3 (同名 automatic module)，BootstrapLauncher 抛出
+    // IllegalStateException: Module named org.objectweb.asm.commons was already on the
+    // JVMs module path loaded from ...asm-commons-9.7.jar but class-path contains it
+    // at location ...asm-commons-9.3.jar
     const versionJsonPath = path.join(versionDir, `${versionId}.json`);
 
-    if (installProfile) {
-      const profileLibs = installProfile.libraries || [];
-      const versionLibs = versionJsonData.libraries || [];
-      const existingNames = new Set(versionLibs.map((l) => l.name).filter(Boolean));
-      for (const lib of profileLibs) {
-        if (lib.name && !existingNames.has(lib.name)) {
-          versionLibs.push(lib);
-          existingNames.add(lib.name);
-        }
-      }
-      versionJsonData.libraries = versionLibs;
-      if (installProfile.mainClass && !versionJsonData.mainClass) {
-        versionJsonData.mainClass = installProfile.mainClass;
-      }
+    if (installProfile && installProfile.mainClass && !versionJsonData.mainClass) {
+      versionJsonData.mainClass = installProfile.mainClass;
     }
 
     // 去掉自引用（installer 里的 net.neoforged:neoforge:xxx 是给 installer 自己用的，不需要出现在版本库里）
@@ -444,6 +473,8 @@ async function installNeoForge(gameVersion, neoVersion, onProgress = null) {
               } catch (e) {
                 if (retry < 2) {
                   await new Promise((r) => setTimeout(r, 3000 + retry * 2000));
+                } else {
+                  console.log(`[NeoForge] Failed to download ${item.lib.name}: ${e.message}`);
                 }
               }
             }
@@ -461,6 +492,7 @@ async function installNeoForge(gameVersion, neoVersion, onProgress = null) {
     // 9. 写入版本 JSON
     fs.writeFileSync(versionJsonPath, JSON.stringify(versionJson, null, 2));
     versions._invalidateResolvedJsonCache(versionId);
+    console.log(`[NeoForge] 版本JSON已生成: ${versionJsonPath}, libs=${(versionJson.libraries || []).length}, dlFailed=${neoLibFailures}`);
 
     // 10. 补全库 + 运行处理器（merge 函数还会下载缺失的库和执行二进制补丁）
     if (onProgress) onProgress(0.7, '补全 NeoForge 库和参数...');
@@ -474,6 +506,7 @@ async function installNeoForge(gameVersion, neoVersion, onProgress = null) {
           if (retryEntry) {
             fs.mkdirSync(binpatchDir, { recursive: true });
             fs.writeFileSync(binpatchPath, retryEntry.getData());
+            console.log(`[NeoForge] 重新提取成功: ${binpatchPath} (${fs.statSync(binpatchPath).size} bytes)`);
             reextracted = true;
           } else {
             console.warn(`[NeoForge] 安装器中无 data/client.lzma entry`);
@@ -500,10 +533,15 @@ async function installNeoForge(gameVersion, neoVersion, onProgress = null) {
         }
         fs.mkdirSync(path.dirname(installerLibPath2), { recursive: true });
         fs.copyFileSync(installerPath, installerLibPath2);
+        console.log(`[NeoForge] 复制 installer → ${installerLibPath2}`);
       } catch (_) {}
     }
-    try { await mergeNeoForgeLoaderToVersion(versionId, gameVersion, neoVersion, onProgress); } catch (mergeErr) {
-      console.warn(`[NeoForge] merge 补全失败: ${mergeErr.message}`);
+    try {
+      await mergeNeoForgeLoaderToVersion(versionId, gameVersion, neoVersion, onProgress);
+    } catch (mergeErr) {
+      // patch 处理器失败属于致命错误，不能吞掉后还报 success=true
+      console.error(`[NeoForge] merge 失败: ${mergeErr.message}`);
+      throw mergeErr;
     }
 
     const neoCoreJarRel = `net/neoforged/neoforge/${neoVersion}/neoforge-${neoVersion}-universal.jar`;
@@ -521,6 +559,7 @@ async function installNeoForge(gameVersion, neoVersion, onProgress = null) {
           fs.mkdirSync(path.dirname(neoCoreJarPath), { recursive: true });
           await http.downloadFile(url, neoCoreJarPath);
           if (fs.existsSync(neoCoreJarPath) && utils.isJarIntact(neoCoreJarPath)) {
+            console.log(`[NeoForge] 核心jar补下载成功: ${url}`);
             coreOk = true;
             break;
           }
@@ -552,6 +591,7 @@ async function installNeoForge(gameVersion, neoVersion, onProgress = null) {
           }
           fs.mkdirSync(path.dirname(patchedJarLibPath), { recursive: true });
           fs.copyFileSync(patchedJarVerPath, patchedJarLibPath);
+          console.log(`[NeoForge] Patched JAR已复制到libraries: ${path.basename(patchedJarLibPath)}`);
         } catch (e) {
           console.warn(`[NeoForge] 复制patched JAR失败: ${e.message}`);
         }
@@ -568,6 +608,7 @@ async function installNeoForge(gameVersion, neoVersion, onProgress = null) {
     try {
       const finalJson = JSON.parse(fs.readFileSync(path.join(versionDir, `${versionId}.json`), 'utf-8'));
       fs.writeFileSync(path.join(versionDir, `${versionId}.json`), JSON.stringify(finalJson, null, 2));
+      console.log(`[NeoForge] Final version JSON written, libs=${(finalJson.libraries || []).length}`);
     } catch (_) {}
 
     if (onProgress) onProgress(1, 'NeoForge 安装完成');
@@ -578,6 +619,7 @@ async function installNeoForge(gameVersion, neoVersion, onProgress = null) {
       const vDir = path.join(ctx.dirs.VERSIONS_DIR, versionId);
       if (fs.existsSync(vDir)) {
         fs.rmSync(vDir, { recursive: true, force: true });
+        console.log(`[NeoForge] Cleaned up failed version directory: ${vDir}`);
       }
     } catch (cleanupErr) {
       console.error(`[NeoForge] Failed to cleanup version directory:`, cleanupErr.message);
@@ -610,9 +652,11 @@ async function mergeNeoForgeLoaderToVersion(versionId, gameVersion, neoVersion, 
   const mcVerMatch = versionId.match(/^(\d+\.\d+(?:\.\d+)?)/);
   const mcVer = mcVerMatch ? mcVerMatch[1] : (versionJson.inheritsFrom && versionJson.inheritsFrom.match(/^\d+\.\d+/) ? versionJson.inheritsFrom : correctGameVersion);
   versionJson.inheritsFrom = mcVer;
+  console.log(`[NeoForge] inheritsFrom set to: ${mcVer} (gameVersion was: ${gameVersion})`);
 
   let profileLibs = [];
   let profileData = null;
+  let profileProcessors = [];
   let installerMainClass = null;
   let installerArgs = null;
 
@@ -624,6 +668,8 @@ async function mergeNeoForgeLoaderToVersion(versionId, gameVersion, neoVersion, 
       const ipData = JSON.parse(fs.readFileSync(ipPath, 'utf-8'));
       profileLibs = ipData.libraries || [];
       profileData = ipData.data || null;
+      profileProcessors = ipData.processors || [];
+      console.log(`[NeoForge] read install_profile.json: libs=${profileLibs.length}, processors=${profileProcessors.length}, dataKeys=${profileData ? Object.keys(profileData).join(',') : 'none'}`);
     } catch (_) {}
   }
 
@@ -658,6 +704,7 @@ async function mergeNeoForgeLoaderToVersion(versionId, gameVersion, neoVersion, 
           const ipData = JSON.parse(profileEntry.getData().toString('utf8'));
           profileLibs = ipData.libraries || [];
           profileData = ipData.data || null;
+          profileProcessors = ipData.processors || profileProcessors;
           try { fs.writeFileSync(ipPath, JSON.stringify(ipData, null, 2)); } catch (_) {}
         }
         const versionEntry = zip.getEntry('version.json');
@@ -675,6 +722,7 @@ async function mergeNeoForgeLoaderToVersion(versionId, gameVersion, neoVersion, 
           if (!fs.existsSync(clPath)) {
             fs.mkdirSync(clDir, { recursive: true });
             fs.writeFileSync(clPath, clientLzmaEntry.getData());
+            console.log(`[NeoForge] 提取 clientdata.lzma → ${clPath} (${fs.statSync(clPath).size} bytes)`);
           }
         } else {
           console.warn(`[NeoForge] 安装器中无 data/client.lzma`);
@@ -730,22 +778,11 @@ async function mergeNeoForgeLoaderToVersion(versionId, gameVersion, neoVersion, 
     }
   }
 
-  // [CRITICAL FIX - 2026-06-20] 将 install_profile.json 中的运行时库合并到版本 JSON 的 libraries 中。
-  // NeoForge 的关键运行时库（如 net.neoforged:accesstransformers, earlydisplay, asm 等）
-  // 只存在于 install_profile.json 的 libraries 里，不会自动出现在版本 JSON 中。
-  // 如果删掉这段合并逻辑，NeoForge 启动时会报 NoSuchMethodError: AccessTransformerEngine.newEngine()
-  if (profileLibs.length > 0) {
-    const existingLibNames = new Set((versionJson.libraries || []).map((l) => l.name).filter(Boolean));
-    let added = 0;
-    for (const lib of profileLibs) {
-      if (lib.name && !existingLibNames.has(lib.name)) {
-        versionJson.libraries = versionJson.libraries || [];
-        versionJson.libraries.push(lib);
-        existingLibNames.add(lib.name);
-        added++;
-      }
-    }
-  }
+  // 不合并 install_profile.json 的 libraries（参见 installNeoForge 中的第 7 步说明）。
+  // install_profile.json 包含的 processor 依赖库（asm 9.3, guava 20.0, binarypatcher,
+  // AutoRenamingTool, installertools, SpecialSource 等）只在安装阶段需要，进入 runtime
+  // classpath 会触发 JPMS 模块冲突（asm 9.7 在 module path，asm 9.3 在 classpath）。
+  // version.json（installer 自带）已包含全部 runtime 必需库，无需从 install_profile 补充。
 
   if (onProgress) onProgress(0.5, '下载 NeoForge 库文件...');
 
@@ -857,89 +894,72 @@ async function mergeNeoForgeLoaderToVersion(versionId, gameVersion, neoVersion, 
     throw new Error(_errMsg);
   }
 
-  try {
-    if (onProgress) onProgress(0.92, '打补丁中...');
+  if (onProgress) onProgress(0.92, '打补丁中...');
 
-    const _scriptSrc = path.join(SERVER_DIR, 'server', 'modloaders', 'scripts', 'neoforge-processor.js');
-    const _scriptDst = path.join(ctx.dirs.DATA_DIR, 'temp', 'neoforge-processor.js');
+  const _patchedJar = path.join(ctx.dirs.LIBRARIES_DIR, 'net', 'neoforged', 'minecraft-client-patched', neoVersion, `minecraft-client-patched-${neoVersion}.jar`);
+  const _mcJarPath = path.join(ctx.dirs.VERSIONS_DIR, mcVer, `${mcVer}.jar`);
+
+  // 直接调用 Java installertools 执行 PROCESS_MINECRAFT_JAR
+  // 失败时抛出错误，让外层 try/catch 捕获并返回 success=false（避免错误地报告安装成功）
+  // 注意：installertools jar 不是 fatjar，需要把 install_profile.json 中 processors[].classpath
+  // 的所有 jar 都加入 classpath，否则会抛 NoClassDefFoundError: com/google/gson/GsonBuilder
+  await runPatchProcessor({
+    mcJarPath: _mcJarPath,
+    clientLzmaPath: _clientdataPath,
+    patchedJarPath: _patchedJar,
+    profileLibs,
+    processors: profileProcessors,
+    onProgress,
+    logPrefix: '[NeoForge]'
+  });
+
+  // patched JAR 已生成，复制到版本目录并注册到 libraries
+  const _verJar = path.join(versionDir, `${versionId}.jar`);
+  try { fs.copyFileSync(_patchedJar, _verJar); console.log(`[NeoForge] Copied patched JAR`); } catch (e) {
+    console.warn(`[NeoForge] 复制 patched JAR 到版本目录失败（非致命）: ${e.message}`);
+  }
+
+  // 不注册 minecraft-client-patched 库条目。
+  // patched jar 的 canonical 坐标是 net.neoforged:neoforge:<version>:client（由 binarypatcher 直接输出，
+  // 路径 libraries/net/neoforged/neoforge/<version>/neoforge-<version>-client.jar）。
+  // 同时注册 minecraft-client-patched（只是同一 patched jar 的副本，由 shared.js 复制产生）
+  // 会导致 classpath 中出现两份相同的 patched 类，JPMS 将它们加载为 minecraft.client.patched 与
+  // minecraft 两个模块，触发 split package 冲突 (ResolutionException)。
+  // ModLauncher 的 "production client provider" locator 只通过 :client 条目查找 SRG client jar，
+  // 因此 :client 是必需的，minecraft-client-patched 是冗余的。
+
+  // NeoForge install_profile.json 的 PATCHED 数据变量指向 [net.neoforged:neoforge:<version>:client]
+  // （由 SimpleInstaller/binarypatcher 生成到 libraries/net/neoforged/neoforge/<version>/neoforge-<version>-client.jar）。
+  // ModLauncher 的 "production client provider" locator 通过此 library 条目查找 neoforge mod 元数据。
+  // 缺失会导致 fancymenu/pixelmon 等报 "Mod ID: 'neoforge' ... Actual version: '[MISSING]'" 并静默退出。
+  const _existingNeoClient = (versionJson.libraries || []).some((l) => l.name === `net.neoforged:neoforge:${neoVersion}:client`);
+  if (!_existingNeoClient) {
+    const _neoClientJarPath = path.join(ctx.dirs.LIBRARIES_DIR, 'net', 'neoforged', 'neoforge', neoVersion, `neoforge-${neoVersion}-client.jar`);
+    let _neoClientSha1 = '';
+    let _neoClientSize = 0;
     try {
-      fs.mkdirSync(path.dirname(_scriptDst), { recursive: true });
-      if (fs.existsSync(_scriptDst)) { try { fs.unlinkSync(_scriptDst); } catch (_) {} }
-      const _srcContent = fs.readFileSync(_scriptSrc, 'utf8');
-      fs.writeFileSync(_scriptDst, _srcContent, 'utf8');
-    } catch (_) {}
-
-    await new Promise((resolveProc) => {
-      const _args = [_scriptDst, '--root', ctx.dirs.DATA_DIR, '--libs', ctx.dirs.LIBRARIES_DIR, '--mcver', gameVersion, '--neover', neoVersion];
-      const _child = spawn('node', _args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ELECTRON_RUN_AS_NODE: '' } });
-      let _stdout = '', _stderr = '';
-      const _progressMap = [
-        ['Running Processor', 0.93], ['Command:', 0.93],
-        ['DOWNLOAD_MOJMAPS', 0.94], ['MERGE_MAPPING', 0.95],
-        ['Splitting:', 0.96], ['Processing', 0.96],
-        ['Sorting', 0.97], ['Remapping', 0.98],
-        ['Injecting', 0.99], ['SUCCESS', 0.995]
-      ];
-      const _parseLine = (line) => {
-        for (const [keyword, pct] of _progressMap) {
-          if (line.includes(keyword)) {
-            if (onProgress) onProgress(pct, line.substring(0, 80));
-            break;
-          }
-        }
-      };
-      _child.stdout.on('data', (data) => {
-        _stdout += data.toString();
-        const lines = _stdout.split('\n');
-        _stdout = lines.pop();
-        for (const line of lines) _parseLine(line.trim());
-      });
-      _child.stderr.on('data', (data) => {
-        _stderr += data.toString();
-        const lines = _stderr.split('\n');
-        _stderr = lines.pop();
-        for (const line of lines) _parseLine(line.trim());
-      });
-      const _killTimer = setTimeout(() => { try { _child.kill('SIGKILL'); } catch (_) {} }, 240000);
-      _child.on('close', (code) => {
-        clearTimeout(_killTimer);
-        if (_stdout.trim()) _parseLine(_stdout.trim());
-        if (code !== 0) console.error(`[NeoForge] Script exited with code ${code}`);
-        resolveProc();
-      });
-      _child.on('error', (err) => {
-        clearTimeout(_killTimer);
-        console.error(`[NeoForge] Script spawn error: ${err.message}`);
-        resolveProc();
-      });
-    });
-
-    const _logFile = path.join(ctx.dirs.DATA_DIR, 'temp', 'neoforge-processor.log');
-    if (fs.existsSync(_logFile)) {
-    }
-
-    const _patchedJar = path.join(ctx.dirs.LIBRARIES_DIR, 'net', 'neoforged', 'minecraft-client-patched', neoVersion, `minecraft-client-patched-${neoVersion}.jar`);
-    if (fs.existsSync(_patchedJar)) {
-      const _verJar = path.join(versionDir, `${versionId}.jar`);
-      try { fs.copyFileSync(_patchedJar, _verJar); } catch (_) {}
-
-      const _existingPatched = (versionJson.libraries || []).some((l) => l.name && l.name.includes('minecraft-client-patched'));
-      if (!_existingPatched) {
-        versionJson.libraries = versionJson.libraries || [];
-        versionJson.libraries.push({
-          name: `net.neoforged:minecraft-client-patched:${neoVersion}`,
-          downloads: { artifact: { path: `net/neoforged/minecraft-client-patched/${neoVersion}/minecraft-client-patched-${neoVersion}.jar`, url: `https://maven.neoforged.net/releases/net/neoforged/minecraft-client-patched/${neoVersion}/minecraft-client-patched-${neoVersion}.jar` } }
-        });
+      if (fs.existsSync(_neoClientJarPath)) {
+        const _stat = fs.statSync(_neoClientJarPath);
+        _neoClientSize = _stat.size;
+        const _crypto = require('crypto');
+        _neoClientSha1 = _crypto.createHash('sha1').update(fs.readFileSync(_neoClientJarPath)).digest('hex');
+      } else {
+        console.warn(`[NeoForge] neoforge:${neoVersion}:client jar 未找到: ${_neoClientJarPath}`);
       }
-    } else {
-      console.warn(`[NeoForge] Patched JAR not found: ${_patchedJar}`);
+    } catch (e) {
+      console.warn(`[NeoForge] 计算 neoforge:client SHA1 失败: ${e.message}`);
     }
-  } catch (procErr) {
-    console.error(`[NeoForge] Processor异常: ${procErr.message}`);
+    versionJson.libraries = versionJson.libraries || [];
+    versionJson.libraries.push({
+      name: `net.neoforged:neoforge:${neoVersion}:client`,
+      downloads: { artifact: { path: `net/neoforged/neoforge/${neoVersion}/neoforge-${neoVersion}-client.jar`, size: _neoClientSize, sha1: _neoClientSha1, url: `https://maven.neoforged.net/releases/net/neoforged/neoforge/${neoVersion}/neoforge-${neoVersion}-client.jar` } }
+    });
+    console.log(`[NeoForge] 已添加 neoforge:${neoVersion}:client 库条目 (size=${_neoClientSize}, sha1=${_neoClientSha1 || 'N/A'})`);
   }
 
   fs.writeFileSync(jsonPath, JSON.stringify(versionJson, null, 2));
   versions._invalidateResolvedJsonCache(versionId);
+  console.log(`[NeoForge] Loader merged: ${versionId}, libs=${(versionJson.libraries || []).length}, mainClass=${versionJson.mainClass}`);
 }
 
 /**
@@ -1030,6 +1050,7 @@ async function getNeoForgeVersionsForGame(gameVersion) {
     return v;
   });
 
+  console.log(`[NeoForge] Found ${finalVersions.length} versions for MC ${gameVersion}, prefix: ${neoPrefix}`);
   return finalVersions;
 }
 
