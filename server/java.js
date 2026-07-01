@@ -107,8 +107,10 @@ function getLoaderInfoForJava(versionId, versionJson) {
   }
 
   // 解析基础 MC 版本：使用 fullJsonStr（整个合并后 JSON）确保匹配继承链中的 Forge 库
+  // 注意：artifact 名后必须直接跟 ':'，避免 'forge' 误匹配 'forgespi'（forgespi 版本号是 7.0.1，
+  // 会污染 baseVersion 导致 Java 版本范围误判为 21+，而 MC 1.20.1 实际只需 Java 17）
   if (result.isForge || result.isNeoForge) {
-    const forgeMatch = fullJsonStr.match(/net\.minecraftforge:(?:forge|fmlloader)[^"]*?:(\d+\.\d+(?:\.\d+)?)/);
+    const forgeMatch = fullJsonStr.match(/net\.minecraftforge:(?:forge|fmlloader):(\d+\.\d+(?:\.\d+)?)/);
     if (forgeMatch) {
       result.baseVersion = forgeMatch[1];
       const forgeVerMatch = fullJsonStr.match(/net\.minecraftforge:(?:forge|fmlloader):([\d.]+(?:-\d+)?)/);

@@ -31,7 +31,9 @@ async function downloadForgeCoreLibsFromMaven(forgeVersionStr, onProgress) {
     { dir: `${prefix}/fmlcore/${forgeVersionStr}`, file: `fmlcore-${forgeVersionStr}.jar` },
     { dir: `${prefix}/javafmllanguage/${forgeVersionStr}`, file: `javafmllanguage-${forgeVersionStr}.jar` },
     { dir: `${prefix}/mclanguage/${forgeVersionStr}`, file: `mclanguage-${forgeVersionStr}.jar` },
-    { dir: `${prefix}/lowcodelanguage/${forgeVersionStr}`, file: `lowcodelanguage-${forgeVersionStr}.jar` }
+    { dir: `${prefix}/lowcodelanguage/${forgeVersionStr}`, file: `lowcodelanguage-${forgeVersionStr}.jar` },
+    // FML MinecraftLocator.scanMods 硬编码查找 forge-{ver}-universal.jar，缺失会导致启动崩溃
+    { dir: `${prefix}/forge/${forgeVersionStr}`, file: `forge-${forgeVersionStr}-universal.jar` }
   ];
 
   let downloaded = 0;
@@ -85,38 +87,43 @@ async function downloadForgePatchingJars(mcVersion, forgeVersion, mcpVersion) {
   const forgeDir = path.join(ctx.dirs.LIBRARIES_DIR, 'net', 'minecraftforge', 'forge', verStr);
   const forgeClientJar = path.join(forgeDir, `forge-${verStr}-client.jar`);
   const forgeUniversalJar = path.join(forgeDir, `forge-${verStr}-universal.jar`);
-  const hasForge = (fs.existsSync(forgeClientJar) && utils.isJarIntact(forgeClientJar)) ||
-    (fs.existsSync(forgeUniversalJar) && utils.isJarIntact(forgeUniversalJar));
+  // client.jar（patched Minecraft+Forge）和 universal.jar（纯 Forge 代码）用途不同：
+  // - client.jar 用于 -Dminecraft.client.jar 和 classpath
+  // - universal.jar 用于 FML MinecraftLocator.scanMods（硬编码查找 forge-{ver}-universal.jar）
+  // 两者都必须存在，缺任一个都会导致游戏崩溃。之前用 OR 逻辑导致 universal 缺失时漏检。
+  const hasClient = fs.existsSync(forgeClientJar) && utils.isJarIntact(forgeClientJar);
+  const hasUniversal = fs.existsSync(forgeUniversalJar) && utils.isJarIntact(forgeUniversalJar);
 
   const missing = [];
+  const FORGE_JAR_DL_TIMEOUT = 20000;
+  const forgePath = `net/minecraftforge/forge/${verStr}`;
 
-  if (!hasForge) {
-    const forgePath = `net/minecraftforge/forge/${verStr}`;
-    const candidates = [
-      { dir: forgePath, file: `forge-${verStr}-client.jar` },
-      { dir: forgePath, file: `forge-${verStr}-universal.jar` }
-    ];
-    let gotForge = false;
-    const FORGE_JAR_DL_TIMEOUT = 20000;
-    for (const art of candidates) {
-      const targetPath = path.join(ctx.dirs.LIBRARIES_DIR, art.dir, art.file);
-      if (fs.existsSync(targetPath) && utils.isJarIntact(targetPath)) { gotForge = true; break; }
-      for (const mavenBase of ctx.mirrors.FORGE_MAVEN_BASES) {
-        const url = `${mavenBase}/${art.dir}/${art.file}`;
-        try {
-          if (!fs.existsSync(path.dirname(targetPath))) fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-          await http.downloadFileWithMirror(url, targetPath, null, 1, null, FORGE_JAR_DL_TIMEOUT);
-          if (fs.existsSync(targetPath) && utils.isJarIntact(targetPath)) {
-            console.log(`[Forge] Maven下载成功: ${art.file}`);
-            gotForge = true;
-            break;
-          }
-        } catch (_) {}
-        try { if (fs.existsSync(targetPath) && !utils.isJarIntact(targetPath)) fs.unlinkSync(targetPath); } catch (_) {}
-      }
-      if (gotForge) break;
+  // 分别下载缺失的 client.jar 和 universal.jar
+  const downloadForgeJar = async (jarName, targetPath) => {
+    for (const mavenBase of ctx.mirrors.FORGE_MAVEN_BASES) {
+      const url = `${mavenBase}/${forgePath}/${jarName}`;
+      try {
+        if (!fs.existsSync(path.dirname(targetPath))) fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+        await http.downloadFileWithMirror(url, targetPath, null, 1, null, FORGE_JAR_DL_TIMEOUT);
+        if (fs.existsSync(targetPath) && utils.isJarIntact(targetPath)) {
+          console.log(`[Forge] Maven下载成功: ${jarName}`);
+          return true;
+        }
+      } catch (_) {}
+      try { if (fs.existsSync(targetPath) && !utils.isJarIntact(targetPath)) fs.unlinkSync(targetPath); } catch (_) {}
     }
-    if (!gotForge) missing.push(`forge-${verStr}-client.jar/universal.jar`);
+    return false;
+  };
+
+  if (!hasClient) {
+    if (!await downloadForgeJar(`forge-${verStr}-client.jar`, forgeClientJar)) {
+      missing.push(`forge-${verStr}-client.jar`);
+    }
+  }
+  if (!hasUniversal) {
+    if (!await downloadForgeJar(`forge-${verStr}-universal.jar`, forgeUniversalJar)) {
+      missing.push(`forge-${verStr}-universal.jar`);
+    }
   }
 
   if (mcpVersion) {

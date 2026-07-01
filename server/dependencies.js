@@ -725,9 +725,39 @@ async function checkDependencies(versionId, settings, externalVersionDir = null)
         if (!forgeVerMatch && versionJson.inheritsFrom) {
           forgeVerMatch = versionJson.inheritsFrom.match(/^(.+)-[Nn]eo[Ff]orge-(.+)$/) || versionJson.inheritsFrom.match(/^(.+)-[Ff]orge-(.+)$/);
         }
-        if (forgeVerMatch) {
-          const mcVer = forgeVerMatch[1];
-          const fVer = forgeVerMatch[2];
+        // [CRITICAL - 2026-07-01] 版本 ID 不符合标准命名（如自定义整合包名 "Zombie Invade 100 Days"）
+        // 时，上面的正则匹配会失败，导致漏检 fmlcore/javafmllanguage/mclanguage/lowcodelanguage 等核心库，
+        // 游戏启动时 MinecraftLocator.scanMods 找不到 JAR 而崩溃。
+        // 此时从 --fml.forgeVersion/--fml.mcVersion game args 或 fmlloader 库名中提取版本号作为兜底。
+        // 参考: server/modloaders/forge.js findForgeCoreJars 的版本提取逻辑
+        let fallbackMcVer = null;
+        let fallbackFVer = null;
+        if (!forgeVerMatch) {
+          const fmlGameArgs = versionJson.arguments?.game || [];
+          const fvIdx = fmlGameArgs.findIndex((a) => typeof a === 'string' && a === '--fml.forgeVersion');
+          const mvIdx = fmlGameArgs.findIndex((a) => typeof a === 'string' && a === '--fml.mcVersion');
+          if (fvIdx >= 0 && fvIdx + 1 < fmlGameArgs.length) fallbackFVer = fmlGameArgs[fvIdx + 1];
+          if (mvIdx >= 0 && mvIdx + 1 < fmlGameArgs.length) fallbackMcVer = fmlGameArgs[mvIdx + 1];
+          if (!fallbackMcVer && versionJson.clientVersion) fallbackMcVer = versionJson.clientVersion;
+          if (!fallbackFVer || !fallbackMcVer) {
+            const fmlLib = forgeLibraries.find((l) =>
+              l.name && (l.name.startsWith('net.minecraftforge:fmlloader:') || l.name.startsWith('net.minecraftforge:forge:')));
+            if (fmlLib) {
+              const parts = fmlLib.name.split(':');
+              if (parts.length >= 3) {
+                const verPart = parts[2];
+                const dashIdx = verPart.lastIndexOf('-');
+                if (dashIdx > 0) {
+                  if (!fallbackMcVer) fallbackMcVer = verPart.substring(0, dashIdx);
+                  if (!fallbackFVer) fallbackFVer = verPart.substring(dashIdx + 1);
+                }
+              }
+            }
+          }
+        }
+        if (forgeVerMatch || (fallbackMcVer && fallbackFVer)) {
+          const mcVer = forgeVerMatch ? forgeVerMatch[1] : fallbackMcVer;
+          const fVer = forgeVerMatch ? forgeVerMatch[2] : fallbackFVer;
           const forgeSearchBases = [ctx.dirs.LIBRARIES_DIR];
           if (externalRootForForge) forgeSearchBases.unshift(path.join(externalRootForForge, 'libraries'));
           let forgeDirFound = false;
@@ -786,6 +816,11 @@ async function checkDependencies(versionId, settings, externalVersionDir = null)
           // 5) NeoForge 不需要 patching JARs；Forge 需要补 client-srg/client-extra/forge-client
           if (!_depIsNeo) {
             forgeCoreLibs.push({ name: `net.minecraftforge:forge:${mcVer}-${fVer}:client`, path: path.join(ctx.dirs.LIBRARIES_DIR, 'net', 'minecraftforge', 'forge', `${mcVer}-${fVer}`, `forge-${mcVer}-${fVer}-client.jar`), desc: 'Forge客户端核心' });
+            // bootstraplauncher 模式下，FML MinecraftLocator.scanMods 硬编码查找 forge-{ver}-universal.jar
+            // 缺失会导致 "Invalid paths argument, contained no existing paths" 崩溃
+            if ((versionJson.mainClass || '').includes('bootstraplauncher') || (versionJson.mainClass || '').includes('ForgeBootstrap')) {
+              forgeCoreLibs.push({ name: `net.minecraftforge:forge:${mcVer}-${fVer}:universal`, path: path.join(ctx.dirs.LIBRARIES_DIR, 'net', 'minecraftforge', 'forge', `${mcVer}-${fVer}`, `forge-${mcVer}-${fVer}-universal.jar`), desc: 'Forge通用核心(FML MinecraftLocator)' });
+            }
             const clientBaseDir = path.join(ctx.dirs.LIBRARIES_DIR, 'net', 'minecraft', 'client');
             let mcpDirName = null;
             try {
