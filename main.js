@@ -1025,6 +1025,22 @@ async function _performShutdownCleanup() {
       global._preheatPids = [];
     }
 
+    // 5.5 游戏进程（清理僵尸进程：关 VersePC 时杀掉残留的 java.exe 及其子进程树）
+    if (global._gamePids && global._gamePids.length > 0) {
+      const { exec } = require('child_process');
+      for (const pid of global._gamePids) {
+        try {
+          if (process.platform === 'win32') {
+            // /T 杀整个进程树（java.exe 带起的 PowerShell、git 等子进程一并清理）
+            exec(`taskkill /T /F /PID ${pid}`, { windowsHide: true }, () => {});
+          } else {
+            try { process.kill(-pid); } catch (_) { try { process.kill(pid); } catch (_) {} }
+          }
+        } catch (e) {}
+      }
+      global._gamePids = [];
+    }
+
     // 6. 下载任务清理（最长等 5 秒）
     if (serverModuleCache && serverModuleCache.cleanupOnShutdown) {
       try {

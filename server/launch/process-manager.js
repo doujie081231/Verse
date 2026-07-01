@@ -476,6 +476,10 @@ async function doLaunch(versionId, versionJson, settings, account, externalVersi
 
       const gameProcess = spawn(javaPath, newArgs, spawnOptions);
 
+      // 登记游戏进程 PID，供 VersePC 退出时清理（防止僵尸进程残留）
+      if (!global._gamePids) global._gamePids = [];
+      if (gameProcess.pid) global._gamePids.push(gameProcess.pid);
+
       // 日志批量节流：累积到缓冲区，每 500ms 批量处理一次，降低高频日志时的 CPU 占用
       // 注意：节流逻辑（缓冲、定时器、阶段识别）请勿随意修改，影响日志展示与启动阶段判定
       let _logBuffer = '';
@@ -527,6 +531,11 @@ async function doLaunch(versionId, versionJson, settings, account, externalVersi
         try { clearInterval(_logSaveTimer); _activeLogTimers.delete(_logSaveTimer); } catch (e) {}
         try { fs.unlinkSync(argFilePath); } catch (e) {}
         try { natives.restoreOfflineSkin(skinBackups); } catch (e) {}
+        // 游戏进程正常退出，从清理名单移除
+        if (global._gamePids && gameProcess.pid) {
+          const _idx = global._gamePids.indexOf(gameProcess.pid);
+          if (_idx >= 0) global._gamePids.splice(_idx, 1);
+        }
       });
 
       console.log(`[Launch] 进程已启动(@argfile模式), PID: ${gameProcess.pid}`);
@@ -746,6 +755,10 @@ async function doLaunch(versionId, versionJson, settings, account, externalVersi
 
     const gameProcess = spawn(javaPath, args, spawnOptions);
 
+    // 登记游戏进程 PID，供 VersePC 退出时清理（防止僵尸进程残留）
+    if (!global._gamePids) global._gamePids = [];
+    if (gameProcess.pid) global._gamePids.push(gameProcess.pid);
+
     console.log(`[Launch] 进程已启动, PID: ${gameProcess.pid}`);
 
     cleanupPreheatedJvm();
@@ -845,6 +858,11 @@ async function doLaunch(versionId, versionJson, settings, account, externalVersi
     gameProcess.on('close', (code) => {
       if (_logBuffer) { try { _flushLogs(); } catch (e) {} }
       try { natives.restoreOfflineSkin(skinBackups); } catch (e) {}
+      // 游戏进程正常退出，从清理名单移除
+      if (global._gamePids && gameProcess.pid) {
+        const _idx = global._gamePids.indexOf(gameProcess.pid);
+        if (_idx >= 0) global._gamePids.splice(_idx, 1);
+      }
       const _sysInfo = utils.getSystemInfo();
       const recentLogs = instanceInfo.logBuffer.slice(-100).join('\n');
       let analysis = analyzeExitCode(code, launchVersionId);
