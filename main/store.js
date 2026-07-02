@@ -17,10 +17,9 @@ const { ipcMain, shell, clipboard, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { APP_STORE_FILE } = require('./paths');
 
-// 存储文件路径（便携模式下跟 exe 同目录）
-const STORE_PATH = APP_STORE_FILE;
+// 存储文件路径
+const STORE_PATH = path.join(os.homedir(), '.versepc', 'app-store.json');
 
 // 激活 schema 版本 - 升级此版本会使旧 schema 的激活记录失效，强制重新激活
 const ACTIVATION_SCHEMA_VERSION = 3;
@@ -66,6 +65,7 @@ function safeReadJsonFile(filePath, defaults) {
       if (fs.existsSync(bakPath)) {
         const bakRaw = fs.readFileSync(bakPath, 'utf8');
         const restored = JSON.parse(bakRaw);
+        console.log(`[Storage] Recovered from backup: ${bakPath}`);
         safeWriteFileSync(filePath, JSON.stringify(restored, null, 2));
         return restored;
       }

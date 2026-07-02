@@ -18,7 +18,6 @@
 const { app, ipcMain, dialog, shell, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { UPDATE_CONFIG_FILE } = require('./paths');
 
 // electron-updater 懒加载（当前实现以多源 update.json 为主，保留 autoUpdater 备用）
 let _autoUpdater;
@@ -32,8 +31,8 @@ let updateDownloaded = false;       // 更新是否已下载完成
 let updateAvailableInfo = null;     // 可用的更新信息（用于弹窗通知）
 let updateDownloadedPath = null;    // 已下载的安装包路径
 
-// 更新配置文件路径（便携模式下跟 exe 同目录）
-const UPDATE_CONFIG_PATH = UPDATE_CONFIG_FILE;
+// 更新配置文件路径
+const UPDATE_CONFIG_PATH = path.join(require('os').homedir(), '.versepc', 'update-config.json');
 
 // 依赖注入的句柄
 let _getMainWindow = null;
@@ -84,11 +83,13 @@ async function fetchUpdateJson() {
   for (const url of UPDATE_JSON_SOURCES) {
     try {
       const fetchUrl = url + '?t=' + bust;
+      console.log('[Updater] Trying source:', fetchUrl.substring(0, 80));
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 8000);
       const response = await net.fetch(fetchUrl, { signal: controller.signal });
       clearTimeout(timeout);
       if (!response.ok) {
+        console.log('[Updater] Source returned', response.status);
         continue;
       }
       const data = await response.json();
@@ -97,6 +98,7 @@ async function fetchUpdateJson() {
         return data;
       }
     } catch (e) {
+      console.log('[Updater] Source failed:', e.message);
     }
   }
   return null;
@@ -140,6 +142,7 @@ async function downloadWithFallback(fileInfo, targetPath, onProgress) {
       clearTimeout(timeout);
 
       if (!response.ok) {
+        console.log('[Updater] Download failed, status:', response.status);
         continue;
       }
 
@@ -173,6 +176,7 @@ async function downloadWithFallback(fileInfo, targetPath, onProgress) {
       console.log('[Updater] Download complete:', targetPath);
       return true;
     } catch (e) {
+      console.log('[Updater] Download source failed:', downloadUrl, e.message);
     }
   }
   return false;
@@ -226,6 +230,7 @@ function initAutoUpdater() {
       sendToUpdateUI('checking-for-update');
       const updateInfo = await fetchUpdateJson();
       if (!updateInfo) {
+        console.log('[Updater] No update info available');
         sendToUpdateUI('update-error', {
           message: '无法获取更新信息，请检查网络连接后重试',
           hint: '可尝试使用 VPN 或稍后再试'

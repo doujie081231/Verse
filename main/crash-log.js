@@ -6,8 +6,10 @@
  * 将错误信息追加写入 crash.log，超过 5MB 时触发日志轮转。
  */
 
-const { CRASH_LOG_FILE } = require('./paths');
-const _crashLogPath = CRASH_LOG_FILE;
+const _crashLogPath = require('path').join(
+  process.env.APPDATA || require('path').join(require('os').homedir(), 'AppData', 'Roaming'),
+  'VersePC', 'crash.log'
+);
 const _crashLogOldPath = _crashLogPath + '.old';
 const _CRASH_LOG_MAX_SIZE = 5 * 1024 * 1024; // 5MB 触发轮转
 
