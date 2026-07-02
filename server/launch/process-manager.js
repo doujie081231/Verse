@@ -360,7 +360,8 @@ async function doLaunch(versionId, versionJson, settings, account, externalVersi
     const spawnOptions = {
       cwd: gameDir,
       env: { ...process.env },
-      stdio: ['ignore', 'pipe', 'pipe']
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: true
     };
 
     // Windows 启动前内存优化：执行 DoRound PowerShell 脚本回收系统缓存
