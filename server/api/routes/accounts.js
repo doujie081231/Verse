@@ -186,6 +186,8 @@ module.exports = {
                 uuid: uuid,
                 type: 'offline',
                 accessToken: '0',
+                skinFile: 'steve_skin.png',
+                skinModel: 'default',
                 createdAt: new Date().toISOString()
             };
             accountsList.push(newAccount);
