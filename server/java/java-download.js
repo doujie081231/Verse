@@ -176,7 +176,7 @@ async function downloadJavaAsync(majorVersion, sessionId, sessionFile, mirrorInd
 
     // 平台与架构映射：Mojang 风格 platformKey → Adoptium 风格 arch/osName
     const archMap = { 'windows-x64': 'x64', 'windows-arm64': 'aarch64', 'linux': 'x64', 'linux-i386': 'x86', 'mac-os': 'x64', 'mac-os-arm64': 'aarch64' };
-    const platformKey = utils.getPlatformKeys();
+    const platformKey = utils.getPlatformKey();
     const arch = archMap[platformKey] || 'x64';
     const osName = process.platform === 'win32' ? 'windows' : (process.platform === 'darwin' ? 'macos' : 'linux');
 
