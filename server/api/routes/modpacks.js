@@ -43,12 +43,12 @@ module.exports = {
 
             if (/[\u4e00-\u9fff\u3400-\u4dbf]/.test(mpQuery)) {
                 try {
-                    const cnMod = require('../../../js/mod-chinese-names.js');
+                    const cnMod = require('../../data/mod-chinese-names.js');
                     const translated = cnMod.translateChineseSearch(mpQuery, 'modpack');
                     if (translated) mpQuery = translated;
                 } catch (e) {
                     try {
-                        const cnKeys = Object.entries(require('../../../js/mod-chinese-names.js').CHINESE_SEARCH_KEYWORDS_MODPACK || {});
+                        const cnKeys = Object.entries(require('../../data/mod-chinese-names.js').CHINESE_SEARCH_KEYWORDS_MODPACK || {});
                         for (const [cn, enList] of cnKeys) {
                             if (mpQuery.includes(cn) || cn.includes(mpQuery)) { mpQuery = enList.join(' '); break; }
                         }

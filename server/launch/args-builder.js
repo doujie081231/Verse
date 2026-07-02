@@ -157,28 +157,35 @@ function buildLaunchArguments(versionJson, settings, account, versionId, customG
   // [关键修复 2026-06-30] 通过 resolveMemoryMode 纯函数决策模式：
   // 旧逻辑 `if (settings.maxMemory)` 因 settings.maxMemory 默认 4096 始终为真，
   // 导致 312 个 mod 的大型整合包在 4096MB 下 OOM 崩溃，绕过 auto 自动提高逻辑。
-  let hasLaunchSettings = false;
-  let launchMemoryMode = null;
-  let launchMemoryValue = null;
-  try {
-    const storePath = path.join(ctx.dirs.DATA_DIR, 'app-store.json');
-    if (fs.existsSync(storePath)) {
-      const store = JSON.parse(fs.readFileSync(storePath, 'utf8'));
-      const launchStr = store['versepc_launch_settings'];
-      if (launchStr) {
-        hasLaunchSettings = true;
-        const launchSettings = JSON.parse(launchStr);
-        launchMemoryMode = launchSettings.memoryMode || 'auto';
-        launchMemoryValue = launchSettings.memoryValue;
+  // [关键修复 2026-07-02] 版本级内存设置（version-settings.json 的 memoryMode/memoryValue）
+  // 优先级最高：用户为特定版本专门配置的内存，必须生效，否则 auto 算出的值可能超出物理内存导致崩溃
+  if (settings.memoryMode === 'custom' && settings.memoryValue) {
+    var memoryMode = 'custom';
+    var memoryValue = settings.memoryValue;
+  } else {
+    let hasLaunchSettings = false;
+    let launchMemoryMode = null;
+    let launchMemoryValue = null;
+    try {
+      const storePath = path.join(ctx.dirs.DATA_DIR, 'app-store.json');
+      if (fs.existsSync(storePath)) {
+        const store = JSON.parse(fs.readFileSync(storePath, 'utf8'));
+        const launchStr = store['versepc_launch_settings'];
+        if (launchStr) {
+          hasLaunchSettings = true;
+          const launchSettings = JSON.parse(launchStr);
+          launchMemoryMode = launchSettings.memoryMode || 'auto';
+          launchMemoryValue = launchSettings.memoryValue;
+        }
       }
-    }
-  } catch (e) {}
-  const { memoryMode, memoryValue } = resolveMemoryMode({
-    settingsMaxMemory: settings.maxMemory,
-    hasLaunchSettings,
-    launchMemoryMode,
-    launchMemoryValue
-  });
+    } catch (e) {}
+    var { memoryMode, memoryValue } = resolveMemoryMode({
+      settingsMaxMemory: settings.maxMemory,
+      hasLaunchSettings,
+      launchMemoryMode,
+      launchMemoryValue
+    });
+  }
   const totalMB = Math.floor(os.totalmem() / 1024 / 1024);
   const freeMB = Math.floor(os.freemem() / 1024 / 1024);
   const maxMemMB = resolveMaxMemory({ memoryMode, memoryValue, totalMB, freeMB, modCount });

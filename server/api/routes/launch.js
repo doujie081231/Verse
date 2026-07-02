@@ -71,7 +71,7 @@ module.exports = {
       } catch (e) {
       }
 
-      // 读取版本级设置（优先级高于全局设置），覆盖自定义信息、窗口标题、全屏、分辨率
+      // 读取版本级设置（优先级高于全局设置），覆盖自定义信息、窗口标题、全屏、分辨率、内存
       try {
         const verSettings = versions.loadVersionSettings(versionId);
         if (verSettings.customInfo) {
@@ -85,6 +85,14 @@ module.exports = {
         }
         if (verSettings.resolution && verSettings.resolution !== '') {
           settings.resolution = verSettings.resolution;
+        }
+        // 版本级内存设置优先级最高：用户为这个版本专门配置的，必须生效
+        if (verSettings.memoryMode === 'custom' && verSettings.memoryValue) {
+          settings.memoryMode = 'custom';
+          settings.memoryValue = verSettings.memoryValue;
+        } else if (verSettings.memoryMode === 'auto') {
+          settings.memoryMode = 'auto';
+          settings.memoryValue = null;
         }
       } catch (e) {
       }

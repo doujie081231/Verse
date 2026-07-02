@@ -12,6 +12,7 @@ const os = require('os');
 
 const ctx = require('./context');
 const utils = require('./utils');
+const logger = require('./logger').createLogger('Accounts');
 
 // ============================================================================
 // 收藏夹
@@ -128,10 +129,21 @@ function loadAccounts() {
     if (Array.isArray(raw)) {
         result = raw.map(acc => {
             if (acc.accessToken && acc.accessToken.startsWith('enc:')) {
-                try { acc.accessToken = decryptToken(acc.accessToken.slice(4)); } catch (e) {}
+                try { acc.accessToken = decryptToken(acc.accessToken.slice(4)); }
+                catch (e) {
+                    // 令牌解密失败不能静默：标记账号需要重新登录，而非继续用加密态令牌
+                    console.warn(`[Accounts] accessToken 解密失败 (账号 ${acc.username || acc.id || '未知'}): ${e.message}，标记需要重新登录`);
+                    acc.accessToken = '';
+                    acc._needRelogin = true;
+                }
             }
             if (acc.refreshToken && acc.refreshToken.startsWith('enc:')) {
-                try { acc.refreshToken = decryptToken(acc.refreshToken.slice(4)); } catch (e) {}
+                try { acc.refreshToken = decryptToken(acc.refreshToken.slice(4)); }
+                catch (e) {
+                    logger.warn(`refreshToken 解密失败 (账号 ${acc.username || acc.id || '未知'}): ${e.message}`);
+                    acc.refreshToken = '';
+                    acc._needRelogin = true;
+                }
             }
             return acc;
         });

@@ -13,7 +13,7 @@ const http = require('../http-client');
 const versions = require('../versions');
 const modloaders = require('../modloaders');
 
-const { _dedupeVersionId, isModpackPathSafe, _repairCorruptedModJars } = require('./shared');
+const { _dedupeVersionId, isModpackPathSafe, _repairCorruptedModJars, relocateMisplacedResourcePacks, resolveConcurrency, computeModTimeout, createProgressUpdater } = require('./shared');
 
 /**
  * 导入 Modrinth (.mrpack) 整合包（解析 manifest、安装基础版本与加载器、下载 mods 与 overrides）。
@@ -561,6 +561,16 @@ async function _importMrpack(zip, manifestEntry, filePath, progress, targetVersi
     }
     utils._writeImportLog(`<<< [步骤4/5] 解压完成: ${extractCount} 个文件, 耗时=${Math.round((Date.now() - _extractStartTime) / 1000)}s`);
 
+    // 修正：mods 目录下误放的资源包 zip 移到 resourcepacks（整合包作者打包结构错误时自动修复）
+    try {
+      const relocated = relocateMisplacedResourcePacks(versionDir);
+      if (relocated.relocated.length > 0) {
+        console.log(`[Modpack] 检测到 ${relocated.relocated.length} 个资源包 zip 误放在 mods 目录，已自动移动到 resourcepacks: ${relocated.relocated.join(', ')}`);
+      }
+    } catch (e) {
+      console.warn(`[Modpack] 资源包重定位失败（非致命）: ${e.message}`);
+    }
+
     try {
       const vsPath = path.join(versionDir, 'version-settings.json');
       let vs = {};
@@ -597,49 +607,21 @@ async function _importMrpack(zip, manifestEntry, filePath, progress, targetVersi
     progress('mods', `下载 Mod 文件 (共 ${filesList.length} 个)...`, 50, [...overrideFiles, ...modFiles], '');
 
     const _modsStartTime = Date.now();
-    const PARALLEL_MODS = Math.min(parseInt(settings.maxThreads, 10) || 64, 64);
+    const PARALLEL_MODS = resolveConcurrency(settings);
     utils._writeImportLog(`>>> [步骤5/5] 模组下载: 共 ${filesList.length} 个, 并发=${PARALLEL_MODS}`);
     let okCount = 0, failCount = 0;
     let inFlight = 0;
     const _modAgent = new https.Agent({ keepAlive: true, keepAliveMsecs: 60000, maxSockets: PARALLEL_MODS * 4 + 16, maxFreeSockets: PARALLEL_MODS * 2 + 8, timeout: 120000 });
     const _prevConnLimit = ctx.DownloadManager.connectionLimit;
     ctx.DownloadManager.connectionLimit = Math.min(Math.max(PARALLEL_MODS * 4, 64), 128);
-    let lastProgUpdate = 0;
-    let lastReportedPct = 0;
-    let smoothPct = 0;
-
-    const _totalModSize = modFiles.reduce((sum, mf) => sum + Math.max(mf.size || 0, 102400), 0);
-    const _modWeights = modFiles.map((mf) => Math.max(mf.size || 0, 102400) / _totalModSize);
-
-    const getModTimeout = (sizeBytes) => {
-      if (sizeBytes > 50 * 1024 * 1024) return 600000;
-      if (sizeBytes > 20 * 1024 * 1024) return 300000;
-      if (sizeBytes > 5 * 1024 * 1024) return 180000;
-      return 120000;
-    };
-
-    const updateOverall = () => {
-      const now = Date.now();
-      let weightedPct = 0;
-      for (let i = 0; i < modFiles.length; i++) {
-        const mf = modFiles[i];
-        const w = _modWeights[i] || (1 / modFiles.length);
-        weightedPct += ((mf.status === 'completed' || mf.status === 'failed') ? 100 : (mf.progress || 0)) * w;
-      }
-      const pct = 50 + Math.round((weightedPct / 100) * 45);
-      const clamped = Math.min(pct, 95);
-      if (smoothPct <= 0 || clamped <= smoothPct) {
-        smoothPct = clamped;
-      } else {
-        smoothPct = smoothPct * 0.75 + clamped * 0.25;
-      }
-      const finalPct = Math.max(lastReportedPct, Math.round(smoothPct));
-      if (finalPct <= lastReportedPct && now - lastProgUpdate < 200) return;
-      lastReportedPct = finalPct;
-      lastProgUpdate = now;
-      const totalDone = okCount + failCount;
-      progress('mods', `下载 Mod (${totalDone}/${filesList.length}, ${inFlight}个进行中)`, lastReportedPct, [...overrideFiles, ...modFiles], '');
-    };
+    const { update: updateOverall } = createProgressUpdater({
+      modFiles,
+      overrideFiles,
+      modCount: filesList.length,
+      progress,
+      getDoneCount: () => okCount + failCount,
+      getInFlight: () => inFlight
+    });
 
     const dlMod = async (fileEntry, index) => {
       inFlight++;
@@ -688,7 +670,7 @@ async function _importMrpack(zip, manifestEntry, filePath, progress, targetVersi
           }
           updateOverall();
         };
-        const _modTimeout = getModTimeout(fileSize);
+        const _modTimeout = computeModTimeout(fileSize);
 
         for (const tryUrl of allUrls) {
           if (downloaded || (abortSignal && abortSignal.aborted)) break;

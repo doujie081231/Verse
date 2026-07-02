@@ -13,7 +13,7 @@ const http = require('../http-client');
 const versions = require('../versions');
 const modloaders = require('../modloaders');
 
-const { _dedupeVersionId, isModpackPathSafe, _repairCorruptedModJars } = require('./shared');
+const { _dedupeVersionId, isModpackPathSafe, _repairCorruptedModJars, relocateMisplacedResourcePacks, resolveConcurrency, computeModTimeout, createProgressUpdater } = require('./shared');
 
 /**
  * 导入 CurseForge 整合包（解析 manifest、安装基础版本与加载器、下载 mods 与 overrides）。
@@ -102,7 +102,9 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
     fs.mkdirSync(versionDir, { recursive: true });
   }
 
-  const cfApiKey = settings.curseforgeApiKey || '$2a$10$bL4bIL5pUWqfcO7KQtnMReakwtfHbNKh6v1uTpKlzhwoueEJQnPnm';
+  // 移除硬编码 API Key fallback：内置 Key 会被打包进发布版，存在泄露风险
+  // 无 Key 时走已有的降级逻辑（仅解压 overrides，提示用户在设置中配置）
+  const cfApiKey = settings.curseforgeApiKey || '';
 
   let loaderVersionId = null;
 
@@ -262,6 +264,16 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
       }
     }
 
+    // 修正：mods 目录下误放的资源包 zip 移到 resourcepacks（整合包作者打包结构错误时自动修复）
+    try {
+      const relocated = relocateMisplacedResourcePacks(versionDir);
+      if (relocated.relocated.length > 0) {
+        console.log(`[Modpack] 检测到 ${relocated.relocated.length} 个资源包 zip 误放在 mods 目录，已自动移动到 resourcepacks: ${relocated.relocated.join(', ')}`);
+      }
+    } catch (e) {
+      console.warn(`[Modpack] 资源包重定位失败（非致命）: ${e.message}`);
+    }
+
     try {
       const vsPath = path.join(versionDir, 'version-settings.json');
       let vs = {};
@@ -282,43 +294,17 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
     let cfDownloadedCount = 0;
     let cfFailedCount = 0;
     let cfInFlight = 0;
-    const CF_PARALLEL = Math.min(parseInt(settings.maxThreads, 10) || 32, 64);
+    const CF_PARALLEL = resolveConcurrency(settings);
     const _cfAgent = new https.Agent({ keepAlive: true, keepAliveMsecs: 30000, maxSockets: CF_PARALLEL + 8, maxFreeSockets: 16, timeout: 120000 });
-    let cfLastProgUpdate = 0;
-    let cfLastReportedPct = 0;
-    let cfSmoothPct = 0;
 
-    const _cfTotalModSize = cfModFiles.reduce((sum, mf) => sum + Math.max(mf.size || 0, 102400), 0);
-    const _cfModWeights = cfModFiles.map((mf) => Math.max(mf.size || 0, 102400) / _cfTotalModSize);
-
-    const getCfModTimeout = (sizeBytes) => {
-      if (sizeBytes > 50 * 1024 * 1024) return 600000;
-      if (sizeBytes > 20 * 1024 * 1024) return 300000;
-      if (sizeBytes > 5 * 1024 * 1024) return 180000;
-      return 120000;
-    };
-
-    const cfUpdateOverall = () => {
-      const now = Date.now();
-      let weightedPct = 0;
-      for (let i = 0; i < cfModFiles.length; i++) {
-        const mf = cfModFiles[i];
-        const w = _cfModWeights[i] || (1 / cfModFiles.length);
-        weightedPct += ((mf.status === 'completed' || mf.status === 'failed') ? 100 : (mf.progress || 0)) * w;
-      }
-      const pct = 50 + Math.round((weightedPct / 100) * 45);
-      const clamped = Math.min(pct, 95);
-      if (cfSmoothPct <= 0 || clamped <= cfSmoothPct) {
-        cfSmoothPct = clamped;
-      } else {
-        cfSmoothPct = cfSmoothPct * 0.75 + clamped * 0.25;
-      }
-      const finalPct = Math.max(cfLastReportedPct, Math.round(cfSmoothPct));
-      if (finalPct <= cfLastReportedPct && now - cfLastProgUpdate < 200) return;
-      cfLastReportedPct = finalPct;
-      cfLastProgUpdate = now;
-      progress('mods', `下载 Mod (${cfDownloadedCount}/${cfFiles.length}, ${cfInFlight}个进行中)`, cfLastReportedPct, [...overrideFiles, ...cfModFiles], '');
-    };
+    const { update: cfUpdateOverall } = createProgressUpdater({
+      modFiles: cfModFiles,
+      overrideFiles,
+      modCount: cfFiles.length,
+      progress,
+      getDoneCount: () => cfDownloadedCount,
+      getInFlight: () => cfInFlight
+    });
 
     const dlCFMod = async (file, index) => {
       cfInFlight++;
@@ -360,7 +346,7 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
               cfDownloaded = true;
             } else {
               const perTryAbort = new AbortController();
-              const cfTimeout = getCfModTimeout(fileInfo?.data?.fileLength || fileSize || 0);
+              const cfTimeout = computeModTimeout(fileInfo?.data?.fileLength || fileSize || 0);
               const perTryTimeout = setTimeout(() => { try { perTryAbort.abort(); } catch (_) {} },
                 Math.max(120000, cfTimeout + 30000));
               if (abortSignal) {
@@ -383,7 +369,7 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
                       retries: 3,
                       stallTimeout: 45000,
                       abortSignal: perTryAbort.signal,
-                      timeout: getCfModTimeout(fileInfo?.data?.fileLength || 0),
+                      timeout: computeModTimeout(fileInfo?.data?.fileLength || 0),
                       agent: _cfAgent
                     });
                     if (utils.isJarIntact(destPath)) {

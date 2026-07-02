@@ -21,7 +21,8 @@
         "build:publish": "electron-builder --win --linux --mac --publish always",
         "build:beta": "node scripts/protect-build.js && node build-scripts/generate-integrity.js && electron-builder --win --publish never && node scripts/protect-build.js --restore",
         "protect": "node scripts/protect-build.js",
-        "restore": "node scripts/protect-build.js --restore"
+        "restore": "node scripts/protect-build.js --restore",
+        "test": "node --test --test-force-exit test/*.js server/launch/*.test.js server/versions/*.test.js"
     },
     "dependencies": {
         "@xterm/addon-fit": "^0.11.0",

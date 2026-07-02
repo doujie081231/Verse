@@ -33,12 +33,12 @@ module.exports = {
       // 中文搜索词翻译：尝试用中文映射表转为英文关键词
       if (/[\u4e00-\u9fff\u3400-\u4dbf]/.test(rawQuery)) {
         try {
-          const cnMod = require('../../../../js/mod-chinese-names.js');
+          const cnMod = require('../../../data/mod-chinese-names.js');
           const translated = cnMod.translateChineseSearch(rawQuery, 'mod');
           if (translated) rawQuery = translated;
         } catch (e) {
           try {
-            const cnKeys = Object.entries(require('../../../../js/mod-chinese-names.js').CHINESE_SEARCH_KEYWORDS || {});
+            const cnKeys = Object.entries(require('../../../data/mod-chinese-names.js').CHINESE_SEARCH_KEYWORDS || {});
             for (const [cn, enList] of cnKeys) {
               if (rawQuery.includes(cn) || cn.includes(rawQuery)) { rawQuery = enList.join(' '); break; }
             }
