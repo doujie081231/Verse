@@ -61,10 +61,15 @@ if (!fs.existsSync(versionDir)) fs.mkdirSync(versionDir, { recursive: true });
 
 const vjId = path.basename(versionDir);
 vj.id = vjId;
-// [CRITICAL - 2026-06-20] inheritsFrom 必须指向纯净的 MC 版本号（如 "26.2"），不能是 Forge 版本号。
-// GAME_VER 是从前端传入的 MC 版本号，FORGE_VER 是 Forge 版本号（如 "64.0.10"）。
-// 如果 inheritsFrom 写错，launcher 会继承错误的基础版本，导致启动时缺少关键类而崩溃。
-if (!vj.inheritsFrom) vj.inheritsFrom = GAME_VER || FORGE_VER;
+// [CRITICAL - 2026-06-20] inheritsFrom 必须指向纯净的 MC 版本号（如 "1.21.1"），不能是 Forge/NeoForge 版本号。
+// Forge 1.20.6+ 的 version.json 里 inheritsFrom 可能指向 "neoforge-X.X.X" 等非原版版本，
+// 导致合并时找不到正确的原版 JSON，或者合并了错误的父版本参数。
+// 必须强制覆盖为 GAME_VER（原版 MC 版本号），确保合并正确的原版内容。
+if (GAME_VER) {
+    vj.inheritsFrom = GAME_VER;
+} else if (!vj.inheritsFrom) {
+    vj.inheritsFrom = FORGE_VER;
+}
 
 const vjPath = path.join(versionDir, `${vjId}.json`);
 fs.writeFileSync(vjPath, JSON.stringify(vj, null, 2));

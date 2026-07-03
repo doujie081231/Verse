@@ -23,6 +23,11 @@ const { installForge } = forge;
 const { mergeFabricLoaderToVersion, autoDownloadFabricApi } = fabric;
 const { mergeNeoForgeLoaderToVersion } = neoforge;
 const { mergeOptiFineToVersion } = optifine;
+// [CRITICAL - 2026-07-03] natives.js 顶层 require('./modloaders') 形成循环依赖。
+// 如果这里也顶层 require('../natives')，Node.js 会返回部分加载的空对象，
+// 导致运行时 modloaders.findForgeCoreJars is not a function。
+// 改为延迟 require：在函数内部调用时才加载，此时 modloaders 的 module.exports 已完成。
+function _natives() { return require('../natives'); }
 
 /* 懒加载 server.js 中尚未抽取到子模块的函数（避免循环依赖）。
    这些函数在 server.js 完成迁移后会通过 module.exports 暴露。 */
@@ -55,6 +60,7 @@ async function performInstallation(sessionId, versionDetails) {
   const isAborted = () => {
     return session.status === 'cancelled' || (session._abortController && session._abortController.signal.aborted);
   };
+  let speedSyncTimer;
   const abortCleanup = () => {
     if (speedSyncTimer) clearInterval(speedSyncTimer);
     const vd = path.join(ctx.dirs.VERSIONS_DIR, versionDetails.id);
@@ -101,7 +107,7 @@ async function performInstallation(sessionId, versionDetails) {
     session.message = '下载版本信息...';
     session.progress = calcProgress('version_json', 0.5);
 
-    let speedSyncTimer = setInterval(() => {
+    speedSyncTimer = setInterval(() => {
       if (session.status === 'downloading') {
         session.speed = ctx.DownloadManager.getSpeed();
       }
@@ -483,7 +489,7 @@ async function performInstallation(sessionId, versionDetails) {
     session.progress = calcProgress('natives', 0.5);
     session.currentFile = '';
 
-    _server().extractNatives(versionDetails, versionId);
+    _natives().extractNatives(versionDetails, versionId);
 
     session.stage = 'loader';
     session.message = '完成安装...';
@@ -540,15 +546,13 @@ async function performInstallation(sessionId, versionDetails) {
             session.progress = Math.min(94 + p * 4, 98);
             session.message = msg || `正在安装Forge ${loaderVersion}...`;
           }, null, versionId);
-          if (loaderResult.success && loaderResult.versionId) {
-            const versionJsonPath = path.join(ctx.dirs.VERSIONS_DIR, versionId, `${versionId}.json`);
-            if (fs.existsSync(versionJsonPath)) {
-              const vj = JSON.parse(fs.readFileSync(versionJsonPath, 'utf-8'));
-              vj.inheritsFrom = gameVersion;
-              fs.writeFileSync(versionJsonPath, JSON.stringify(vj, null, 2));
-              versions._invalidateResolvedJsonCache(versionId);
-            }
-          }
+          // [CRITICAL - 2026-07-03] 不要在 installForge 成功后把 inheritsFrom 写回去！
+          // forge-installer.js 子进程已经合并了父版本内容并删除了 inheritsFrom，
+          // 使版本成为自包含的基础版本。如果这里把 inheritsFrom 加回去，
+          // resolveVersionJson 启动时会重新合并父版本参数，
+          // 导致引导库（securejarhandler 等）被重复加载到 JPMS 模块层，
+          // 触发 "Module X reads more than one module named Y" 冲突。
+          // 参考：1.21.1-Forge-52.1.142 启动崩溃问题。
         } else if (loaderType === 'neoforge') {
           await mergeNeoForgeLoaderToVersion(versionId, gameVersion, loaderVersion, loaderProgress);
         } else if (loaderType === 'optifine') {
@@ -577,7 +581,7 @@ async function performInstallation(sessionId, versionDetails) {
 
       const mergedJson = versions.resolveVersionJson(versionId);
       if (mergedJson) {
-        _server().extractNatives(mergedJson, versionId);
+        _natives().extractNatives(mergedJson, versionId);
       }
     }
 

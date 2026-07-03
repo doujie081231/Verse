@@ -540,6 +540,38 @@ function buildLaunchArguments(versionJson, settings, account, versionId, customG
     }
   }
 
+  // Forge 1.20.6+/NeoForge: 把 module-path (-p) 中的引导 JAR 加入 ignoreList，
+  // 避免 BootstrapLauncher 从 classpath 重复加载这些 JAR 为 JPMS 模块，
+  // 触发 "Module X reads more than one module named Y" 冲突。
+  // 匹配 BootstrapLauncher 的 ignoreList 语义：检查 JAR 文件名是否以条目前缀开头。
+  const _pIdx = jvmArgs.findIndex((a) => a === '-p' || a === '--module-path');
+  if (_pIdx >= 0 && _pIdx + 1 < jvmArgs.length) {
+    const _modulePathStr = jvmArgs[_pIdx + 1];
+    const _mpSep = process.platform === 'win32' ? ';' : ':';
+    const _moduleJars = String(_modulePathStr).split(_mpSep).filter((p) => p.endsWith('.jar'));
+    const _mpPrefixes = new Set();
+    for (const _jarPath of _moduleJars) {
+      const _bn = path.basename(_jarPath);
+      const _m = _bn.match(/^(.+?)-\d/);
+      if (_m) _mpPrefixes.add(_m[1]);
+      else _mpPrefixes.add(_bn.replace(/\.jar$/, ''));
+    }
+    if (_mpPrefixes.size > 0) {
+      const _ilIdx = jvmArgs.findIndex((a) => typeof a === 'string' && a.startsWith('-DignoreList='));
+      if (_ilIdx >= 0) {
+        const _existingItems = jvmArgs[_ilIdx].substring('-DignoreList='.length).split(',').filter((s) => s);
+        for (const _pf of _mpPrefixes) {
+          if (!_existingItems.some((it) => it === _pf)) _existingItems.push(_pf);
+        }
+        jvmArgs[_ilIdx] = `-DignoreList=${_existingItems.join(',')}`;
+        console.log(`[Launch] 已将 module-path 引导 JAR 前缀加入 ignoreList: ${[..._mpPrefixes].join(', ')}`);
+      } else {
+        jvmArgs.push(`-DignoreList=${[..._mpPrefixes].join(',')}`);
+        console.log(`[Launch] 已创建 ignoreList 并加入 module-path 引导 JAR: ${[..._mpPrefixes].join(', ')}`);
+      }
+    }
+  }
+
   // 始终使用我们自己的完整 classpath（用系统分隔符 join），跳过 JSON 自带的残缺 classpath
   const cpSeparator = process.platform === 'win32' ? ';' : ':';
   const classpathStr = Array.isArray(classpath) ? classpath.join(cpSeparator) : classpath;

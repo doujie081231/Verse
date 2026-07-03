@@ -727,6 +727,14 @@ async function installForge(gameVersion, forgeVersion, onProgress = null, mirror
             if (doneMsg && doneMsg.success) {
                 try {
                     const vJsonPath = path.join(versionDir, `${versionId}.json`);
+                    if (!fs.existsSync(vJsonPath)) {
+                        try { if (fs.existsSync(versionDir)) fs.rmSync(versionDir, { recursive: true, force: true }); } catch (_) {}
+                        try { if (fs.existsSync(installerPath)) fs.unlinkSync(installerPath); } catch (_) {}
+                        try { if (fs.existsSync(configPath)) fs.unlinkSync(configPath); } catch (_) {}
+                        try { if (fs.existsSync(installerScriptDst)) fs.unlinkSync(installerScriptDst); } catch (_) {}
+                        resolve({ success: false, error: `Forge 安装失败：版本配置文件未生成（子进程未完成 JSON 写入）` });
+                        return;
+                    }
                     if (fs.existsSync(vJsonPath)) {
                         const vJson = JSON.parse(fs.readFileSync(vJsonPath, 'utf8'));
 
@@ -785,6 +793,7 @@ async function installForge(gameVersion, forgeVersion, onProgress = null, mirror
                         if (missing.length > 0 && onProgress) onProgress(0.95, `下载 Forge 库文件 (0/${missing.length})...`);
                         if (missing.length > 0) {
                             const FORGE_LIB_PARALLEL = 32;
+                            const FORGE_LIB_TIMEOUT = 180000;
                             let completed = 0;
                             let failed = 0;
                             let active = 0;
@@ -795,33 +804,39 @@ async function installForge(gameVersion, forgeVersion, onProgress = null, mirror
                                     const lib = missing[completed + failed + active];
                                     active++;
                                     (async () => {
-                                        if (lib._mavenPath) {
-                                            const lp = path.join(ctx.dirs.LIBRARIES_DIR, lib._mavenPath);
-                                            utils.ensureDir(path.join(lp, 'dummy'));
-                                            const urls = [];
-                                            if (lib._url) urls.push(lib._url.replace(/\/$/, '') + '/' + lib._mavenPath.split('/').pop());
-                                            urls.push(
-                                                `https://maven.minecraftforge.net/${lib._mavenPath}`,
-                                                `https://libraries.minecraft.net/${lib._mavenPath}`,
-                                                `https://bmclapi2.bangbang93.com/maven/${lib._mavenPath}`,
-                                            );
-                                            let ok = false;
-                                            for (const u of urls) {
-                                                try {
-                                                    await http.downloadFileWithMirror(u, lp, null, 1, null, 60000);
-                                                    ok = true;
-                                                    break;
-                                                } catch (dlErr) {
-                                                    console.warn(`[installForge] 下载 ${lib.name} 从 ${u} 失败: ${dlErr.message}`);
+                                        const downloadTask = async () => {
+                                            if (lib._mavenPath) {
+                                                const lp = path.join(ctx.dirs.LIBRARIES_DIR, lib._mavenPath);
+                                                utils.ensureDir(path.join(lp, 'dummy'));
+                                                const urls = [];
+                                                if (lib._url) urls.push(lib._url.replace(/\/$/, '') + '/' + lib._mavenPath.split('/').pop());
+                                                urls.push(
+                                                    `https://maven.minecraftforge.net/${lib._mavenPath}`,
+                                                    `https://libraries.minecraft.net/${lib._mavenPath}`,
+                                                    `https://bmclapi2.bangbang93.com/maven/${lib._mavenPath}`,
+                                                );
+                                                let ok = false;
+                                                for (const u of urls) {
+                                                    try {
+                                                        await http.downloadFileWithMirror(u, lp, null, 1, null, 60000);
+                                                        ok = true;
+                                                        break;
+                                                    } catch (dlErr) {
+                                                        console.warn(`[installForge] 下载 ${lib.name} 从 ${u} 失败: ${dlErr.message}`);
+                                                    }
                                                 }
+                                                if (!ok) throw new Error('所有下载源均失败');
+                                            } else {
+                                                const dl = lib.downloads.artifact;
+                                                const lp = path.join(ctx.dirs.LIBRARIES_DIR, dl.path);
+                                                utils.ensureDir(path.join(lp, 'dummy'));
+                                                await http.downloadFileWithMirror(dl.url, lp, null, 2, null, 60000);
                                             }
-                                            if (!ok) throw new Error('所有下载源均失败');
-                                        } else {
-                                            const dl = lib.downloads.artifact;
-                                            const lp = path.join(ctx.dirs.LIBRARIES_DIR, dl.path);
-                                            utils.ensureDir(path.join(lp, 'dummy'));
-                                            await http.downloadFileWithMirror(dl.url, lp, null, 2, null, 60000);
-                                        }
+                                        };
+                                        await Promise.race([
+                                            downloadTask(),
+                                            new Promise((_, reject) => setTimeout(() => reject(new Error(`下载超时 (${FORGE_LIB_TIMEOUT / 1000}s)`)), FORGE_LIB_TIMEOUT))
+                                        ]);
                                     })().then(() => {
                                         completed++;
                                     }).catch((e) => {

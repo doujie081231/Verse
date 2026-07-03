@@ -114,6 +114,62 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
 
     console.log(`[LaunchGame] JSON已解析, mainClass: ${versionJson.mainClass}, inheritsFrom: ${versionJson.inheritsFrom}`);
 
+    // [SELF-HEAL - 2026-07-03] Forge 1.20.6+ 版本的 JSON 可能仍保留 inheritsFrom 指向 neoforge 父版本，
+    // 导致 resolveVersionJson 合并父版本参数后触发 JPMS 模块冲突（securejarhandler 被重复加载）。
+    // 自愈逻辑：如果 inheritsFrom 指向非原版 MC 版本（含 forge/neoforge/fabric），说明子版本合并不完整，
+    // 需要找到原版 MC 版本号，重新合并所有继承链的内容，删除 inheritsFrom，让版本成为自包含的基础版本。
+    if (versionJson.inheritsFrom && versionJson.mainClass &&
+        (versionJson.mainClass.includes('ForgeBootstrap') || versionJson.mainClass.includes('BootstrapLauncher'))) {
+      const ifStr = versionJson.inheritsFrom;
+      const isNonVanillaParent = ifStr.toLowerCase().includes('forge') ||
+          ifStr.toLowerCase().includes('neoforge') || ifStr.toLowerCase().includes('fabric');
+      if (isNonVanillaParent) {
+        console.log(`[LaunchGame] 检测到 Forge 版本 inheritsFrom 指向非原版 (${ifStr})，启动自愈合并...`);
+        // 从版本 ID 提取原版 MC 版本号
+        const mcVerMatch = cleanVersionId.match(/^(\d+\.\d+(?:\.\d+)?)/);
+        const vanillaId = mcVerMatch ? mcVerMatch[1] : null;
+        if (vanillaId) {
+          const vanillaPath = path.join(ctx.dirs.VERSIONS_DIR, vanillaId, `${vanillaId}.json`);
+          if (fs.existsSync(vanillaPath)) {
+            try {
+              const vJsonPath = versions.findVersionJson(path.join(ctx.dirs.VERSIONS_DIR, cleanVersionId));
+              if (vJsonPath) {
+                const rawJson = JSON.parse(fs.readFileSync(vJsonPath, 'utf-8'));
+                const vanillaJson = JSON.parse(fs.readFileSync(vanillaPath, 'utf-8'));
+                // 合并原版库（去重）
+                const seen = new Set((rawJson.libraries || []).map(l => l.name).filter(Boolean));
+                for (const vl of (vanillaJson.libraries || [])) {
+                  if (vl.name && !seen.has(vl.name)) {
+                    rawJson.libraries = rawJson.libraries || [];
+                    rawJson.libraries.push(vl);
+                    seen.add(vl.name);
+                  }
+                }
+                // 合并 arguments（如果子版本缺失）
+                if (!rawJson.arguments && vanillaJson.arguments) rawJson.arguments = vanillaJson.arguments;
+                // 补充 downloads 和 assetIndex
+                if (!rawJson.downloads && vanillaJson.downloads) rawJson.downloads = vanillaJson.downloads;
+                if (!rawJson.assetIndex && vanillaJson.assetIndex) rawJson.assetIndex = vanillaJson.assetIndex;
+                if (!rawJson.javaVersion && vanillaJson.javaVersion) rawJson.javaVersion = vanillaJson.javaVersion;
+                // 删除 inheritsFrom，使版本成为自包含的基础版本
+                delete rawJson.inheritsFrom;
+                fs.writeFileSync(vJsonPath, JSON.stringify(rawJson, null, 2));
+                versions._invalidateResolvedJsonCache(cleanVersionId);
+                // 重新解析版本 JSON
+                const healedJson = versions.resolveVersionJson(cleanVersionId, externalVersionDir);
+                if (healedJson) {
+                  Object.assign(versionJson, healedJson);
+                  console.log(`[LaunchGame] 自愈成功：已合并原版 ${vanillaId} 内容并删除 inheritsFrom`);
+                }
+              }
+            } catch (healErr) {
+              console.warn(`[LaunchGame] 自愈合并失败: ${healErr.message}`);
+            }
+          }
+        }
+      }
+    }
+
     // 修复早期 modpack 导入时 mergeVersionJson 去重逻辑丢失 natives 数据的问题：
     // 若 libraries 中 LWJGL 库缺少 natives 字段，从原版父版本 JSON 补全 natives
     // 和 downloads.classifiers，并写回磁盘（自愈：修复后下次启动不再触发）
