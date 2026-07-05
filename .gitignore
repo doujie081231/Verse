@@ -103,6 +103,7 @@ img/icon-new.png
 scripts/diag/check-jars.js
 scripts/diag/find-bad.js
 _*.js
+!server/dependencies/_shared.js
 # 运行时日志和演示遗留文件，防止再次入库
 build_log.txt
 verify_launch.txt

@@ -67,6 +67,76 @@
   <link rel="icon" type="image/x-icon" href="img/icon.ico">
 </head>
 <body>
+  <!-- SVG 图标定义 -->
+  <svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+    <!-- 主页 - 房子 -->
+    <symbol id="icon-home" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+      <polyline points="9 22 9 12 15 12 15 22"/>
+    </symbol>
+
+    <!-- 下载 - 向下箭头 -->
+    <symbol id="icon-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+      <polyline points="7 10 12 15 17 10"/>
+      <line x1="12" y1="15" x2="12" y2="3"/>
+    </symbol>
+
+    <!-- 资源 - 盒子 -->
+    <symbol id="icon-package" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="16.5" y1="9.4" x2="7.5" y2="4.21"/>
+      <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+      <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+      <line x1="12" y1="22.08" x2="12" y2="12"/>
+    </symbol>
+
+    <!-- 联机 - 地球 -->
+    <symbol id="icon-globe" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"/>
+      <line x1="2" y1="12" x2="22" y2="12"/>
+      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+    </symbol>
+
+    <!-- 工具箱 - 扳手 -->
+    <symbol id="icon-toolbox" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+    </symbol>
+
+    <!-- 账户 - 用户 -->
+    <symbol id="icon-user" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+      <circle cx="12" cy="7" r="4"/>
+    </symbol>
+
+    <!-- 设置 - 齿轮 -->
+    <symbol id="icon-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="3"/>
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+    </symbol>
+
+    <!-- Java - 咖啡杯 -->
+    <symbol id="icon-java" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M18 8h1a4 4 0 0 1 0 8h-1"/>
+      <path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/>
+      <line x1="6" y1="1" x2="6" y2="4"/>
+      <line x1="10" y1="1" x2="10" y2="4"/>
+      <line x1="14" y1="1" x2="14" y2="4"/>
+    </symbol>
+
+    <!-- 实验性 - 烧杯 -->
+    <symbol id="icon-explore" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M9 3h6v7.8L22 20a1 1 0 0 1-.8 1.6H2.8A1 1 0 0 1 2 20l7-9.2V3z"/>
+      <path d="M8.5 3h7"/>
+      <path d="M7 14h10"/>
+    </symbol>
+
+    <!-- 控制台 - 终端 -->
+    <symbol id="icon-console" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="4 17 10 11 4 5"/>
+      <line x1="12" y1="19" x2="20" y2="19"/>
+    </symbol>
+  </svg>
+
   <!-- 启动画面 -->
   <div id="splash-overlay" style="position:fixed;inset:0;z-index:999999;overflow:hidden;transition:opacity 0.3s ease,transform 0.3s ease;transform-origin:center center;background:var(--bg-primary, #ffffff);">
     <div id="splash-content" style="position:relative;z-index:10;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;">
@@ -231,105 +301,16 @@
       <nav class="sidebar">
         <div class="sidebar-nav">
           <button class="nav-btn active" data-page="home" title="主页">
-            <svg class="nav-icon-svg" viewBox="0 0 16 16" shape-rendering="crispEdges">
-              <rect x="4" y="0" width="8" height="1" fill="currentColor"/>
-              <rect x="1" y="1" width="2" height="1" fill="currentColor"/>
-              <rect x="4" y="1" width="1" height="1" fill="currentColor"/>
-              <rect x="7" y="1" width="2" height="1" fill="currentColor"/>
-              <rect x="10" y="1" width="2" height="1" fill="currentColor"/>
-              <rect x="1" y="2" width="1" height="3" fill="currentColor"/>
-              <rect x="3" y="2" width="1" height="1" fill="currentColor"/>
-              <rect x="5" y="2" width="1" height="1" fill="currentColor"/>
-              <rect x="7" y="2" width="1" height="1" fill="currentColor"/>
-              <rect x="3" y="3" width="1" height="1" fill="currentColor"/>
-              <rect x="6" y="3" width="1" height="1" fill="currentColor"/>
-              <rect x="4" y="4" width="1" height="1" fill="currentColor"/>
-              <rect x="7" y="4" width="1" height="1" fill="currentColor"/>
-              <rect x="5" y="5" width="1" height="1" fill="currentColor"/>
-              <rect x="8" y="5" width="1" height="1" fill="currentColor"/>
-              <rect x="6" y="6" width="1" height="1" fill="currentColor"/>
-              <rect x="9" y="6" width="1" height="1" fill="currentColor"/>
-              <rect x="7" y="7" width="1" height="1" fill="currentColor"/>
-              <rect x="10" y="7" width="1" height="1" fill="currentColor"/>
-              <rect x="8" y="8" width="1" height="1" fill="currentColor"/>
-              <rect x="11" y="8" width="1" height="1" fill="currentColor"/>
-              <rect x="9" y="9" width="1" height="1" fill="currentColor"/>
-              <rect x="12" y="9" width="1" height="1" fill="currentColor"/>
-              <rect x="10" y="10" width="1" height="1" fill="currentColor"/>
-              <rect x="13" y="10" width="1" height="1" fill="currentColor"/>
-              <rect x="11" y="11" width="1" height="1" fill="currentColor"/>
-              <rect x="14" y="11" width="1" height="1" fill="currentColor"/>
-              <rect x="12" y="12" width="1" height="1" fill="currentColor"/>
-              <rect x="15" y="12" width="1" height="1" fill="currentColor"/>
-              <rect x="13" y="13" width="1" height="1" fill="currentColor"/>
-              <rect x="14" y="14" width="1" height="1" fill="currentColor"/>
-            </svg>
+            <svg class="nav-icon-svg"><use href="#icon-home"/></svg>
             <span>主页</span>
           </button>
           <button class="nav-btn" data-page="versions" title="下载">
-            <svg class="nav-icon-svg" viewBox="0 0 16 16" shape-rendering="crispEdges">
-              <rect x="7" y="1" width="2" height="1" fill="currentColor"/>
-              <rect x="6" y="2" width="1" height="5" fill="currentColor"/>
-              <rect x="9" y="2" width="1" height="5" fill="currentColor"/>
-              <rect x="7" y="6" width="2" height="1" fill="currentColor"/>
-              <rect x="6" y="7" width="1" height="1" fill="currentColor"/>
-              <rect x="9" y="7" width="1" height="1" fill="currentColor"/>
-              <rect x="5" y="8" width="1" height="1" fill="currentColor"/>
-              <rect x="10" y="8" width="1" height="1" fill="currentColor"/>
-              <rect x="6" y="9" width="1" height="1" fill="currentColor"/>
-              <rect x="9" y="9" width="1" height="1" fill="currentColor"/>
-              <rect x="7" y="10" width="2" height="1" fill="currentColor"/>
-              <rect x="4" y="11" width="1" height="1" fill="currentColor"/>
-              <rect x="11" y="11" width="1" height="1" fill="currentColor"/>
-              <rect x="3" y="12" width="1" height="1" fill="currentColor"/>
-              <rect x="12" y="12" width="1" height="1" fill="currentColor"/>
-              <rect x="3" y="13" width="10" height="1" fill="currentColor"/>
-              <rect x="4" y="14" width="8" height="1" fill="currentColor"/>
-            </svg>
+            <svg class="nav-icon-svg"><use href="#icon-download"/></svg>
             <span>下载</span>
           </button>
           <div class="nav-submenu-group">
             <button class="nav-btn nav-submenu-toggle" title="资源">
-              <svg class="nav-icon-svg" viewBox="0 0 16 16" shape-rendering="crispEdges">
-                <rect x="7" y="1" width="2" height="1" fill="currentColor"/>
-                <rect x="5" y="2" width="1" height="1" fill="currentColor"/>
-                <rect x="10" y="2" width="1" height="1" fill="currentColor"/>
-                <rect x="4" y="3" width="1" height="1" fill="currentColor"/>
-                <rect x="6" y="3" width="4" height="1" fill="currentColor"/>
-                <rect x="11" y="3" width="1" height="1" fill="currentColor"/>
-                <rect x="3" y="4" width="1" height="1" fill="currentColor"/>
-                <rect x="5" y="4" width="1" height="1" fill="currentColor"/>
-                <rect x="10" y="4" width="1" height="1" fill="currentColor"/>
-                <rect x="12" y="4" width="1" height="1" fill="currentColor"/>
-                <rect x="2" y="5" width="1" height="1" fill="currentColor"/>
-                <rect x="4" y="5" width="1" height="1" fill="currentColor"/>
-                <rect x="11" y="5" width="1" height="1" fill="currentColor"/>
-                <rect x="13" y="5" width="1" height="1" fill="currentColor"/>
-                <rect x="6" y="5" width="1" height="2" fill="currentColor"/>
-                <rect x="1" y="6" width="1" height="5" fill="currentColor"/>
-                <rect x="14" y="6" width="1" height="5" fill="currentColor"/>
-                <rect x="2" y="6" width="4" height="1" fill="currentColor"/>
-                <rect x="10" y="6" width="4" height="1" fill="currentColor"/>
-                <rect x="2" y="7" width="1" height="1" fill="currentColor"/>
-                <rect x="13" y="7" width="1" height="1" fill="currentColor"/>
-                <rect x="6" y="7" width="4" height="1" fill="currentColor"/>
-                <rect x="2" y="8" width="1" height="1" fill="currentColor"/>
-                <rect x="13" y="8" width="1" height="1" fill="currentColor"/>
-                <rect x="5" y="8" width="1" height="1" fill="currentColor"/>
-                <rect x="10" y="8" width="1" height="1" fill="currentColor"/>
-                <rect x="2" y="9" width="1" height="1" fill="currentColor"/>
-                <rect x="13" y="9" width="1" height="1" fill="currentColor"/>
-                <rect x="4" y="9" width="1" height="1" fill="currentColor"/>
-                <rect x="11" y="9" width="1" height="1" fill="currentColor"/>
-                <rect x="2" y="10" width="1" height="1" fill="currentColor"/>
-                <rect x="13" y="10" width="1" height="1" fill="currentColor"/>
-                <rect x="3" y="10" width="1" height="1" fill="currentColor"/>
-                <rect x="12" y="10" width="1" height="1" fill="currentColor"/>
-                <rect x="3" y="11" width="10" height="1" fill="currentColor"/>
-                <rect x="4" y="12" width="8" height="1" fill="currentColor"/>
-                <rect x="5" y="13" width="6" height="1" fill="currentColor"/>
-                <rect x="7" y="14" width="2" height="1" fill="currentColor"/>
-              </svg>
+              <svg class="nav-icon-svg"><use href="#icon-package"/></svg>
               <span>资源</span>
               <svg class="submenu-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 10L12 15L17 10"/></svg>
             </button>
@@ -358,58 +339,7 @@
           </div>
           <div class="nav-submenu-group" id="lan-submenu-group">
             <button class="nav-btn nav-submenu-toggle" title="联机">
-              <svg class="nav-icon-svg" viewBox="0 0 16 16" shape-rendering="crispEdges">
-                <rect x="6" y="1" width="4" height="1" fill="currentColor"/>
-                <rect x="4" y="2" width="1" height="1" fill="currentColor"/>
-                <rect x="6" y="2" width="4" height="1" fill="currentColor"/>
-                <rect x="11" y="2" width="1" height="1" fill="currentColor"/>
-                <rect x="3" y="3" width="1" height="1" fill="currentColor"/>
-                <rect x="5" y="3" width="1" height="1" fill="currentColor"/>
-                <rect x="7" y="3" width="2" height="1" fill="currentColor"/>
-                <rect x="10" y="3" width="1" height="1" fill="currentColor"/>
-                <rect x="12" y="3" width="1" height="1" fill="currentColor"/>
-                <rect x="2" y="4" width="1" height="1" fill="currentColor"/>
-                <rect x="4" y="4" width="1" height="1" fill="currentColor"/>
-                <rect x="6" y="4" width="1" height="1" fill="currentColor"/>
-                <rect x="8" y="4" width="1" height="1" fill="currentColor"/>
-                <rect x="11" y="4" width="1" height="1" fill="currentColor"/>
-                <rect x="13" y="4" width="1" height="1" fill="currentColor"/>
-                <rect x="1" y="5" width="1" height="1" fill="currentColor"/>
-                <rect x="3" y="5" width="1" height="1" fill="currentColor"/>
-                <rect x="5" y="5" width="1" height="1" fill="currentColor"/>
-                <rect x="7" y="5" width="2" height="1" fill="currentColor"/>
-                <rect x="10" y="5" width="1" height="1" fill="currentColor"/>
-                <rect x="14" y="5" width="1" height="1" fill="currentColor"/>
-                <rect x="2" y="6" width="1" height="1" fill="currentColor"/>
-                <rect x="4" y="6" width="1" height="1" fill="currentColor"/>
-                <rect x="6" y="6" width="1" height="1" fill="currentColor"/>
-                <rect x="8" y="6" width="1" height="1" fill="currentColor"/>
-                <rect x="11" y="6" width="1" height="1" fill="currentColor"/>
-                <rect x="13" y="6" width="1" height="1" fill="currentColor"/>
-                <rect x="1" y="7" width="1" height="1" fill="currentColor"/>
-                <rect x="3" y="7" width="1" height="1" fill="currentColor"/>
-                <rect x="5" y="7" width="1" height="1" fill="currentColor"/>
-                <rect x="7" y="7" width="2" height="1" fill="currentColor"/>
-                <rect x="10" y="7" width="1" height="1" fill="currentColor"/>
-                <rect x="14" y="7" width="1" height="1" fill="currentColor"/>
-                <rect x="2" y="8" width="1" height="1" fill="currentColor"/>
-                <rect x="4" y="8" width="1" height="1" fill="currentColor"/>
-                <rect x="6" y="8" width="1" height="1" fill="currentColor"/>
-                <rect x="8" y="8" width="1" height="1" fill="currentColor"/>
-                <rect x="11" y="8" width="1" height="1" fill="currentColor"/>
-                <rect x="13" y="8" width="1" height="1" fill="currentColor"/>
-                <rect x="3" y="9" width="1" height="1" fill="currentColor"/>
-                <rect x="5" y="9" width="1" height="1" fill="currentColor"/>
-                <rect x="7" y="9" width="2" height="1" fill="currentColor"/>
-                <rect x="10" y="9" width="1" height="1" fill="currentColor"/>
-                <rect x="12" y="9" width="1" height="1" fill="currentColor"/>
-                <rect x="4" y="10" width="1" height="1" fill="currentColor"/>
-                <rect x="6" y="10" width="4" height="1" fill="currentColor"/>
-                <rect x="11" y="10" width="1" height="1" fill="currentColor"/>
-                <rect x="5" y="11" width="1" height="1" fill="currentColor"/>
-                <rect x="10" y="11" width="1" height="1" fill="currentColor"/>
-                <rect x="6" y="12" width="4" height="1" fill="currentColor"/>
-              </svg>
+              <svg class="nav-icon-svg"><use href="#icon-globe"/></svg>
               <span>联机</span>
               <svg class="submenu-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 10L12 15L17 10"/></svg>
             </button>
@@ -423,101 +353,16 @@
             </div>
           </div>
           <button class="nav-btn" data-page="toolbox" title="工具箱">
-            <svg class="nav-icon-svg" viewBox="0 0 16 16" shape-rendering="crispEdges">
-              <rect x="7" y="1" width="2" height="1" fill="currentColor"/>
-              <rect x="5" y="2" width="1" height="1" fill="currentColor"/>
-              <rect x="7" y="2" width="2" height="1" fill="currentColor"/>
-              <rect x="10" y="2" width="1" height="1" fill="currentColor"/>
-              <rect x="4" y="3" width="1" height="1" fill="currentColor"/>
-              <rect x="6" y="3" width="1" height="1" fill="currentColor"/>
-              <rect x="8" y="3" width="1" height="1" fill="currentColor"/>
-              <rect x="11" y="3" width="1" height="1" fill="currentColor"/>
-              <rect x="3" y="4" width="1" height="1" fill="currentColor"/>
-              <rect x="5" y="4" width="1" height="1" fill="currentColor"/>
-              <rect x="7" y="4" width="2" height="1" fill="currentColor"/>
-              <rect x="10" y="4" width="1" height="1" fill="currentColor"/>
-              <rect x="12" y="4" width="1" height="1" fill="currentColor"/>
-              <rect x="4" y="5" width="1" height="1" fill="currentColor"/>
-              <rect x="6" y="5" width="1" height="1" fill="currentColor"/>
-              <rect x="9" y="5" width="1" height="1" fill="currentColor"/>
-              <rect x="11" y="5" width="1" height="1" fill="currentColor"/>
-              <rect x="2" y="6" width="12" height="1" fill="currentColor"/>
-              <rect x="1" y="7" width="14" height="1" fill="currentColor"/>
-              <rect x="1" y="8" width="1" height="3" fill="currentColor"/>
-              <rect x="14" y="8" width="1" height="3" fill="currentColor"/>
-              <rect x="2" y="8" width="12" height="1" fill="currentColor"/>
-              <rect x="2" y="9" width="1" height="1" fill="currentColor"/>
-              <rect x="13" y="9" width="1" height="1" fill="currentColor"/>
-              <rect x="4" y="9" width="1" height="1" fill="currentColor"/>
-              <rect x="7" y="9" width="2" height="1" fill="currentColor"/>
-              <rect x="11" y="9" width="1" height="1" fill="currentColor"/>
-              <rect x="2" y="10" width="1" height="1" fill="currentColor"/>
-              <rect x="13" y="10" width="1" height="1" fill="currentColor"/>
-              <rect x="5" y="10" width="1" height="1" fill="currentColor"/>
-              <rect x="10" y="10" width="1" height="1" fill="currentColor"/>
-              <rect x="2" y="11" width="12" height="1" fill="currentColor"/>
-              <rect x="3" y="12" width="10" height="1" fill="currentColor"/>
-              <rect x="4" y="13" width="8" height="1" fill="currentColor"/>
-              <rect x="6" y="14" width="4" height="1" fill="currentColor"/>
-            </svg>
+            <svg class="nav-icon-svg"><use href="#icon-toolbox"/></svg>
             <span>工具箱</span>
           </button>
           <button class="nav-btn" data-page="accounts" title="账户">
-            <svg class="nav-icon-svg" viewBox="0 0 16 16" shape-rendering="crispEdges">
-              <rect x="1" y="1" width="14" height="1" fill="currentColor"/>
-              <rect x="1" y="2" width="1" height="12" fill="currentColor"/>
-              <rect x="14" y="2" width="1" height="12" fill="currentColor"/>
-              <rect x="2" y="14" width="12" height="1" fill="currentColor"/>
-              <rect x="4" y="4" width="3" height="3" fill="currentColor"/>
-              <rect x="9" y="4" width="3" height="3" fill="currentColor"/>
-              <rect x="6" y="7" width="4" height="1" fill="currentColor"/>
-              <rect x="5" y="8" width="1" height="2" fill="currentColor"/>
-              <rect x="10" y="8" width="1" height="2" fill="currentColor"/>
-              <rect x="6" y="9" width="4" height="1" fill="currentColor"/>
-              <rect x="7" y="10" width="2" height="1" fill="currentColor"/>
-            </svg>
+            <svg class="nav-icon-svg"><use href="#icon-user"/></svg>
             <span>账户</span>
           </button>
           <div class="nav-submenu-group" id="settings-submenu-group">
             <button class="nav-btn nav-submenu-toggle" title="设置">
-              <svg class="nav-icon-svg" viewBox="0 0 16 16" shape-rendering="crispEdges">
-                <rect x="6" y="1" width="4" height="1" fill="currentColor"/>
-                <rect x="5" y="2" width="1" height="1" fill="currentColor"/>
-                <rect x="7" y="2" width="2" height="1" fill="currentColor"/>
-                <rect x="10" y="2" width="1" height="1" fill="currentColor"/>
-                <rect x="11" y="3" width="1" height="1" fill="currentColor"/>
-                <rect x="12" y="4" width="1" height="1" fill="currentColor"/>
-                <rect x="13" y="5" width="1" height="1" fill="currentColor"/>
-                <rect x="14" y="6" width="1" height="1" fill="currentColor"/>
-                <rect x="13" y="7" width="1" height="1" fill="currentColor"/>
-                <rect x="12" y="8" width="1" height="1" fill="currentColor"/>
-                <rect x="11" y="9" width="1" height="1" fill="currentColor"/>
-                <rect x="10" y="10" width="1" height="1" fill="currentColor"/>
-                <rect x="9" y="11" width="1" height="1" fill="currentColor"/>
-                <rect x="8" y="12" width="1" height="1" fill="currentColor"/>
-                <rect x="7" y="13" width="2" height="1" fill="currentColor"/>
-                <rect x="6" y="12" width="1" height="1" fill="currentColor"/>
-                <rect x="5" y="11" width="1" height="1" fill="currentColor"/>
-                <rect x="4" y="10" width="1" height="1" fill="currentColor"/>
-                <rect x="3" y="9" width="1" height="1" fill="currentColor"/>
-                <rect x="2" y="8" width="1" height="1" fill="currentColor"/>
-                <rect x="1" y="7" width="1" height="1" fill="currentColor"/>
-                <rect x="2" y="6" width="1" height="1" fill="currentColor"/>
-                <rect x="1" y="5" width="1" height="1" fill="currentColor"/>
-                <rect x="2" y="4" width="1" height="1" fill="currentColor"/>
-                <rect x="3" y="3" width="1" height="1" fill="currentColor"/>
-                <rect x="5" y="3" width="1" height="1" fill="currentColor"/>
-                <rect x="4" y="5" width="1" height="1" fill="currentColor"/>
-                <rect x="3" y="7" width="1" height="1" fill="currentColor"/>
-                <rect x="4" y="9" width="1" height="1" fill="currentColor"/>
-                <rect x="5" y="10" width="1" height="1" fill="currentColor"/>
-                <rect x="10" y="3" width="1" height="1" fill="currentColor"/>
-                <rect x="11" y="5" width="1" height="1" fill="currentColor"/>
-                <rect x="12" y="7" width="1" height="1" fill="currentColor"/>
-                <rect x="11" y="9" width="1" height="1" fill="currentColor"/>
-                <rect x="10" y="10" width="1" height="1" fill="currentColor"/>
-                <rect x="7" y="7" width="2" height="2" fill="currentColor"/>
-              </svg>
+              <svg class="nav-icon-svg"><use href="#icon-settings"/></svg>
               <span>设置</span>
               <svg class="submenu-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 10L12 15L17 10"/></svg>
             </button>
@@ -534,76 +379,18 @@
             </div>
           </div>
           <button class="nav-btn" data-page="java" title="Java管理">
-            <svg class="nav-icon-svg" viewBox="0 0 16 16" shape-rendering="crispEdges">
-              <rect x="13" y="1" width="1" height="1" fill="currentColor"/>
-              <rect x="12" y="2" width="2" height="1" fill="currentColor"/>
-              <rect x="11" y="3" width="1" height="1" fill="currentColor"/>
-              <rect x="13" y="3" width="1" height="1" fill="currentColor"/>
-              <rect x="10" y="4" width="1" height="1" fill="currentColor"/>
-              <rect x="12" y="4" width="1" height="1" fill="currentColor"/>
-              <rect x="9" y="5" width="1" height="1" fill="currentColor"/>
-              <rect x="11" y="5" width="1" height="1" fill="currentColor"/>
-              <rect x="8" y="6" width="1" height="1" fill="currentColor"/>
-              <rect x="10" y="6" width="1" height="1" fill="currentColor"/>
-              <rect x="7" y="7" width="1" height="1" fill="currentColor"/>
-              <rect x="9" y="7" width="1" height="1" fill="currentColor"/>
-              <rect x="5" y="8" width="1" height="1" fill="currentColor"/>
-              <rect x="7" y="8" width="1" height="1" fill="currentColor"/>
-              <rect x="9" y="8" width="1" height="1" fill="currentColor"/>
-              <rect x="11" y="8" width="1" height="1" fill="currentColor"/>
-              <rect x="6" y="9" width="1" height="1" fill="currentColor"/>
-              <rect x="9" y="9" width="1" height="1" fill="currentColor"/>
-              <rect x="7" y="10" width="2" height="1" fill="currentColor"/>
-              <rect x="8" y="11" width="1" height="1" fill="currentColor"/>
-              <rect x="7" y="12" width="2" height="1" fill="currentColor"/>
-              <rect x="7" y="13" width="2" height="1" fill="currentColor"/>
-              <rect x="6" y="8" width="1" height="1" fill="currentColor"/>
-              <rect x="5" y="7" width="1" height="1" fill="currentColor"/>
-              <rect x="4" y="6" width="1" height="1" fill="currentColor"/>
-              <rect x="3" y="5" width="1" height="1" fill="currentColor"/>
-              <rect x="2" y="4" width="1" height="1" fill="currentColor"/>
-              <rect x="1" y="3" width="1" height="1" fill="currentColor"/>
-            </svg>
+            <svg class="nav-icon-svg"><use href="#icon-java"/></svg>
             <span>Java</span>
           </button>
           <button class="nav-btn nav-btn-experimental" data-page="explore" title="实验性" id="nav-explore-btn">
             <span class="nav-btn-experimental-badge">实验</span>
-            <svg class="nav-icon-svg" viewBox="0 0 16 16" shape-rendering="crispEdges">
-              <rect x="6" y="1" width="4" height="1" fill="currentColor"/>
-              <rect x="5" y="2" width="1" height="1" fill="currentColor"/>
-              <rect x="7" y="2" width="2" height="1" fill="currentColor"/>
-              <rect x="10" y="2" width="1" height="1" fill="currentColor"/>
-              <rect x="6" y="3" width="1" height="1" fill="currentColor"/>
-              <rect x="9" y="3" width="1" height="1" fill="currentColor"/>
-              <rect x="6" y="4" width="1" height="1" fill="currentColor"/>
-              <rect x="9" y="4" width="1" height="1" fill="currentColor"/>
-              <rect x="5" y="5" width="1" height="1" fill="currentColor"/>
-              <rect x="10" y="5" width="1" height="1" fill="currentColor"/>
-              <rect x="4" y="6" width="1" height="1" fill="currentColor"/>
-              <rect x="11" y="6" width="1" height="1" fill="currentColor"/>
-              <rect x="3" y="7" width="1" height="1" fill="currentColor"/>
-              <rect x="5" y="7" width="1" height="1" fill="currentColor"/>
-              <rect x="10" y="7" width="1" height="1" fill="currentColor"/>
-              <rect x="12" y="7" width="1" height="1" fill="currentColor"/>
-              <rect x="3" y="8" width="1" height="1" fill="currentColor"/>
-              <rect x="4" y="8" width="1" height="1" fill="currentColor"/>
-              <rect x="11" y="8" width="1" height="1" fill="currentColor"/>
-              <rect x="12" y="8" width="1" height="1" fill="currentColor"/>
-              <rect x="3" y="9" width="1" height="1" fill="currentColor"/>
-              <rect x="12" y="9" width="1" height="1" fill="currentColor"/>
-              <rect x="3" y="10" width="1" height="1" fill="currentColor"/>
-              <rect x="12" y="10" width="1" height="1" fill="currentColor"/>
-              <rect x="4" y="11" width="1" height="1" fill="currentColor"/>
-              <rect x="11" y="11" width="1" height="1" fill="currentColor"/>
-              <rect x="5" y="12" width="6" height="1" fill="currentColor"/>
-              <rect x="6" y="13" width="4" height="1" fill="currentColor"/>
-            </svg>
+            <svg class="nav-icon-svg"><use href="#icon-explore"/></svg>
             <span>实验性</span>
           </button>
         </div>
         <div class="sidebar-footer">
           <button class="nav-btn" data-page="console" title="控制台">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><rect x="2" y="3" width="20" height="18"/><path d="M6 10L10 14L6 18"/><path d="M13 18H19"/></svg>
+            <svg class="nav-icon-svg"><use href="#icon-console"/></svg>
             <span>日志</span>
           </button>
         </div>

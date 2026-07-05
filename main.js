@@ -276,24 +276,25 @@ async function createWindow() {
   sharedState.setMainWindow(mainWindow);
   try { _bootLog('BrowserWindow created'); } catch (e) {}
 
-  // 立即显示窗口：index.html 内置纯 CSS 的 splash 启动画面（内联样式，立即渲染），
-  // 背景色匹配主题，可遮挡加载过程，避免白屏/蓝屏闪烁。
-  // 不再等待 ready-to-show（该事件要等所有 defer 脚本执行完，会延迟数秒）。
-  mainWindow.show();
-  try { _bootLog('mainWindow.show() (immediate)'); } catch (e) {}
-
-  // 根据保存的配置恢复窗口状态
-  if (config.fullscreen && !config.windowMode) {
-    setSavedWindowBounds({ x: windowX, y: windowY, width: windowWidth, height: windowHeight });
-    mainWindow.setFullScreen(true);
-  } else if (config.maximized) {
-    mainWindow.maximize();
-  }
-
-  // 加载渲染进程：直接加载根目录 index.html（Vue 迁移已放弃，vite 已移除）
+  // 加载渲染进程
   try { _bootLog('before loadURL'); } catch (e) {}
   mainWindow.loadURL('versepc://app/index.html');
   try { _bootLog('after loadURL'); } catch (e) {}
+
+  // 等待页面准备就绪后再显示窗口，避免脚本加载期间出现蓝框闪烁
+  // ready-to-show 事件会在页面首次渲染完成且所有 defer 脚本执行完后触发
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+    try { _bootLog('mainWindow.show() (ready-to-show)'); } catch (e) {}
+
+    // 根据保存的配置恢复窗口状态
+    if (config.fullscreen && !config.windowMode) {
+      setSavedWindowBounds({ x: windowX, y: windowY, width: windowWidth, height: windowHeight });
+      mainWindow.setFullScreen(true);
+    } else if (config.maximized) {
+      mainWindow.maximize();
+    }
+  });
 
   // GPU 黑屏检测看门狗：15 秒内页面若未渲染出任何子节点，则判定 GPU 加速异常
   // 写入 .disable-gpu 标记文件，下次启动自动禁用 GPU 加速并显示降级提示页
