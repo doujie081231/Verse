@@ -144,10 +144,12 @@ function buildLaunchArguments(versionJson, settings, account, versionId, customG
   const jvmArgs = [];
 
   // 计算版本 mods 数量（用于内存分配与 GC 选择）
+  // [关键修复 2026-07-05] 必须基于 gameDir 统计，而非硬编码 VERSIONS_DIR/版本名：
+  // 非版本隔离的整合包（最常见的大型整合包场景）mods 实际位于 settings.gameDir/mods，
+  // 旧逻辑会统计到不存在的目录 → modCount=0 → Metaspace/堆内存分配不足 → OOM
   let modCount = 0;
   try {
-    const versionDir = path.join(ctx.dirs.VERSIONS_DIR, actualVersionId || versionId);
-    const modsDir = path.join(versionDir, 'mods');
+    const modsDir = path.join(gameDir, 'mods');
     if (fs.existsSync(modsDir)) {
       modCount = fs.readdirSync(modsDir).filter((f) => f.endsWith('.jar') && !f.endsWith('.jar.disabled')).length;
     }
@@ -227,13 +229,21 @@ function buildLaunchArguments(versionJson, settings, account, versionId, customG
     jvmArgs.push('-XX:+DisableExplicitGC');
   }
   // 大内存下额外启用字符串去重与元空间限制，降低内存占用
+  // [关键修复 2026-07-05] Metaspace 按 mod 数量动态分配，避免大型整合包 OOM
+  // 旧逻辑：固定 -XX:MaxMetaspaceSize=512m，300+ mod + 大量 mixin 的整合包
+  // 在 EntityRenderersEvent.RegisterRenderers 阶段即耗尽 Metaspace，Render thread 崩溃，
+  // 而 Forge 早期加载窗口未关闭，导致画面卡在 "Mod Gather working" 假象
   const hasUserMemOpt = jvmArgs.some((a) => a.includes('StringDeduplication') || a.includes('CompressedClassSpaceSize') || a.includes('MetaspaceSize'));
   if (!hasUserMemOpt && maxMemMB >= 2048) {
     const usingG1 = jvmArgs.some((a) => a.includes('UseG1GC'));
     if (usingG1) {
       jvmArgs.push('-XX:+UseStringDeduplication');
     }
-    jvmArgs.push('-XX:CompressedClassSpaceSize=256m', '-XX:MaxMetaspaceSize=512m');
+    let metaMB = 512;
+    if (modCount >= 200) metaMB = 1024;
+    else if (modCount >= 100) metaMB = 768;
+    const ccsMB = Math.min(metaMB, 512);
+    jvmArgs.push(`-XX:CompressedClassSpaceSize=${ccsMB}m`, `-XX:MaxMetaspaceSize=${metaMB}m`);
   }
 
   if (!jvmArgs.some((a) => a.includes('preferIPv4Stack') || a.includes('preferIPv6Stack'))) {
