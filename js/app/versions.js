@@ -543,19 +543,6 @@ function acceptExperimentalDisclaimer() {
     disclaimerModal.style.display = 'none';
   }
   document.getElementById('page-explore').classList.add('active');
-  if (typeof Onboarding !== 'undefined' && typeof OnboardingUI !== 'undefined') {
-    setTimeout(() => {
-      try {
-        Onboarding.init();
-        OnboardingUI.init();
-        Onboarding.start(true);
-      } catch (e) {
-        console.error('[Onboarding] start failed:', e);
-      }
-    }, 100);
-  } else {
-    console.warn('[Onboarding] not available, Onboarding:', typeof Onboarding, 'OnboardingUI:', typeof OnboardingUI);
-  }
 }
 
 function goBackFromDetail() {

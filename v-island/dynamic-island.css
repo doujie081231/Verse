@@ -384,3 +384,225 @@ body.v-island-enabled .v-island-hover-zone {
 body.v-island-enabled .dl-fab {
     display: none !important;
 }
+
+/* ── V 岛对话输入框 ─────────────────────────────────────────────────────── */
+/* 对话模式下：pill 固定高度、不换行、垂直居中，覆盖展开态样式 */
+.v-island.v-island--chat .v-island__pill {
+    align-items: center;
+    flex-wrap: nowrap;
+    width: 280px;
+    height: 56px;
+    overflow: hidden;
+}
+/* 对话模式下隐藏详情区，避免占位 */
+.v-island.v-island--chat .v-island__detail {
+    display: none;
+}
+/* 对话模式下 info 水平+垂直居中输入框 */
+.v-island.v-island--chat .v-island__info {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    height: 56px;
+    flex: 1;
+    min-width: 0;
+}
+/* 对话模式下隐藏副标题 */
+.v-island.v-island--chat .v-island__subtitle {
+    display: none;
+}
+.v-island__input {
+    width: 100%;
+    min-width: 160px;
+    max-width: 220px;
+    height: 34px;
+    padding: 0 12px;
+    border: none;
+    border-radius: 8px;
+    background: var(--bg-input, rgba(255,255,255,0.06));
+    color: var(--text-primary, #f0f0f0);
+    font-size: 13px;
+    line-height: 34px;
+    outline: none;
+    box-shadow: none;
+    transition: background 0.2s;
+    text-align: left;
+    box-sizing: border-box;
+    margin: 0;
+}
+.v-island__input:focus {
+    background: var(--bg-input-focus, rgba(255,255,255,0.1));
+}
+.v-island__input::placeholder {
+    color: var(--text-muted, #888);
+    line-height: 34px;
+}
+
+/* ── V 岛思考中（圆环旋转）状态 ─────────────────────────────────────────── */
+.v-island--thinking .v-island__ring {
+    animation: v-island-ring-spin 1.2s linear infinite;
+}
+.v-island--thinking .v-island__ring-fill {
+    stroke: var(--accent, #fff);
+    stroke-dasharray: 30 65;
+    transition: none;
+}
+.v-island--thinking .v-island__ring-num {
+    display: none;
+}
+.v-island--thinking .v-island__ring-icon {
+    opacity: 0.5;
+}
+
+@keyframes v-island-ring-spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* ── V 岛对话回复展示 ───────────────────────────────────────────────────── */
+.v-island__reply {
+    padding: 4px 0;
+    max-width: 320px;
+}
+.v-island__reply-a {
+    font-size: 13px;
+    color: var(--text-primary, #f0f0f0);
+    line-height: 1.6;
+    padding: 8px 12px;
+    background: var(--bg-glass, rgba(255,255,255,0.06));
+    border-radius: 8px;
+    word-break: break-word;
+    white-space: pre-wrap;
+}
+/* 打字机光标 */
+.v-island__reply-a .v-typing-cursor {
+    display: inline-block;
+    width: 2px;
+    height: 14px;
+    background: var(--accent, #fff);
+    margin-left: 2px;
+    vertical-align: text-bottom;
+    animation: v-typing-blink 0.8s step-end infinite;
+}
+@keyframes v-typing-blink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
+}
+
+/* ── V 岛对话状态指示 ───────────────────────────────────────────────────── */
+.v-island--listening .v-island__ring-fill {
+    stroke: var(--accent, #fff);
+    animation: v-island-pulse 1.2s ease-in-out infinite;
+}
+.v-island--processing .v-island__ring-fill {
+    stroke: var(--yellow, #ff9800);
+    animation: v-island-spin 1s linear infinite;
+}
+@keyframes v-island-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+@keyframes v-island-spin {
+    0% { transform: rotate(0deg); transform-origin: center; }
+    100% { transform: rotate(360deg); transform-origin: center; }
+}
+
+/* ── V 岛首次引导页 ─────────────────────────────────────────────────────── */
+.v-island-onboarding {
+    position: fixed;
+    inset: 0;
+    z-index: 99999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.6s ease;
+}
+.v-island-onboarding--visible { opacity: 1; }
+.v-island-onboarding--fadeout { opacity: 0; pointer-events: none; }
+.v-island-onboarding__bg {
+    position: absolute;
+    inset: 0;
+    backdrop-filter: blur(40px);
+    background: var(--bg-primary, #0f0f14);
+}
+[data-theme="light"] .v-island-onboarding__bg {
+    background: radial-gradient(ellipse at 50% 40%, rgba(245,245,248,0.98), rgba(230,230,235,0.99));
+}
+[data-theme="dark"] .v-island-onboarding__bg,
+:root:not([data-theme="light"]) .v-island-onboarding__bg {
+    background: radial-gradient(ellipse at 50% 40%, rgba(30,30,35,0.98), rgba(15,15,20,0.99));
+}
+.v-island-onboarding__content {
+    position: relative;
+    z-index: 1;
+    text-align: center;
+    max-width: 640px;
+    padding: 40px;
+}
+.v-island-onboarding__phase {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+}
+.v-island-onboarding__title {
+    font-size: 32px;
+    font-weight: 700;
+    color: var(--text-primary, #f0f0f0);
+    margin: 0;
+    opacity: 0;
+    transform: translateY(20px);
+    transition: opacity 0.8s cubic-bezier(0.16,1,0.3,1), transform 0.8s cubic-bezier(0.16,1,0.3,1);
+}
+.v-island-onboarding__title.v-appear { opacity: 1; transform: translateY(0); }
+.v-island-onboarding__subtitle {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text-primary, #f0f0f0);
+    margin: 0;
+}
+.v-island-onboarding__desc {
+    font-size: 14px;
+    color: var(--text-secondary, #aaa);
+    margin: 0;
+    line-height: 1.6;
+}
+.v-island-onboarding__providers {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 8px;
+    width: 100%;
+    max-width: 500px;
+    margin: 16px 0;
+}
+.v-island-onboarding-provider-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 12px 8px;
+    border: 2px solid var(--border, rgba(255,255,255,0.08));
+    border-radius: 10px;
+    cursor: pointer;
+    transition: border-color 0.25s, background 0.25s;
+}
+.v-island-onboarding-provider-card:hover { border-color: var(--accent, #fff); }
+.v-island-onboarding-provider-card--active {
+    border-color: var(--accent, #fff);
+    background: rgba(255,255,255,0.05);
+}
+.v-island-onboarding-provider-card img { width: 32px; height: 32px; border-radius: 6px; }
+.v-island-onboarding-provider-card span { font-size: 11px; color: var(--text-secondary); text-align: center; }
+.v-island-onboarding__config {
+    width: 100%;
+    max-width: 360px;
+    margin-top: 8px;
+}
+.v-island-onboarding__actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 20px;
+}
+
