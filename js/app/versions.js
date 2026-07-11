@@ -7,6 +7,8 @@ let versionsRetryTimer = null;
 let _versionsLoadTime = 0;
 const _VERSIONS_CACHE_TTL = 300000;
 
+let currentLaunchVersionId = '';
+
 // ============================================================================
 // 版本列表管理 - 加载、筛选、渲染游戏版本列表
 // ============================================================================
@@ -79,8 +81,10 @@ function retryLoadVersions() {
 // ============================================================================
 let _cachedLastLaunchVersion = null;
 async function updateVersionSelects() {
-  if (!launchVersionCustomSelect && !document.getElementById('home-version-select-wrapper')) return;
-  let currentVal = launchVersionCustomSelect ? launchVersionCustomSelect.getValue() : '';
+  let currentVal = currentLaunchVersionId;
+  if (!currentVal && launchVersionCustomSelect) {
+    currentVal = launchVersionCustomSelect.getValue();
+  }
 
   if (!currentVal) {
     try {
@@ -105,116 +109,102 @@ async function updateVersionSelects() {
     return { value: v.id, text: text, subtext: subtext };
   });
 
+  // 选中的版本不在列表中（已被删除等）→ 回退到第一个
+  if (currentVal && !versionOptions.find(o => o.value === currentVal)) {
+    currentVal = versionOptions.length > 0 ? versionOptions[0].value : '';
+  } else if (!currentVal && versionOptions.length > 0) {
+    currentVal = versionOptions[0].value;
+  }
+
+  // 同步 currentLaunchVersionId 状态变量
+  currentLaunchVersionId = currentVal;
+  _cachedLastLaunchVersion = currentVal;
+  try {
+    if (currentVal) window.electronAPI.store.set('versepc_last_launch_version', currentVal);
+  } catch (_) {}
+
+  // 同步底部启动栏（隐藏）的选择器
   if (launchVersionCustomSelect) {
     launchVersionCustomSelect.setOptions(versionOptions);
-    if (currentVal && versionOptions.find(o => o.value === currentVal)) {
-      launchVersionCustomSelect.setValue(currentVal);
-    } else if (versionOptions.length > 0) {
-      launchVersionCustomSelect.setValue(versionOptions[0].value);
-      _cachedLastLaunchVersion = versionOptions[0].value;
-      try { window.electronAPI.store.set('versepc_last_launch_version', versionOptions[0].value); } catch (_) {}
-    } else {
-      launchVersionCustomSelect.setValue('');
-      _cachedLastLaunchVersion = '';
-    }
+    launchVersionCustomSelect.setValue(currentVal);
   }
 
-  if (!homeVersionCustomSelect) {
-    homeVersionCustomSelect = new CustomSelect('home-version-select-wrapper', {
-      onChange: (value) => {
-        if (launchVersionCustomSelect) launchVersionCustomSelect.setValue(value);
-      }
-    });
+  // 渲染主页内嵌版本卡片
+  renderHomeCurrentVersionCard();
+}
+
+function renderHomeCurrentVersionCard() {
+  const card = document.getElementById('home-current-version-card');
+  if (!card) return;
+
+  const arrow = `<svg class="home-current-version-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>`;
+
+  const placeholder = `<div class="home-current-version-placeholder">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="home-current-version-placeholder-icon">
+      <circle cx="12" cy="12" r="10"></circle>
+      <line x1="12" y1="8" x2="12" y2="16"></line>
+      <line x1="8" y1="12" x2="16" y2="12"></line>
+    </svg>
+    <span>点击选择版本</span>
+  </div>`;
+
+  if (!currentLaunchVersionId) {
+    card.innerHTML = placeholder + arrow;
+    return;
   }
-  homeVersionCustomSelect.setOptions(versionOptions);
-  if (currentVal && versionOptions.find(o => o.value === currentVal)) {
-    homeVersionCustomSelect.setValue(currentVal);
-  } else if (versionOptions.length > 0) {
-    homeVersionCustomSelect.setValue(versionOptions[0].value);
+
+  const v = installedVersions.find(x => x.id === currentLaunchVersionId);
+  if (!v) {
+    // 选中的版本已被删除，重置
+    currentLaunchVersionId = '';
+    card.innerHTML = placeholder + arrow;
+    return;
   }
 
-  const homeList = document.getElementById('home-installed-list');
-  if (installedVersions.length === 0) {
-    homeList.innerHTML = '<p class="empty-text">暂无已安装的版本</p>';
-  } else {
-    const errorVersions = installedVersions.filter(v => v.error);
-    const normalVersions = installedVersions.filter(v => !v.error);
-    
-    const vanillaVersions = normalVersions.filter(v => {
-      return !v.isFabric && !v.isForge && !v.isNeoForge && !v.isOptiFine && !v.isLiteLoader && !v.isModpack;
-    });
-    const moddedVersions = normalVersions.filter(v => {
-      return v.isFabric || v.isForge || v.isNeoForge || v.isOptiFine || v.isLiteLoader || v.isModpack;
-    });
+  const iconParams = `id=${encodeURIComponent(v.id)}&type=release`;
+  const forgeParam = v.isForge ? '&forge=true' : '';
+  const fabricParam = v.isFabric ? '&fabric=true' : '';
+  const neoforgeParam = v.isNeoForge ? '&neoforge=true' : '';
+  const modpackParam = v.isModpack ? '&modpack=true' : '';
+  const extDirParam = v.externalVersionDir ? `&extDir=${encodeURIComponent(v.externalVersionDir)}` : '';
+  const iconUrl = `/api/version-icon?${iconParams}${forgeParam}${fabricParam}${neoforgeParam}${modpackParam}${extDirParam}&_t=${versionIconsTimestamp}`;
 
-    const tntIcon = `<img src="assets/tnt.png" alt="TNT" width="40" height="40" style="image-rendering:pixelated;image-rendering:crisp-edges;">`;
-    
-    const renderHomeVersionItem = (v) => {
-      let badge = '原版', badgeClass = '';
-      const iconParams = `id=${encodeURIComponent(v.id)}&type=release`;
-      const forgeParam = v.isForge ? '&forge=true' : '';
-      const fabricParam = v.isFabric ? '&fabric=true' : '';
-      const neoforgeParam = v.isNeoForge ? '&neoforge=true' : '';
-      const modpackParam = v.isModpack ? '&modpack=true' : '';
-      const extDirParam = v.externalVersionDir ? `&extDir=${encodeURIComponent(v.externalVersionDir)}` : '';
-      const iconUrl = `/api/version-icon?${iconParams}${forgeParam}${fabricParam}${neoforgeParam}${modpackParam}${extDirParam}&_t=${versionIconsTimestamp}`;
-      if (v.isModpack) { badge = v.modpackLoader || '整合包'; badgeClass = 'modpack'; }
-      else if (v.isFabric) { badge = 'Fabric'; badgeClass = 'fabric'; }
-      else if (v.isForge) { badge = 'Forge'; badgeClass = 'forge'; }
-      else if (v.isNeoForge) { badge = 'NeoForge'; badgeClass = 'forge'; }
-      const externalBadge = v.isExternal ? '<span class="v-badge external" style="background:rgba(255,165,0,0.15);color:#ffa500;font-size:10px;margin-left:4px">外部</span>' : '';
-      const displayName = v.isExternal ? (v.customName || v.id.replace(/ \[外部\d*\]/, '')) : (v.customName || v.id);
-      return `<div class="version-item" style="cursor:pointer" onclick="openVersionSettings('${escapeOnclick(v.id)}','${escapeOnclick(displayName)}')">
-        <div class="version-item-left">
-          <div class="version-item-icon"><img src="${iconUrl}" alt="" class="version-icon-img"></div>
-          <div class="version-item-info">
-            <span class="version-item-name">${escapeHtml(displayName)}</span>
-            <span class="version-item-meta"><span class="v-badge ${badgeClass}">${badge}</span>${externalBadge}</span>
-          </div>
-        </div>
-      </div>`;
-    };
+  let badge = '原版', badgeClass = '';
+  if (v.isModpack) { badge = v.modpackLoader || '整合包'; badgeClass = 'modpack'; }
+  else if (v.isFabric) { badge = 'Fabric'; badgeClass = 'fabric'; }
+  else if (v.isForge) { badge = 'Forge'; badgeClass = 'forge'; }
+  else if (v.isNeoForge) { badge = 'NeoForge'; badgeClass = 'forge'; }
 
-    let html = '';
-    
-    if (moddedVersions.length > 0) {
-      html += moddedVersions.map(renderHomeVersionItem).join('');
-    }
+  const externalBadgeHtml = v.isExternal ? '<span class="v-badge external">外部</span>' : '';
+  const displayName = v.isExternal ? (v.customName || v.id.replace(/ \[外部\d*\]/, '')) : (v.customName || v.id);
 
-    if (vanillaVersions.length > 0) {
-      html += `<div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:0 4px">
-          <span style="font-size:12px;color:var(--text-muted);font-weight:600">\u26A0 基础版本 (${vanillaVersions.length})</span>
-        </div>
-        ${vanillaVersions.map(renderHomeVersionItem).join('')}
-      </div>`;
-    }
+  card.innerHTML = `
+    <div class="version-item-left">
+      <div class="version-item-icon"><img src="${iconUrl}" alt="" class="version-icon-img"></div>
+      <div class="version-item-info">
+        <span class="version-item-name">${escapeHtml(displayName)}</span>
+        <span class="version-item-meta"><span class="v-badge ${badgeClass}">${badge}</span>${externalBadgeHtml}</span>
+      </div>
+    </div>
+    ${arrow}
+  `;
+}
 
-    if (errorVersions.length > 0) {
-      const errorId = 'error-versions-' + Date.now();
-      html += `<div class="error-versions-section">
-        <div class="error-versions-header" onclick="toggleErrorVersions('${errorId}')">
-          <span>错误的版本 (<span class="error-count">${errorVersions.length}</span>)</span>
-          <span class="error-chevron">▼</span>
-        </div>
-        <div class="error-versions-list" id="${errorId}">
-          ${errorVersions.map(v => {
-            const displayName = v.customName || v.id.replace(/ \[外部\d*\]/, '');
-            return `<div class="error-version-item" style="cursor:pointer" onclick="openVersionSettings('${escapeOnclick(v.id)}','${escapeOnclick(displayName)}')">
-              <div class="error-version-icon">${tntIcon}</div>
-              <div class="error-version-info">
-                <span class="error-version-name">${escapeHtml(displayName)}</span>
-                <span class="error-version-reason">${escapeHtml(v.errorReason || '无法识别')}</span>
-              </div>
-              <button class="btn btn-danger btn-sm" style="flex-shrink:0;padding:4px 12px;font-size:12px" onclick="event.stopPropagation();quickDeleteErrorVersion('${escapeOnclick(v.id)}')">删除</button>
-            </div>`;
-          }).join('')}
-        </div>
-      </div>`;
-    }
-    
-    homeList.innerHTML = html;
+function selectLaunchVersion(versionId) {
+  if (!versionId) return;
+  currentLaunchVersionId = versionId;
+  _cachedLastLaunchVersion = versionId;
+  try { window.electronAPI.store.set('versepc_last_launch_version', versionId); } catch (_) {}
+  // 同步底部启动栏（隐藏）的选择器
+  if (launchVersionCustomSelect) {
+    launchVersionCustomSelect.setValue(versionId);
   }
+  // 更新"已安装"tab 中卡片的 selected 类
+  document.querySelectorAll('.version-item-clickable[data-installed="true"]').forEach(item => {
+    item.classList.toggle('selected', item.dataset.versionId === versionId);
+  });
+  // 更新主页内嵌版本卡片
+  renderHomeCurrentVersionCard();
 }
 
 async function quickDeleteErrorVersion(versionId) {
@@ -288,9 +278,13 @@ function renderVersions() {
       const externalPathHtml = v.isExternal && v.externalPath ? `<span style="color:var(--text-muted);font-size:11px;margin-left:4px" title="${escapeHtml(v.externalPath)}">${escapeHtml(v.externalPath)}</span>` : '';
       const displayName = v.isExternal ? (v.customName || v.id.replace(/ \[外部\d*\]/, '')) : (v.customName || v.id);
       const deleteBtnHtml = `<button class="btn btn-danger btn-sm" onclick="event.stopPropagation();deleteVersion('${escapeOnclick(v.id)}')">${v.isExternal ? '移除' : '删除'}</button>`;
-      return `<div class="version-item version-item-clickable" 
-        data-version-id="${escapeHtml(v.id)}" 
-        data-version-url="" 
+      const settingsBtnHtml = `<button class="version-item-settings-btn" data-version-id="${escapeHtml(v.id)}" data-custom-name="${escapeHtml(v.customName || '')}" title="版本设置" onclick="event.stopPropagation();">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"></path></svg>
+      </button>`;
+      const selectedClass = currentLaunchVersionId === v.id ? ' selected' : '';
+      return `<div class="version-item version-item-clickable${selectedClass}"
+        data-version-id="${escapeHtml(v.id)}"
+        data-version-url=""
         data-version-type="${v.type || 'release'}"
         data-installed="true"
         data-custom-name="${escapeHtml(v.customName || '')}">
@@ -304,6 +298,7 @@ function renderVersions() {
           </div>
         </div>
         <div class="version-item-actions">
+          ${settingsBtnHtml}
           <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();openVersionSettings('${escapeOnclick(v.id)}','${escapeOnclick(displayName)}')">设置</button>
           ${deleteBtnHtml}
         </div>
@@ -311,7 +306,7 @@ function renderVersions() {
     };
 
     let html = '';
-    
+
     if (moddedVersions.length > 0) {
       html += moddedVersions.map(renderVersionItem).join('');
     }
@@ -326,31 +321,29 @@ function renderVersions() {
     }
 
     if (errorVersions.length > 0) {
-      const tntIcon = `<img src="assets/tnt.png" alt="TNT" width="24" height="24" style="image-rendering:pixelated;image-rendering:crisp-edges;">`;
-      html += `<div style="margin-top:16px;padding-top:12px;border-top:1px solid rgba(239,68,68,0.2)">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:0 4px">
-          <span style="font-size:12px;color:#ef4444;font-weight:600">\u26A0 错误的版本 (${errorVersions.length})</span>
+      const errorId = 'error-versions-' + Date.now();
+      const tntIcon = `<img src="assets/tnt.png" alt="TNT" width="40" height="40" style="image-rendering:pixelated;image-rendering:crisp-edges;">`;
+      html += `<div class="error-versions-section" style="margin-top:16px;padding-top:12px;border-top:1px solid rgba(239,68,68,0.2)">
+        <div class="error-versions-header" onclick="toggleErrorVersions('${errorId}')">
+          <span>\u26A0 错误的版本 (<span class="error-count">${errorVersions.length}</span>)</span>
+          <span class="error-chevron">▼</span>
         </div>
-        ${errorVersions.map(v => {
-          const displayName = v.customName || v.id.replace(/ \[外部\d*\]/, '');
-          return `<div class="version-item" style="border-color:rgba(239,68,68,0.15);background:rgba(239,68,68,0.03);margin-bottom:4px">
-            <div class="version-item-left">
-              <div class="version-item-icon" style="display:flex;align-items:center;justify-content:center;background:rgba(239,68,68,0.1)">
-                ${tntIcon}
+        <div class="error-versions-list" id="${errorId}">
+          ${errorVersions.map(v => {
+            const displayName = v.customName || v.id.replace(/ \[外部\d*\]/, '');
+            return `<div class="error-version-item">
+              <div class="error-version-icon">${tntIcon}</div>
+              <div class="error-version-info">
+                <span class="error-version-name">${escapeHtml(displayName)}</span>
+                <span class="error-version-reason">${escapeHtml(v.errorReason || '无法识别')}</span>
               </div>
-              <div class="version-item-info">
-                <span class="version-item-name" style="color:#ef4444">${escapeHtml(displayName)}</span>
-                <span class="version-item-meta" style="color:#ef4444;opacity:0.8">${escapeHtml(v.errorReason || '无法识别')}</span>
-              </div>
-            </div>
-            <div class="version-item-actions">
-              <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();deleteVersion('${escapeOnclick(v.id)}')">${v.isExternal ? '移除' : '删除'}</button>
-            </div>
-          </div>`;
-        }).join('')}
+              <button class="btn btn-danger btn-sm" style="flex-shrink:0;padding:4px 12px;font-size:12px" onclick="event.stopPropagation();quickDeleteErrorVersion('${escapeOnclick(v.id)}')">删除</button>
+            </div>`;
+          }).join('')}
+        </div>
       </div>`;
     }
-    
+
     container.innerHTML = html;
     return;
   }

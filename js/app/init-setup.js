@@ -310,7 +310,13 @@ function setupLaunchBar() {
   if (!launchVersionCustomSelect) {
     launchVersionCustomSelect = new CustomSelect('launch-version-select-wrapper', {
       onChange: (value) => {
-        if (homeVersionCustomSelect) homeVersionCustomSelect.setValue(value);
+        // 同步到 currentLaunchVersionId 状态变量和主页内嵌卡片
+        if (value && value !== currentLaunchVersionId) {
+          currentLaunchVersionId = value;
+          _cachedLastLaunchVersion = value;
+          try { window.electronAPI.store.set('versepc_last_launch_version', value); } catch (_) {}
+          renderHomeCurrentVersionCard();
+        }
       }
     });
   }

@@ -10,7 +10,7 @@ async function handleLaunch() {
   window._versepc_launching = true;
   setTimeout(() => { window._versepc_launching = false; }, 30000);
 
-  const versionId = launchVersionCustomSelect ? launchVersionCustomSelect.getValue() : '';
+  const versionId = (typeof currentLaunchVersionId !== 'undefined' && currentLaunchVersionId) || (launchVersionCustomSelect ? launchVersionCustomSelect.getValue() : '');
   if (!versionId) { showToast('请选择游戏版本', 'error'); window._versepc_launching = false; return; }
 
   _cachedLastLaunchVersion = versionId;

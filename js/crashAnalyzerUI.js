@@ -471,7 +471,7 @@ class CrashAnalyzerUI {
 
         try {
             // 尝试从多个可能的版本选择元素中获取当前版本
-            let selectedVersion = document.getElementById('home-version-select')?.value || '';
+            let selectedVersion = (typeof currentLaunchVersionId !== 'undefined' && currentLaunchVersionId) || '';
             if (!selectedVersion) {
                 const valueEl = document.getElementById('home-version-select-value');
                 if (valueEl && !valueEl.classList.contains('placeholder')) {
@@ -480,6 +480,10 @@ class CrashAnalyzerUI {
             }
             if (!selectedVersion && typeof homeVersionCustomSelect !== 'undefined' && homeVersionCustomSelect) {
                 const v = homeVersionCustomSelect.getValue();
+                if (v) selectedVersion = v;
+            }
+            if (!selectedVersion && typeof launchVersionCustomSelect !== 'undefined' && launchVersionCustomSelect) {
+                const v = launchVersionCustomSelect.getValue();
                 if (v) selectedVersion = v;
             }
             const response = await fetch(`/api/crash/logs?version=${encodeURIComponent(selectedVersion)}`);

@@ -166,6 +166,31 @@ function setupWindowControls() {
 
 function setupVersionListClicks() {
   document.addEventListener('click', (e) => {
+    // 主页内嵌版本卡片：跳转到版本管理页"已安装"tab
+    const homeCard = e.target.closest('.home-current-version-card');
+    if (homeCard) {
+      currentVersionTab = 'installed';
+      document.querySelectorAll('.tab-btn[data-tab]').forEach(b => b.classList.remove('active'));
+      const installedTab = document.querySelector('.tab-btn[data-tab="installed"]');
+      if (installedTab) installedTab.classList.add('active');
+      navigateToPage('versions');
+      renderVersions();
+      return;
+    }
+
+    // 齿轮按钮：进入版本设置页（阻止冒泡，不触发卡片选中）
+    const settingsBtn = e.target.closest('.version-item-settings-btn');
+    if (settingsBtn) {
+      e.stopPropagation();
+      const versionId = settingsBtn.dataset.versionId;
+      const customName = settingsBtn.dataset.customName || '';
+      if (versionId) {
+        openVersionSettings(versionId, customName || versionId);
+      }
+      return;
+    }
+
+    // 卡片本体（排除其他按钮如"设置""删除"）
     const versionItem = e.target.closest('.version-item-clickable');
     if (versionItem && !e.target.closest('button')) {
       const versionId = versionItem.dataset.versionId;
@@ -173,10 +198,10 @@ function setupVersionListClicks() {
       const versionType = versionItem.dataset.versionType || 'release';
       const isInstalled = versionItem.dataset.installed === 'true';
       const customName = versionItem.dataset.customName || '';
-      
+
       if (versionId) {
         if (isInstalled) {
-          openVersionSettings(versionId, customName || versionId);
+          selectLaunchVersion(versionId);
         } else {
           openVersionDetail(versionId, versionUrl, versionType);
         }
