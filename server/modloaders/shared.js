@@ -10,7 +10,7 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { exec, spawn } = require('child_process');
+const { exec, execSync, spawn } = require('child_process');
 
 const ctx = require('../context');
 const utils = require('../utils');
@@ -718,6 +718,73 @@ function getNeoLibMirrorUrl(originalUrl) {
 // 官方安装器会自动完成所有 processor 步骤，生成 patched JAR 和 version.json。
 
 /**
+ * 使用 Java FileSystem API 向 JAR 的 MANIFEST.MF 主属性区插入 Minecraft-Dists: client。
+ *
+ * NeoForge 20.6+ 使用 --no-mod-manifest 构建的 patched jar 缺少此属性，FML 启动时会报错：
+ * "NeoForge dev environment Minecraft jar does not have a Minecraft-Dists attribute in its manifest"
+ *
+ * 之前使用 AdmZip 修改 manifest，但 NeoForge SimpleInstaller 生成的 jar 使用 ZIP data descriptor
+ * 格式，AdmZip 报 "No descriptor present" 无法读取。改用 Java NIO FileSystem API 直接修改，
+ * 能正确处理各种 ZIP 格式，并将属性插入主属性区（第一段空行之前），而非追加到文件末尾。
+ *
+ * @param {string} jarPath - JAR 文件绝对路径
+ * @param {string} javaPath - java.exe 绝对路径
+ * @param {string} logPrefix - 日志前缀
+ */
+function _fixMinecraftDistsManifest(jarPath, javaPath, logPrefix) {
+  const javaSource = String.raw`
+import java.io.*;
+import java.nio.file.*;
+import java.util.*;
+public class FixMF {
+    public static void main(String[] args) throws Exception {
+        String jarPath = args[0];
+        Map<String, String> env = new HashMap<>();
+        env.put("create", "false");
+        try (FileSystem fs = FileSystems.newFileSystem(Paths.get(jarPath), env)) {
+            Path mf = fs.getPath("META-INF/MANIFEST.MF");
+            if (mf == null || !Files.exists(mf)) {
+                System.err.println("MANIFEST.MF not found");
+                System.exit(1);
+            }
+            String content = new String(Files.readAllBytes(mf), "UTF-8");
+            String le = content.contains("\r\n") ? "\r\n" : "\n";
+            int blank = content.indexOf(le + le);
+            String mainSection = blank >= 0 ? content.substring(0, blank) : content;
+            if (mainSection.toLowerCase().contains("minecraft-dists")) {
+                System.out.println("SKIP");
+                return;
+            }
+            String updated;
+            if (blank >= 0) {
+                updated = mainSection + le + "Minecraft-Dists: client" + content.substring(blank);
+            } else {
+                updated = content.replaceAll("\\s*$", "") + le + "Minecraft-Dists: client" + le;
+            }
+            Files.write(mf, updated.getBytes("UTF-8"));
+            System.out.println("OK");
+        }
+    }
+}
+`;
+  const tempDir = path.join(ctx.dirs.DATA_DIR, 'temp');
+  fs.mkdirSync(tempDir, { recursive: true });
+  const srcFile = path.join(tempDir, 'FixMF.java');
+  fs.writeFileSync(srcFile, javaSource);
+
+  const stdout = execSync(`"${javaPath}" --source 17 "${srcFile}" "${jarPath}"`, {
+    stdio: 'pipe',
+    timeout: 60000,
+    env: { ...process.env }
+  }).toString().trim();
+  if (stdout === 'OK') {
+    console.log(`${logPrefix} 已补充 Minecraft-Dists: client 到 ${path.basename(jarPath)}`);
+  } else if (stdout === 'SKIP') {
+    console.log(`${logPrefix} ${path.basename(jarPath)} 已包含 Minecraft-Dists，跳过`);
+  }
+}
+
+/**
  * 调用 NeoForge/Forge 官方安装器生成 patched JAR。
  *
  * @param {object} options
@@ -852,20 +919,40 @@ async function runPatchProcessor({ mcJarPath, clientLzmaPath, patchedJarPath, pr
     });
 
     // 6. 验证 patched JAR 已生成
-    if (!fs.existsSync(simpleInstallerOutput)) {
+    // 安装器可能输出到 simpleInstallerOutput（旧版）或 patchedJarPath（新版），检查两者
+    let _actualOutput = null;
+    if (fs.existsSync(simpleInstallerOutput) && fs.statSync(simpleInstallerOutput).size >= 1024) {
+        _actualOutput = simpleInstallerOutput;
+    } else if (fs.existsSync(patchedJarPath) && fs.statSync(patchedJarPath).size >= 1024) {
+        _actualOutput = patchedJarPath;
+    }
+    if (!_actualOutput) {
         throw new Error(`${logPrefix} 官方安装器未生成 patched JAR: ${simpleInstallerOutput}`);
     }
-    const outputSize = fs.statSync(simpleInstallerOutput).size;
-    if (outputSize < 1024) {
-        throw new Error(`${logPrefix} 官方安装器生成的 patched JAR 大小异常 (${outputSize} 字节)`);
-    }
-    console.log(`${logPrefix} patched JAR 已生成: ${simpleInstallerOutput} (${outputSize} 字节)`);
+    const outputSize = fs.statSync(_actualOutput).size;
+    console.log(`${logPrefix} patched JAR 已生成: ${_actualOutput} (${outputSize} 字节)`);
 
-    // 7. 复制到调用方期望的位置（Forge 的 simpleInstallerOutput 已等于 patchedJarPath，跳过复制）
-    if (simpleInstallerOutput !== patchedJarPath) {
+    // 7. 复制到调用方期望的位置（如果安装器输出到了不同的路径）
+    if (_actualOutput !== patchedJarPath) {
         fs.mkdirSync(path.dirname(patchedJarPath), { recursive: true });
-        fs.copyFileSync(simpleInstallerOutput, patchedJarPath);
+        fs.copyFileSync(_actualOutput, patchedJarPath);
         console.log(`${logPrefix} patched JAR 已复制到: ${patchedJarPath}`);
+    }
+
+    // 7.5 NeoForge 20.6+ 使用 --no-mod-manifest 标志构建 patched jar，导致其 manifest 缺少
+    // Minecraft-Dists 属性。FML 启动时会检查此属性，缺失则报错：
+    // "NeoForge dev environment Minecraft jar does not have a Minecraft-Dists attribute in its manifest"
+    // 这里在 patched jar 生成后补充该属性。同时对 actualOutput 和 patchedJarPath 都更新，
+    // 因为 classpath 使用的是 :client 库条目指向的 neoforge-<version>-client.jar（即 actualOutput）。
+    if (!isForge) {
+        const _jarsToFix = [_actualOutput, patchedJarPath].filter((p, i, arr) => p && arr.indexOf(p) === i);
+        for (const _jarPath of _jarsToFix) {
+            try {
+                _fixMinecraftDistsManifest(_jarPath, javaPath, logPrefix);
+            } catch (e) {
+                console.warn(`${logPrefix} 补充 Minecraft-Dists manifest 属性失败 (${path.basename(_jarPath)}): ${e.message}`);
+            }
+        }
     }
 
     // 8. 清理 SimpleInstaller 创建的临时 version 目录（避免与我们的 version 目录混淆）
