@@ -1,0 +1,220 @@
+{
+    "name": "versepc",
+    "version": "1.3.42",
+    "description": "VersePC - Minecraft Launcher",
+    "author": {
+        "name": "豆杰",
+        "email": "versepc@example.com"
+    },
+    "license": "VPSVL-2.0",
+    "main": "main.js",
+    "scripts": {
+        "start": "electron .",
+        "dev": "cross-env NODE_ENV=dev electron .",
+        "obfuscate": "node activation/obfuscate-activation.js",
+        "build": "node build-scripts/generate-integrity.js && electron-builder --win --linux --mac --publish never && node build-scripts/restore-build.js",
+        "build:win": "node build-scripts/generate-integrity.js && electron-builder --win --publish never && node build-scripts/restore-build.js",
+        "build:linux": "electron-builder --linux --publish never",
+        "build:mac": "node build-scripts/generate-integrity.js && electron-builder --mac --publish never && node build-scripts/restore-build.js",
+        "build:dir": "electron-builder --win --dir",
+        "build:installer": "electron-builder --win --config.nsis --publish never",
+        "build:publish": "electron-builder --win --linux --mac --publish always",
+        "build:beta": "node scripts/protect-build.js && node build-scripts/generate-integrity.js && electron-builder --win --publish never && node scripts/protect-build.js --restore",
+        "protect": "node scripts/protect-build.js",
+        "restore": "node scripts/protect-build.js --restore",
+        "test": "node --test --test-force-exit test/*.js server/launch/*.test.js server/versions/*.test.js"
+    },
+    "dependencies": {
+        "@xterm/addon-fit": "^0.11.0",
+        "@xterm/xterm": "^6.0.0",
+        "adm-zip": "^0.5.17",
+        "bytenode": "^1.5.6",
+        "electron-updater": "^6.8.3",
+        "monaco-editor": "^0.55.1",
+        "msedge-tts": "^2.0.6",
+        "recycle-bin": "^0.1.3",
+        "sharp": "^0.34.5",
+        "ws": "^8.20.0"
+    },
+    "build": {
+        "appId": "com.versepc.launcher",
+        "productName": "VersePC",
+        "icon": "img/icon.png",
+        "directories": {
+            "output": "dist"
+        },
+        "electronLanguages": [
+            "zh-CN",
+            "en-US"
+        ],
+        "files": [
+            "main.js",
+            "forge-installer.js",
+            "main/**/*",
+            "server.js",
+            "server/**/*",
+            "activation/**/*",
+            "preload.cjs",
+            "editor-preload.cjs",
+            "index.html",
+            "editor.html",
+            "file-browser.html",
+            "assets/**/*",
+            "css/**/*",
+            "js/**/*",
+            "v-island/**/*",
+            "img/**/*",
+            "images/**/*",
+            "fonts/**/*",
+            "scripts/**/*",
+            "resources/**/*",
+            "plugins/**/*",
+            "node_modules/monaco-editor/**/*",
+            "integrity.json",
+            "package.json",
+            "node_modules/adm-zip/**/*",
+            "node_modules/bytenode/**/*",
+            "node_modules/ws/**/*",
+            "node_modules/electron-updater/**/*",
+            "node_modules/builder-util-runtime/**/*",
+            "node_modules/lazy-val/**/*",
+            "node_modules/fs-extra/**/*",
+            "node_modules/jsonfile/**/*",
+            "node_modules/universalify/**/*",
+            "node_modules/semver/**/*",
+            "node_modules/lru-cache/**/*",
+            "node_modules/yallist/**/*",
+            "node_modules/sharp/**/*",
+            "node_modules/@img/**/*",
+            "node_modules/detect-libc/**/*",
+            "node_modules/msedge-tts/**/*",
+            "node_modules/axios/**/*",
+            "node_modules/buffer/**/*",
+            "node_modules/isomorphic-ws/**/*",
+            "node_modules/stream-browserify/**/*",
+            "node_modules/follow-redirects/**/*",
+            "node_modules/form-data/**/*",
+            "node_modules/https-proxy-agent/**/*",
+            "node_modules/proxy-from-env/**/*",
+            "node_modules/inherits/**/*",
+            "node_modules/readable-stream/**/*",
+            "node_modules/base64-js/**/*",
+            "node_modules/ieee754/**/*"
+        ],
+        "publish": {
+            "provider": "github",
+            "owner": "doujie081231",
+            "repo": "versePc"
+        },
+        "win": {
+            "target": [
+                {
+                    "target": "nsis",
+                    "arch": [
+                        "x64"
+                    ]
+                }
+            ]
+        },
+        "mac": {
+            "target": [
+                {
+                    "target": "dmg",
+                    "arch": [
+                        "x64",
+                        "arm64"
+                    ]
+                }
+            ],
+            "icon": "img/icon.png",
+            "category": "public.app-category.games",
+            "artifactName": "VersePC-${version}-${arch}.${ext}"
+        },
+        "dmg": {
+            "artifactName": "VersePC-${version}-${arch}.dmg",
+            "contents": [
+                {
+                    "x": 130,
+                    "y": 220
+                },
+                {
+                    "x": 410,
+                    "y": 220,
+                    "type": "link",
+                    "path": "/Applications"
+                }
+            ]
+        },
+        "linux": {
+            "target": [
+                {
+                    "target": "AppImage",
+                    "arch": [
+                        "x64"
+                    ]
+                }
+            ],
+            "icon": "img/icon.png",
+            "category": "Game",
+            "artifactName": "VersePC-${version}-${arch}.${ext}",
+            "desktop": {
+                "entry": "Name=VersePC\nComment=VersePC - Minecraft Launcher\nCategories=Game;"
+            }
+        },
+        "portable": {
+            "artifactName": "VersePC-${version}.exe",
+            "requestExecutionLevel": "user"
+        },
+        "nsis": {
+            "oneClick": false,
+            "allowToChangeInstallationDirectory": true,
+            "allowElevation": true,
+            "installerLanguages": [
+                "zh-CN"
+            ],
+            "language": 2052,
+            "installerIcon": "img/icon.ico",
+            "uninstallerIcon": "img/icon.ico",
+            "installerHeaderIcon": "img/installer-header.bmp",
+            "artifactName": "VersePC-Setup-${version}.exe",
+            "deleteAppDataOnUninstall": false,
+            "runAfterFinish": true,
+            "createStartMenuShortcut": true,
+            "shortcutName": "VersePC",
+            "include": "installer/customInstall.nsh",
+            "license": "installer/license.txt",
+            "unicode": true,
+            "differentialPackage": true,
+            "warningsAsErrors": false,
+            "menuCategory": "VersePC",
+            "createDesktopShortcut": "always",
+            "displayLanguageSelector": false,
+            "packElevateHelper": true,
+            "perMachine": false
+        },
+        "asar": true,
+        "asarUnpack": [
+            "node_modules/sharp/**/*",
+            "node_modules/@img/**/*",
+            "node_modules/canvas/**/*",
+            "node_modules/detect-libc/**/*",
+            "img/icon.ico",
+            "img/icon.png",
+            "resources/**/*"
+        ],
+        "releaseInfo": {
+            "releaseNotes": "查看 GitHub Releases 获取更新日志：https://github.com/doujie081231/versePc/releases"
+        }
+    },
+    "devDependencies": {
+        "@ffmpeg-installer/ffmpeg": "^1.1.0",
+        "app-builder-bin": "^5.0.0-alpha.12",
+        "bytenode": "^1.6.0",
+        "concurrently": "^10.0.3",
+        "cross-env": "^7.0.3",
+        "electron": "^41.4.0",
+        "electron-builder": "^26.8.1",
+        "javascript-obfuscator": "^5.4.3",
+        "png-to-ico": "^3.0.1"
+    }
+}

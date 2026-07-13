@@ -1,0 +1,13 @@
+{
+  "version": "1.3.41",
+  "releaseDate": "2026-06-24T00:00:00Z",
+  "releaseName": "VersePC v1.3.41 测试版",
+  "releaseNotes": "VersePC v1.3.41 测试版\n修复实验性页面按钮、安装器协议乱码等问题",
+  "files": {
+    "win-x64": {
+      "url": "https://github.com/doujie081231/VersePC-beta/releases/download/v1.3.41/VersePC-Setup-1.3.41.exe",
+      "size": 219154539,
+      "sha256": "962F95CED3E671FB0B980F8EAD5966836C13B582108F9C0BD96DB5E585749996"
+    }
+  }
+}

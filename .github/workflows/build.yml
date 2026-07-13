@@ -1,0 +1,175 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      build_mac:
+        description: 'Build macOS version'
+        type: boolean
+        default: true
+      build_win:
+        description: 'Build Windows version'
+        type: boolean
+        default: true
+      build_linux:
+        description: 'Build Linux version'
+        type: boolean
+        default: true
+
+jobs:
+  build-win:
+    if: ${{ inputs.build_win != false }}
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Generate integrity
+        run: node generate-integrity.js
+
+      - name: Build Windows
+        run: npx electron-builder --win --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: dist/*.exe
+          if-no-files-found: error
+
+  build-mac:
+    if: ${{ inputs.build_mac != false }}
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Generate integrity
+        run: node generate-integrity.js
+
+      - name: Prepare icon for macOS
+        run: sips -z 1024 1024 img/icon.png --out img/icon.png
+
+      - name: Build macOS
+        run: npx electron-builder --mac --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-x64
+          path: dist/*.dmg
+          if-no-files-found: error
+
+  build-linux:
+    if: ${{ inputs.build_linux != false }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libvips-dev
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Generate integrity
+        run: node generate-integrity.js
+
+      - name: Build Linux
+        run: npx electron-builder --linux --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-x64
+          path: dist/*.AppImage
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-win, build-mac, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect files
+        run: |
+          mkdir -p release
+          find artifacts -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.zip" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" \) -exec cp {} release/ \;
+
+      - name: Publish to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          draft: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: Update update.json
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          EXE=$(find release -name "VersePC-Setup-*.exe" | head -1)
+          if [ -z "$EXE" ]; then
+            echo "Installer exe not found, skipping update.json"
+            exit 0
+          fi
+          HASH=$(sha256sum "$EXE" | cut -d' ' -f1)
+          SIZE=$(stat -c%s "$EXE")
+          DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          cat > update.json <<EOF
+          {
+            "version": "$VERSION",
+            "releaseDate": "$DATE",
+            "releaseName": "VersePC v$VERSION",
+            "releaseNotes": "",
+            "files": {
+              "win-x64": {
+                "url": "https://github.com/doujie081231/versePc/releases/download/v$VERSION/VersePC-Setup-$VERSION.exe",
+                "sha256": "$HASH",
+                "size": $SIZE
+              }
+            },
+            "minSupportedVersion": "$VERSION",
+            "force": false
+          }
+          EOF
+
+      - name: Push update.json to main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout main
+          cp "${{ github.workspace }}/update.json" update.json
+          git add update.json
+          git diff --cached --quiet && exit 0
+          git commit -m "chore: update update.json for v${{ github.ref_name }}"
+          git push origin main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}

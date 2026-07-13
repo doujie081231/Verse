@@ -1,0 +1,96 @@
+name: Build All
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-linux:
+    if: github.actor == 'doujie081231'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libvips-dev
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Generate integrity
+        run: node generate-integrity.js
+
+      - name: Build Linux
+        run: npx electron-builder --linux --publish never
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-x64
+          path: dist/*.AppImage
+          if-no-files-found: error
+
+  build-mac-x64:
+    if: github.actor == 'doujie081231'
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Generate integrity
+        run: node generate-integrity.js
+
+      - name: Prepare icon for macOS
+        run: sips -z 1024 1024 img/icon.png --out img/icon.png
+
+      - name: Build x64
+        run: npx electron-builder --mac --x64 --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-x64
+          path: dist/*.dmg
+          if-no-files-found: error
+
+  build-mac-arm64:
+    if: github.actor == 'doujie081231'
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Generate integrity
+        run: node generate-integrity.js
+
+      - name: Prepare icon for macOS
+        run: sips -z 1024 1024 img/icon.png --out img/icon.png
+
+      - name: Build arm64
+        run: npx electron-builder --mac --arm64 --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-arm64
+          path: dist/*.dmg
+          if-no-files-found: error
