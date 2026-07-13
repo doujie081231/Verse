@@ -39,7 +39,8 @@ let _getMainWindow = null;
 let _setShuttingDown = null;
 let _isBeta = false;
 
-// 更新源（根据 isBeta 选择 beta 或正式版仓库）
+// 更新源（统一走 ghproxy.net 代理读公开仓库 Verse 的 update.json）
+// 测试版仍读 VersePC-beta 仓库
 let UPDATE_JSON_SOURCES = null;
 
 // 私有函数：按 isBeta 初始化更新源列表
@@ -47,30 +48,28 @@ function _ensureSources() {
   if (UPDATE_JSON_SOURCES) return;
   if (_isBeta) {
     UPDATE_JSON_SOURCES = [
+      'https://ghproxy.net/https://raw.githubusercontent.com/doujie081231/VersePC-beta/main/update.json',
       'https://cdn.jsdelivr.net/gh/doujie081231/VersePC-beta@main/update.json',
-      'https://raw.githubusercontent.com/doujie081231/VersePC-beta/main/update.json',
-      'https://mirror.ghproxy.com/raw.githubusercontent.com/doujie081231/VersePC-beta/main/update.json',
     ];
   } else {
     UPDATE_JSON_SOURCES = [
-      'https://cdn.jsdelivr.net/gh/doujie081231/versePc@main/update.json',
-      'https://raw.githubusercontent.com/doujie081231/versePc/main/update.json',
-      'https://mirror.ghproxy.com/raw.githubusercontent.com/doujie081231/versePc/main/update.json',
+      'https://ghproxy.net/https://raw.githubusercontent.com/doujie081231/Verse/main/update.json',
+      'https://cdn.jsdelivr.net/gh/doujie081231/Verse@main/update.json',
     ];
   }
 }
 
-// 下载镜像转换函数
+// 下载镜像转换函数（统一走 ghproxy.net 代理下载 GitHub Release）
 const DOWNLOAD_MIRRORS = [
-  (url) => url,
-  (url) => url.replace('https://github.com/', 'https://mirror.ghproxy.com/https://github.com/'),
   (url) => {
-    const match = url.match(/https:\/\/github\.com\/([^/]+)\/([^/]+)\/releases\/download\/([^/]+)\/(.+)/);
-    if (match) {
-      return `https://cdn.jsdelivr.net/gh/${match[1]}/${match[2]}@${match[3]}/${match[4]}`;
+    // GitHub Release 下载链接统一走 ghproxy.net 代理
+    if (url.indexOf('https://github.com/') === 0) {
+      return 'https://ghproxy.net/' + url;
     }
     return url;
   },
+  (url) => url,
+  (url) => url.replace('https://github.com/', 'https://mirror.ghproxy.com/https://github.com/'),
 ];
 
 /**
@@ -433,7 +432,8 @@ function registerUpdaterIPC() {
   });
 
   ipcMain.handle('updater:open-release-page', async () => {
-    shell.openExternal('https://github.com/doujie081231/versePc/releases/latest');
+    const repo = _isBeta ? 'VersePC-beta' : 'Verse';
+    shell.openExternal('https://github.com/doujie081231/' + repo + '/releases/latest');
     return { success: true };
   });
 }

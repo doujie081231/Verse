@@ -2247,8 +2247,8 @@
               </div>
             </div>
             <div class="modal-footer announcement-modal-footer" style="justify-content:flex-end;gap:10px;">
-              <button class="modal-btn modal-btn--primary" onclick="downloadFromQuark()">夸克网盘更新</button>
-              <button class="modal-btn modal-btn--secondary" onclick="downloadFromGitHub()">网站更新</button>
+              <button class="modal-btn modal-btn--primary" onclick="gotoUpdateSettings()">立即更新</button>
+              <button class="modal-btn modal-btn--secondary" onclick="downloadFromQuark()">夸克网盘更新</button>
             </div>
           </div>
         </div>
@@ -3382,6 +3382,25 @@
                 modal.classList.remove('modal-exiting');
                 modal.style.display = 'none';
             }, 200);
+        };
+
+        // 立即更新：关闭弹窗 + 跳转到设置页的更新区
+        window.gotoUpdateSettings = function() {
+            window.dismissUpdateModal();
+            // 跳转到其他设置页面
+            if (typeof navigateToPage === 'function') {
+                navigateToPage('settings-other');
+            } else if (typeof switchPage === 'function') {
+                switchPage('settings-other');
+            }
+            // 滚动到更新卡片
+            setTimeout(function() {
+                var card = document.getElementById('update-card');
+                if (card) {
+                    card.style.display = '';
+                    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }, 300);
         };
 
         function addUpdateDots() {
