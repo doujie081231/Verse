@@ -39,7 +39,7 @@
   - install-modal     版本安装模态框
   - mod-detail-modal  模组详情模态框
   ========================================================================== -->
-<html lang="zh-CN" data-theme="light">
+<html lang="zh-CN" data-theme="light" data-no-glass>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -2646,7 +2646,7 @@
               <h3>视觉效果</h3>
               <div class="form-group">
                 <label class="checkbox-label">
-                  <input type="checkbox" id="setting-glass-effect" checked onchange="toggleGlassEffect(this.checked)">
+                  <input type="checkbox" id="setting-glass-effect" onchange="toggleGlassEffect(this.checked)">
                   <span>毛玻璃效果</span>
                 </label>
                 <span class="form-hint">开启后界面元素将呈现半透明毛玻璃质感，关闭可提升性能</span>

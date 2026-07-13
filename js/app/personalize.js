@@ -329,7 +329,7 @@ async function savePersonalizeSettings() {
     const settings = {
         theme: document.querySelector('.theme-option.active')?.dataset.theme || 'light',
         wallpaper: document.querySelector('.wallpaper-option.active')?.dataset.wallpaper || 'none',
-        glassEffect: document.getElementById('setting-glass-effect')?.checked ?? true
+        glassEffect: document.getElementById('setting-glass-effect')?.checked ?? false
     };
 
     try {
@@ -357,13 +357,13 @@ async function resetPersonalizeSettings() {
     if (fitSelect) { fitSelect.value = 'cover'; onWallpaperFitChange('cover'); }
 
     const glassCheckbox = document.getElementById('setting-glass-effect');
-    if (glassCheckbox) { glassCheckbox.checked = true; toggleGlassEffect(true); }
+    if (glassCheckbox) { glassCheckbox.checked = false; toggleGlassEffect(false); }
 
     try {
         await window.electronAPI.store.set('versepc_personalize_settings', JSON.stringify({
             theme: 'light',
             wallpaper: 'none',
-            glassEffect: true
+            glassEffect: false
         }));
         await window.electronAPI.store.set('versepc_wallpaper', 'none');
         await window.electronAPI.store.delete('versepc_solid_color');
@@ -373,7 +373,7 @@ async function resetPersonalizeSettings() {
         await window.electronAPI.store.delete('versepc_custom_image');
         await window.electronAPI.store.delete('versepc_custom_video');
         await window.electronAPI.store.set('versepc_panorama_theme', 'overworld');
-        await window.electronAPI.store.set('versepc_glass_effect', '1');
+        await window.electronAPI.store.set('versepc_glass_effect', '0');
         _updateCustomImagePreview(null);
         const nameEl = document.getElementById('custom-wallpaper-file-name');
         if (nameEl) nameEl.textContent = '未选择';
