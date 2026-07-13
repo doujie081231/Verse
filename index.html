@@ -39,7 +39,7 @@
   - install-modal     版本安装模态框
   - mod-detail-modal  模组详情模态框
   ========================================================================== -->
-<html lang="zh-CN" data-theme="light">
+<html lang="zh-CN" data-theme="light" data-no-glass>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -431,7 +431,6 @@
                 <button class="tab-btn" data-tab="snapshot">快照</button>
                 <button class="tab-btn" data-tab="special">愚人节版</button>
                 <button class="tab-btn" data-tab="old">远古版</button>
-                <button class="tab-btn" data-tab="installed">已安装</button>
               </div>
               <button id="add-external-folder-btn" class="btn btn-secondary" onclick="addExternalFolder()">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
@@ -576,6 +575,26 @@
               </div>
             </div>
           </div>
+      </div>
+
+      <div id="page-installed-versions" class="page">
+        <div class="page-header" style="gap:12px;padding:16px 24px">
+          <button class="btn btn-icon" onclick="navigateToPage('home')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          <h2>已安装版本</h2>
+          <div class="page-actions" style="margin-left:auto;">
+            <button class="btn btn-secondary" onclick="addExternalFolder()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
+              添加已有文件夹
+            </button>
+            <button class="btn btn-secondary" onclick="loadVersions(false)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+              刷新
+            </button>
+          </div>
+        </div>
+        <div id="installed-versions-list" class="version-list"></div>
       </div>
 
       <div id="page-version-detail" class="page">
@@ -2247,8 +2266,8 @@
               </div>
             </div>
             <div class="modal-footer announcement-modal-footer" style="justify-content:flex-end;gap:10px;">
-              <button class="modal-btn modal-btn--primary" onclick="downloadFromQuark()">夸克网盘更新</button>
-              <button class="modal-btn modal-btn--secondary" onclick="downloadFromGitHub()">网站更新</button>
+              <button class="modal-btn modal-btn--primary" onclick="gotoUpdateSettings()">立即更新</button>
+              <button class="modal-btn modal-btn--secondary" onclick="downloadFromQuark()">夸克网盘更新</button>
             </div>
           </div>
         </div>
@@ -2646,7 +2665,7 @@
               <h3>视觉效果</h3>
               <div class="form-group">
                 <label class="checkbox-label">
-                  <input type="checkbox" id="setting-glass-effect" checked onchange="toggleGlassEffect(this.checked)">
+                  <input type="checkbox" id="setting-glass-effect" onchange="toggleGlassEffect(this.checked)">
                   <span>毛玻璃效果</span>
                 </label>
                 <span class="form-hint">开启后界面元素将呈现半透明毛玻璃质感，关闭可提升性能</span>
@@ -2665,11 +2684,12 @@
             <h2>其他设置</h2>
           </div>
           <div class="settings-container">
-            <div class="card sponsor-card" id="sponsor-card">
-              <div class="sponsor-header">
-                <h3>💕 赞助者</h3>
+            <details class="card sponsor-card" id="sponsor-card">
+              <summary class="sponsor-header" style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--text-muted);transition:transform 0.2s;"><polyline points="6 9 12 15 18 9"/></svg>
+                <h3 style="margin:0;">赞助者</h3>
                 <span class="sponsor-count" id="sponsor-count"></span>
-              </div>
+              </summary>
               <div class="sponsor-search">
                 <input type="text" id="sponsor-search-input" class="sponsor-search-input" placeholder="搜索赞助者..." oninput="filterSponsors(this.value)">
               </div>
@@ -2679,7 +2699,7 @@
                 展开更多
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;margin-left:4px"><polyline points="6 9 12 15 18 9"/></svg>
               </button>
-            </div>
+            </details>
             <div class="card">
               <h3>识别码与激活</h3>
               <p class="form-hint" style="margin-bottom: 12px;">赞助后将识别码发给作者，获取激活码解锁测试版</p>
@@ -2705,7 +2725,7 @@
               <div class="form-group">
                 <label>反馈邮箱</label>
                 <div class="input-with-btn">
-                  <input type="text" class="text-input" value="doujie2978166201@163.com" readonly>
+                  <input type="text" class="text-input" value="verselauncher@verselauncher.cn" readonly>
                   <button class="btn btn-primary btn-sm" onclick="copyFeedbackEmail(this)">复制</button>
                 </div>
               </div>
@@ -2878,30 +2898,6 @@
               </div>
             </div>
 
-            <div id="update-card" class="card" style="display:none;">
-              <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
-                <div style="width:40px;height:40px;border-radius:10px;background:rgba(var(--accent-rgb,76,175,80),0.15);display:flex;align-items:center;justify-content:center;">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:22px;height:22px;color:var(--accent,#4caf50);"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                </div>
-                <div>
-                  <h3 style="margin:0;font-size:16px;color:var(--text-primary);">发现新版本</h3>
-                  <p style="margin:2px 0 0;font-size:12px;color:var(--text-secondary);" id="update-card-version"></p>
-                </div>
-                <button onclick="dismissUpdateCard()" style="margin-left:auto;background:none;border:none;color:var(--text-secondary);cursor:pointer;font-size:18px;padding:4px 8px;border-radius:4px;" onmouseover="this.style.color='var(--text-primary)'" onmouseout="this.style.color='var(--text-secondary)'">&times;</button>
-              </div>
-              <div id="update-card-notes" style="font-size:12px;color:var(--text-secondary);line-height:1.7;margin-bottom:14px;padding:8px 12px;background:var(--bg-card,#fafafa);border:1px solid var(--border,rgba(0,0,0,0.1));border-radius:8px;max-height:120px;overflow-y:auto;"></div>
-              <div style="display:flex;gap:10px;flex-wrap:wrap;">
-                <button onclick="downloadFromGitHub()" style="flex:1;min-width:140px;display:inline-flex;align-items:center;justify-content:center;padding:10px 20px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:500;background:var(--text-primary);color:var(--bg-page,#fff);transition:all 0.2s;" onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
-                  <svg viewBox="0 0 24 24" fill="currentColor" style="width:16px;height:16px;margin-right:6px;vertical-align:middle;"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
-                  GitHub 下载
-                </button>
-                <button onclick="downloadFromQuark()" style="flex:1;min-width:140px;display:inline-flex;align-items:center;justify-content:center;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;background:var(--bg-card);color:var(--text-secondary);border:1px solid var(--border);transition:all 0.2s;" onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;margin-right:6px;vertical-align:middle;"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                  夸克网盘下载
-                </button>
-              </div>
-            </div>
-
             <div class="card">
               <h3>关于 VersePC</h3>
               <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 12px;" id="updater-version-info">当前版本：加载中...</p>
@@ -2915,7 +2911,7 @@
               <div id="updater-status-area" style="margin-bottom:12px;"></div>
               <div id="updater-release-notes" style="margin-bottom:12px;display:none;">
                 <details style="background:var(--bg-secondary,rgba(255,255,255,0.05));border-radius:8px;padding:10px;border:1px solid var(--border-color,rgba(255,255,255,0.08));">
-                  <summary style="cursor:pointer;font-size:13px;color:var(--accent);font-weight:500;">📋 更新日志</summary>
+                  <summary style="cursor:pointer;font-size:13px;color:var(--accent);font-weight:500;">更新日志</summary>
                   <pre id="updater-release-notes-content" style="white-space:pre-wrap;word-break:break-word;font-size:12px;color:var(--text-secondary);margin-top:8px;line-height:1.6;"></pre>
                 </details>
               </div>
@@ -2951,7 +2947,7 @@
             </div>
 
             <div class="card">
-              <h3 style="margin-bottom: 16px;">🙏 致谢</h3>
+              <h3 style="margin-bottom: 16px;">致谢</h3>
               <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; line-height: 1.6;">
                 VersePC 的开发离不开以下开源项目的启发与技术支持，在此表示衷心感谢！
               </p>
@@ -3203,14 +3199,14 @@
 
             switch (channel) {
                 case 'checking-for-update':
-                    statusArea.innerHTML = '<div style="display:flex;align-items:center;gap:8px;color:var(--text-muted);"><svg class="spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;animation:spin 1s linear infinite;"><path d="M21 12a9 9 0 11-6.219-8.56"/></svg>正在检查更新...</div>';
+                    statusArea.innerHTML = '<div class="update-status update-status--loading"><span class="update-status__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-6.219-8.56"/></svg></span><span class="update-status__body">正在检查更新...</span></div>';
                     checkBtn.disabled = true;
                     break;
 
                 case 'update-available':
                     currentUpdateVersion = data.version;
                     _latestVersion = data.version;
-                    statusArea.innerHTML = '<div style="display:flex;align-items:center;gap:6px;padding:10px;background:rgba(96,165,250,0.1);border-radius:8px;border:1px solid rgba(96,165,250,0.2);"><span style="font-size:20px;">🎉</span><div><div style="color:var(--accent);font-weight:600;font-size:14px;">发现新版本 v' + data.version + '</div><div style="font-size:12px;color:var(--text-muted);margin-top:2px;">点击下方按钮下载或查看详情</div></div></div>';
+                    statusArea.innerHTML = '<div class="update-status update-status--info"><span class="update-status__icon"></span><div class="update-status__body"><div class="update-status__title">发现新版本 v' + data.version + '</div><div class="update-status__desc">点击下方按钮下载或查看详情</div></div></div>';
                     checkBtn.style.display = 'none';
                     skipBtn.style.display = '';
                     releaseBtn.style.display = '';
@@ -3219,27 +3215,17 @@
                     showReleaseNotes(data.releaseNotes);
                     showUpdatePopup(data);
                     addUpdateDots();
-                    { const card = document.getElementById('update-card');
-                    if (card) card.style.display = '';
-                    const verEl = document.getElementById('update-card-version');
-                    if (verEl) verEl.textContent = 'v' + data.currentVersion + ' → v' + data.version;
-                    const notesEl = document.getElementById('update-card-notes');
-                    if (notesEl && data.releaseNotes) {
-                        if (typeof marked !== 'undefined') notesEl.innerHTML = marked.parse(data.releaseNotes);
-                        else notesEl.textContent = data.releaseNotes;
-                        notesEl.style.display = '';
-                    } else if (notesEl) { notesEl.style.display = 'none'; } }
                     break;
 
                 case 'update-not-available':
-                    statusArea.innerHTML = '<div style="display:flex;align-items:center;gap:6px;color:var(--text-muted);"><span>✅</span>已是最新版本</div>';
+                    statusArea.innerHTML = '<div class="update-status update-status--success"><span class="update-status__icon"></span><span class="update-status__body">已是最新版本</span></div>';
                     checkBtn.disabled = false;
                     skipBtn.style.display = 'none';
                     releaseBtn.style.display = 'none';
                     break;
 
                 case 'update-skipped':
-                    statusArea.innerHTML = '<div style="display:flex;align-items:center;gap:6px;color:var(--text-muted);"><span>⏭️</span>已跳过 v' + escapeHtml(data.version) + '</div>';
+                    statusArea.innerHTML = '<div class="update-status update-status--loading"><span class="update-status__icon"></span><span class="update-status__body">已跳过 v' + escapeHtml(data.version) + '</span></div>';
                     checkBtn.disabled = false;
                     break;
 
@@ -3247,21 +3233,21 @@
                     const errorType = data.errorType || 'unknown';
                     const hint = data.hint || '';
                     let hintHtml = '';
-                    if (hint) hintHtml = '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">💡 ' + hint + '</div>';
+                    if (hint) hintHtml = '<div class="update-status__hint">' + hint + '</div>';
 
                     let mirrorBar = '';
 
                     statusArea.innerHTML =
-                        '<div style="display:flex;align-items:flex-start;gap:6px;color:#ef4444;padding:10px;background:rgba(239,68,68,0.06);border-radius:8px;border:1px solid rgba(239,68,68,0.15);">' +
-                        '<span style="font-size:16px;margin-top:2px;">❌</span>' +
-                        '<div><div style="font-weight:500;">检查更新失败</div>' +
-                        '<div style="font-size:12px;color:var(--text-muted);margin-top:2px;word-break:break-word;">' + escapeHtml(data.message || '未知错误') + '</div>' +
-                        hintHtml + mirrorBar + '</div>';
+                        '<div class="update-status update-status--error">' +
+                        '<span class="update-status__icon"></span>' +
+                        '<div class="update-status__body"><div class="update-status__title">检查更新失败</div>' +
+                        '<div class="update-status__desc">' + escapeHtml(data.message || '未知错误') + '</div>' +
+                        hintHtml + mirrorBar + '</div></div>';
                     checkBtn.disabled = false;
                     break;
 
                 case 'start-download':
-                    statusArea.innerHTML = '<div style="display:flex;align-items:center;gap:8px;color:var(--accent);"><svg class="spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;animation:spin 1s linear infinite;"><path d="M21 12a9 9 0 11-6.219-8.56"/></svg>正在下载更新...</div>';
+                    statusArea.innerHTML = '<div class="update-status update-status--loading"><span class="update-status__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-6.219-8.56"/></svg></span><span class="update-status__body">正在下载更新...</span></div>';
                     downloadBtn.disabled = true;
                     downloadBtn.textContent = '下载中...';
                     break;
@@ -3272,16 +3258,16 @@
                     const transferred = formatBytes(data.transferred);
                     const total = formatBytes(data.total);
                     statusArea.innerHTML =
-                        '<div style="background:rgba(96,165,250,0.08);border-radius:10px;padding:14px;border:1px solid rgba(96,165,250,0.15);">' +
-                        '<div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:13px;"><span style="color:var(--accent);">正在下载更新...</span><span style="color:var(--text-secondary);">' + pct + '%</span></div>' +
-                        '<div style="width:100%;height:6px;background:rgba(255,255,255,0.08);border-radius:3px;overflow:hidden;"><div style="height:100%;width:' + pct + '%;background:linear-gradient(90deg,#3b82f6,#60a5fa);border-radius:3px;transition:width 0.15s ease;"></div></div>' +
-                        '<div style="display:flex;justify-content:space-between;margin-top:6px;font-size:11px;color:var(--text-muted);"><span>' + speed + '/s</span><span>' + transferred + ' / ' + total + '</span></div></div>';
+                        '<div class="update-progress">' +
+                        '<div class="update-progress__header"><span class="update-progress__label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-6.219-8.56"/></svg>正在下载更新...</span><span class="update-progress__percent">' + pct + '%</span></div>' +
+                        '<div class="update-progress__track"><div class="update-progress__fill" style="width:' + pct + '%;"></div></div>' +
+                        '<div class="update-progress__info"><span>' + speed + '/s</span><span>' + transferred + ' / ' + total + '</span></div></div>';
                     break;
                 }
 
                 case 'update-downloaded':
                     currentUpdateVersion = null;
-                    statusArea.innerHTML = '<div style="display:flex;align-items:center;gap:6px;padding:10px;background:rgba(34,197,94,0.1);border-radius:8px;border:1px solid rgba(34,197,94,0.2);"><span style="font-size:18px;">✅</span><div><div style="color:#22c55e;font-weight:600;font-size:14px;">更新已下载完成 (v' + data.version + ')</div><div style="font-size:12px;color:var(--text-muted);margin-top:2px;">点击安装并重启以完成更新</div></div></div>';
+                    statusArea.innerHTML = '<div class="update-status update-status--success"><span class="update-status__icon"></span><div class="update-status__body"><div class="update-status__title">更新已下载完成 (v' + data.version + ')</div><div class="update-status__desc">点击安装并重启以完成更新</div></div></div>';
                     skipBtn.style.display = 'none';
                     releaseBtn.style.display = 'none';
                     downloadBtn.style.display = 'none';
@@ -3336,7 +3322,7 @@
         };
 
         window.downloadFromQuark = function() {
-            window.electronAPI?.openExternal?.('https://pan.quark.cn/s/02655f4bf804');
+            window.electronAPI?.openExternal?.('https://pan.quark.cn/s/04ec149d8a93');
         };
 
         function showUpdatePopup(data) {
@@ -3382,6 +3368,25 @@
                 modal.classList.remove('modal-exiting');
                 modal.style.display = 'none';
             }, 200);
+        };
+
+        // 立即更新：关闭弹窗 + 跳转到设置页的更新区
+        window.gotoUpdateSettings = function() {
+            window.dismissUpdateModal();
+            // 跳转到其他设置页面
+            if (typeof navigateToPage === 'function') {
+                navigateToPage('settings-other');
+            } else if (typeof switchPage === 'function') {
+                switchPage('settings-other');
+            }
+            // 滚动到"关于 VersePC"卡片
+            setTimeout(function() {
+                var btnGroup = document.getElementById('updater-btn-group');
+                if (btnGroup) {
+                    var card = btnGroup.closest('.card');
+                    if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }, 300);
         };
 
         function addUpdateDots() {
@@ -3430,6 +3435,85 @@
       </div>
     </div>
   </div>
+
+  <!-- 模组汉化弹窗 -->
+  <div id="mod-translate-modal" class="modal" style="display:none">
+    <div class="modal-content" style="max-width:560px;">
+      <div class="modal-header">
+        <h3>模组汉化</h3>
+        <button class="modal-close" onclick="hideModal('mod-translate-modal')">&times;</button>
+      </div>
+      <div class="modal-body" id="mod-translate-body">
+        <div id="mod-translate-loading" style="text-align:center;padding:30px 0;">
+          <div class="modal-spinner"></div>
+          <p style="color:var(--text-muted);margin-top:12px;">正在检查模组语言文件...</p>
+        </div>
+        <div id="mod-translate-content" style="display:none;">
+          <div id="mod-translate-info" style="margin-bottom:16px;padding:12px;background:var(--bg-secondary);border-radius:8px;">
+            <div style="font-weight:600;margin-bottom:4px;" id="mod-translate-modname"></div>
+            <div style="font-size:12px;color:var(--text-muted);" id="mod-translate-langinfo"></div>
+          </div>
+          <div id="mod-translate-tabs" style="display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--border-color);">
+            <button class="mod-translate-tab active" data-tab="quick" onclick="switchTranslateTab('quick')">快速汉化</button>
+            <button class="mod-translate-tab" data-tab="auto" onclick="switchTranslateTab('auto')">AI 机翻</button>
+            <button class="mod-translate-tab" data-tab="manual" onclick="switchTranslateTab('manual')">手动汉化</button>
+          </div>
+          <div id="mod-translate-tab-quick" class="mod-translate-panel">
+            <p style="color:var(--text-secondary);font-size:13px;line-height:1.7;margin-bottom:12px;">
+              使用谷歌免费翻译接口，无需配置，速度快。翻译质量一般，适合快速体验。
+            </p>
+            <div id="mod-translate-quick-progress" style="display:none;margin-bottom:12px;">
+              <div style="height:6px;background:var(--bg-secondary);border-radius:3px;overflow:hidden;">
+                <div id="mod-translate-quick-progress-bar" style="height:100%;width:0%;background:var(--accent-color);transition:width 0.3s;"></div>
+              </div>
+              <p id="mod-translate-quick-progress-text" style="font-size:12px;color:var(--text-muted);margin-top:6px;">准备中...</p>
+            </div>
+            <div id="mod-translate-quick-result" style="display:none;padding:10px 12px;border-radius:6px;margin-bottom:12px;font-size:13px;"></div>
+            <button class="btn btn-primary" id="mod-translate-quick-btn" onclick="startQuickTranslate()">
+              开始快速汉化
+            </button>
+          </div>
+          <div id="mod-translate-tab-auto" class="mod-translate-panel" style="display:none;">
+            <p style="color:var(--text-secondary);font-size:13px;line-height:1.7;margin-bottom:12px;">
+              自动翻译模组中的英文文本为中文，适合快速体验。翻译质量取决于 AI 模型，专业术语可能不够准确。
+            </p>
+            <div id="mod-translate-ai-warning" style="display:none;padding:10px 12px;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:6px;margin-bottom:12px;font-size:12px;color:#f59e0b;">
+              未配置 AI 供应商，请先在 V岛设置中配置 AI 对话功能。
+            </div>
+            <div id="mod-translate-progress" style="display:none;margin-bottom:12px;">
+              <div style="height:6px;background:var(--bg-secondary);border-radius:3px;overflow:hidden;">
+                <div id="mod-translate-progress-bar" style="height:100%;width:0%;background:var(--accent-color);transition:width 0.3s;"></div>
+              </div>
+              <p id="mod-translate-progress-text" style="font-size:12px;color:var(--text-muted);margin-top:6px;">准备中...</p>
+            </div>
+            <div id="mod-translate-result" style="display:none;padding:10px 12px;border-radius:6px;margin-bottom:12px;font-size:13px;"></div>
+            <button class="btn btn-primary" id="mod-translate-start-btn" onclick="startAutoTranslate()">
+              开始机翻
+            </button>
+          </div>
+          <div id="mod-translate-tab-manual" class="mod-translate-panel" style="display:none;">
+            <p style="color:var(--text-secondary);font-size:13px;line-height:1.7;margin-bottom:12px;">
+              手动汉化需要自己翻译文本，适合追求翻译质量的用户。
+            </p>
+            <div style="background:var(--bg-secondary);border-radius:8px;padding:14px 16px;margin-bottom:12px;">
+              <ol style="margin:0;padding-left:20px;color:var(--text-secondary);font-size:13px;line-height:2;">
+                <li>点击下方"导出语言文件"按钮，提取模组的英文语言文件</li>
+                <li>打开导出的 <code style="background:var(--bg-tertiary);padding:2px 6px;border-radius:3px;">en_us.json</code> 文件</li>
+                <li>将每行英文翻译成中文（只翻译冒号右边的值）</li>
+                <li>保存文件名为 <code style="background:var(--bg-tertiary);padding:2px 6px;border-radius:3px;">zh_cn.json</code></li>
+                <li>点击"导入中文语言文件"将翻译好的文件写回模组</li>
+              </ol>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-secondary" onclick="exportModLangFile()">导出语言文件</button>
+              <button class="btn btn-secondary" onclick="importModLangFile()">导入中文语言文件</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <input type="file" id="mod-translate-file-input" style="display:none" accept=".json,.lang">
 
 </body>
 </html>

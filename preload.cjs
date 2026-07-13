@@ -470,6 +470,41 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getMemoryInfo: () => ipcRenderer.invoke('get-memory-info'),
 
   /**
+   * TTS 语音合成（基于 msedge-tts，主进程合成 MP3 音频返回）
+   * @namespace tts
+   */
+  tts: {
+    /**
+     * 朗读文本，返回 MP3 音频 Buffer
+     * @param {string} text - 要朗读的文本
+     * @param {string} [voice='zh-CN-XiaoxiaoNeural'] - 微软语音名
+     * @returns {Promise<{ok: boolean, data?: ArrayBuffer, error?: string}>}
+     */
+    speak: (text, voice) => ipcRenderer.invoke('tts:speak', text, voice),
+    /** 停止朗读（实际停止逻辑在渲染进程） */
+    stop: () => ipcRenderer.invoke('tts:stop'),
+  },
+
+  /**
+   * AI 对话代理（主进程发起请求，绕过 CORS）
+   * @namespace ai
+   */
+  ai: {
+    /**
+     * 发起 AI 对话
+     * @param {Object} config - 供应商配置（provider/endpoint/apiFormat/apiKey/model/messages）
+     * @returns {Promise<{ok: boolean, reply?: string, error?: string}>}
+     */
+    chat: (config) => ipcRenderer.invoke('ai:chat', config),
+    /**
+     * 快速批量翻译（使用 Google 免费接口，不需要 API Key）
+     * @param {Object} params - { texts: string[], source?: 'en', target?: 'zh-CN' }
+     * @returns {Promise<{ok: boolean, results?: string[], error?: string}>}
+     */
+    translateBatch: (params) => ipcRenderer.invoke('translate:batch', params),
+  },
+
+  /**
    * 触发 JVM 预热
    * @param {string} javaPath - Java 可执行文件路径
    * @param {number} maxMemMB - 最大内存（MB）

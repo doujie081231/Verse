@@ -161,6 +161,12 @@ const {
 // 编辑器窗口 + 终端会话模块
 const { setupEditorTerminal, registerEditorTerminalIPC, cleanupTerminals } = require('./main/editor-terminal');
 
+// TTS 语音合成模块（基于 msedge-tts，主进程合成音频）
+const { registerTTSIPC } = require('./main/tts');
+
+// AI 对话代理模块（主进程发起请求，绕过 CORS 限制）
+const { registerAIProxyIPC } = require('./main/ai-proxy');
+
 // versepc:// 协议处理模块 - 启动时立即需要（协议注册）
 const {
   setupProtocolHandler, handleVersePCProtocol,
@@ -269,6 +275,7 @@ async function createWindow() {
       contextIsolation: true,
       webSecurity: true,
       webviewTag: false,
+      autoplayPolicy: 'no-user-gesture-required',
       preload: path.join(__dirname, 'preload.cjs')
     }
   });
@@ -901,6 +908,16 @@ app.whenReady().then(async () => {
       // IPC 和其他初始化
       registerModsIPC({ isPathAllowed, loadStore });
       registerStoreIPC({ app, isPathAllowed });
+      registerTTSIPC();
+      registerAIProxyIPC();
+
+      // V 岛语音助手需要麦克风权限，统一授权（避免 SpeechRecognition 静默失效）
+      session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+        if (permission === 'media') callback(true);
+        else callback(true);
+      });
+      session.defaultSession.setPermissionCheckHandler(() => true);
+
       updaterModule.setup({
         getMainWindow: () => mainWindow,
         setShuttingDown: (v) => sharedState.setShuttingDown(v),

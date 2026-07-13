@@ -1,4 +1,5 @@
 node_modules/
+verse-public/
 dist/
 dist-renderer/
 dist-new/

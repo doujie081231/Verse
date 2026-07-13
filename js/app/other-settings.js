@@ -1,7 +1,7 @@
 // ─── 其他设置函数 ──────────────────────────────────────────
 
 async function copyFeedbackEmail(btn) {
-    const email = 'doujie2978166201@163.com';
+    const email = 'verselauncher@verselauncher.cn';
     try {
         if (window.electronAPI?.clipboard) {
             await window.electronAPI.clipboard.writeText(email);

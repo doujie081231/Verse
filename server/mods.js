@@ -232,7 +232,7 @@ function parseModJar(jarPath) {
         ctx.caches.MOD_META_CACHE.set(jarPath, result);
         return result;
     } catch (e) {
-        ctx.caches.MOD_META_CACHE.set(jarPath, result);
+        console.error('[parseModJar] 解析失败:', jarPath, e.message);
         return result;
     }
 }

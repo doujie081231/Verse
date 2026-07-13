@@ -7,6 +7,13 @@
 const { fs, path, ctx, loadExternalFolders } = require('./shared');
 const { mergeVersionJson, deduplicateJvmArgs } = require('./version-merge');
 
+// 读取 JSON 文件并去除 BOM（某些工具如 PowerShell WriteAllText 会写入 UTF-8 BOM，导致 JSON.parse 失败）
+function _readJsonSync(filePath) {
+  let content = fs.readFileSync(filePath, 'utf-8');
+  if (content.charCodeAt(0) === 0xFEFF) content = content.slice(1);
+  return JSON.parse(content);
+}
+
 // 清除指定版本的已解析 JSON 缓存
 function _invalidateResolvedJsonCache(versionId) {
   ctx.caches._resolvedJsonCache.delete(versionId);
@@ -20,7 +27,7 @@ function findVersionJson(versionDir) {
   const primaryJson = path.join(versionDir, `${dirName}.json`);
   if (fs.existsSync(primaryJson)) {
     try {
-      const data = JSON.parse(fs.readFileSync(primaryJson, 'utf-8'));
+      const data = _readJsonSync(primaryJson);
       if (data.id || data.mainClass || data.inheritsFrom || data.libraries || data.minecraftArguments || data.arguments) {
         return primaryJson;
       }
@@ -31,7 +38,7 @@ function findVersionJson(versionDir) {
     for (const jsonFile of jsonFiles) {
       const fullPath = path.join(versionDir, jsonFile);
       try {
-        const data = JSON.parse(fs.readFileSync(fullPath, 'utf-8'));
+        const data = _readJsonSync(fullPath);
         if (!data.id && !data.inheritsFrom) continue;
         if (data.mainClass || data.libraries || data.inheritsFrom || data.minecraftArguments || data.arguments) {
           return fullPath;
@@ -43,7 +50,7 @@ function findVersionJson(versionDir) {
   const packInfoPath = path.join(versionDir, 'pack-info.json');
   if (fs.existsSync(packInfoPath)) {
     try {
-      const packInfo = JSON.parse(fs.readFileSync(packInfoPath, 'utf-8'));
+      const packInfo = _readJsonSync(packInfoPath);
       if (packInfo.mcVersion || packInfo.name) {
         let inheritsFrom = packInfo.mcVersion;
         if (packInfo.forgeVersion) inheritsFrom = `${packInfo.mcVersion}-forge-${packInfo.forgeVersion}`;
@@ -438,7 +445,7 @@ function resolveVersionJson(versionId, externalVersionDir = null, visited = null
   }
   if (!jsonFile || !fs.existsSync(jsonFile)) return null;
 
-  const data = JSON.parse(fs.readFileSync(jsonFile, 'utf-8'));
+  const data = _readJsonSync(jsonFile);
   // 无 inheritsFrom 时尝试从版本 ID 推断父版本（仅内存修正，不写盘）
   if (!data.inheritsFrom) {
     const detectedParent = detectModLoaderParent(data, externalVersionDir);

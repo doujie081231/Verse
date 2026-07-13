@@ -264,6 +264,25 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
       }
     }
 
+    // 提取整合包根目录的图标文件（pack.png / icon.png / logo.png）到版本目录，用于版本卡片展示
+    try {
+      const _cfRootIconNames = ['pack.png', 'icon.png', 'logo.png'];
+      for (const _entry of entries) {
+        if (_entry.isDirectory) continue;
+        const _entryName = _entry.entryName.replace(/\\/g, '/');
+        if (_cfRootIconNames.includes(_entryName)) {
+          const _destIconPath = path.join(versionDir, _entryName);
+          if (!fs.existsSync(_destIconPath)) {
+            await fs.promises.writeFile(_destIconPath, _entry.getData());
+            utils._writeImportLog(`提取整合包图标: ${_entryName}`);
+          }
+          break;
+        }
+      }
+    } catch (_cfIconErr) {
+      console.warn(`[Modpack] CurseForge 提取根目录图标失败（非致命）: ${_cfIconErr.message}`);
+    }
+
     // 修正：mods 目录下误放的资源包 zip 移到 resourcepacks（整合包作者打包结构错误时自动修复）
     try {
       const relocated = relocateMisplacedResourcePacks(versionDir);

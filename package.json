@@ -1,6 +1,6 @@
 {
     "name": "versepc",
-    "version": "1.3.42",
+    "version": "1.1.0",
     "description": "VersePC - Minecraft Launcher",
     "author": {
         "name": "豆杰",
@@ -31,6 +31,7 @@
         "bytenode": "^1.5.6",
         "electron-updater": "^6.8.3",
         "monaco-editor": "^0.55.1",
+        "msedge-tts": "^2.0.6",
         "recycle-bin": "^0.1.3",
         "sharp": "^0.34.5",
         "ws": "^8.20.0"
@@ -85,7 +86,20 @@
             "node_modules/yallist/**/*",
             "node_modules/sharp/**/*",
             "node_modules/@img/**/*",
-            "node_modules/detect-libc/**/*"
+            "node_modules/detect-libc/**/*",
+            "node_modules/msedge-tts/**/*",
+            "node_modules/axios/**/*",
+            "node_modules/buffer/**/*",
+            "node_modules/isomorphic-ws/**/*",
+            "node_modules/stream-browserify/**/*",
+            "node_modules/follow-redirects/**/*",
+            "node_modules/form-data/**/*",
+            "node_modules/https-proxy-agent/**/*",
+            "node_modules/proxy-from-env/**/*",
+            "node_modules/inherits/**/*",
+            "node_modules/readable-stream/**/*",
+            "node_modules/base64-js/**/*",
+            "node_modules/ieee754/**/*"
         ],
         "publish": {
             "provider": "github",

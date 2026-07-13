@@ -848,7 +848,11 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
     // 缺失文件分类：核心库必须修复，非核心库可跳过自动下载直接启动
     const nonForgeCoreMissing = depCheck.missingFiles.filter((f) => f.type !== 'forge_core');
     if (nonForgeCoreMissing.length > 0) {
-      const _LAUNCH_CORE_PREFIXES = ['net.minecraftforge', 'net.neoforged', 'cpw.mods', 'net.minecraft'];
+      const _LAUNCH_CORE_PREFIXES = [
+        'net.minecraftforge', 'net.neoforged', 'cpw.mods', 'net.minecraft',
+        'com.mojang', 'com.google', 'io.netty', 'org.apache', 'commons-',
+        'com.ibm', 'com.microsoft.azure', 'org.lwjgl', 'org.joml'
+      ];
       const criticalMissing = nonForgeCoreMissing.filter((f) => f.type === 'main_jar' || f.type === 'parent_version' || f.type === 'native' || f.type === 'asset' || f.type === 'asset_index');
       const nonCoreLibMissing = nonForgeCoreMissing.filter((f) => f.type === 'library' && f.name && !_LAUNCH_CORE_PREFIXES.some((p) => f.name.split(':')[0].startsWith(p)));
       const coreLibMissing = nonForgeCoreMissing.filter((f) => f.type === 'library' && f.name && _LAUNCH_CORE_PREFIXES.some((p) => f.name.split(':')[0].startsWith(p)));

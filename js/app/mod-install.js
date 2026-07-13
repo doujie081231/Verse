@@ -360,21 +360,6 @@ async function showModInstallConfirm(projectId, source, versionId, fileId) {
     }
     localStorage.setItem('lastModSavePath', savePath);
 
-    const currentGameVersion = getCustomSelectValue('mod-filter-version') || '';
-    const currentLoader = getCustomSelectValue('mod-filter-loader') || '';
-
-    if (versionId) {
-      showToast('正在检查前置依赖...', 'info');
-      try {
-        const depResult = await API.getModDependencies(versionId, source, currentGameVersion, currentLoader, projectId);
-        const deps = depResult.dependencies || [];
-        if (deps.length > 0) {
-          showDependencyDialog(projectId, source, versionId, fileId, savePath, deps, currentGameVersion, currentLoader);
-          return;
-        }
-      } catch (e) { console.warn('[ModInstall] 依赖检查失败:', e.message); }
-    }
-
     proceedModInstall(projectId, source, versionId, fileId, savePath, true);
   } catch (e) {
     console.error('Mod install confirm error:', e);

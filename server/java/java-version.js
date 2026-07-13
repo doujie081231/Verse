@@ -155,6 +155,17 @@ function getJavaVersionRange(versionId, versionJson = null) {
     else if (level >= 8) { result.min = Math.max(result.min, 21); }
   }
 
+  // 检测 JVM 参数中的 Java 23+ 选项（如 --sun-misc-unsafe-memory-access）
+  // 某些 Mod 加载器（如 NeoForge 26.x）的 version.json 声明 javaVersion=21 但实际
+  // 包含 Java 23+ 的 JVM 参数，导致 Java 21 启动时报 "Unrecognized option" 崩溃
+  if (versionJson && versionJson.arguments && Array.isArray(versionJson.arguments.jvm)) {
+    const jvmArgsStr = JSON.stringify(versionJson.arguments.jvm);
+    if (jvmArgsStr.includes('--sun-misc-unsafe-memory-access')) {
+      result.min = Math.max(result.min, 23);
+      result.source = 'jvm-args';
+    }
+  }
+
   if (ver) {
     // 1.20.5+：Java 21+
     if (ver.major >= 2 || (ver.major === 1 && ver.minor > 20) || (ver.major === 1 && ver.minor === 20 && ver.patch >= 5)) {

@@ -561,6 +561,25 @@ async function _importMrpack(zip, manifestEntry, filePath, progress, targetVersi
     }
     utils._writeImportLog(`<<< [步骤4/5] 解压完成: ${extractCount} 个文件, 耗时=${Math.round((Date.now() - _extractStartTime) / 1000)}s`);
 
+    // 提取整合包根目录的图标文件（pack.png / icon.png / logo.png）到版本目录，用于版本卡片展示
+    try {
+      const _rootIconNames = ['pack.png', 'icon.png', 'logo.png'];
+      for (const _entry of entries) {
+        if (_entry.isDirectory) continue;
+        const _entryName = _entry.entryName.replace(/\\/g, '/');
+        if (_rootIconNames.includes(_entryName)) {
+          const _destIconPath = path.join(versionDir, _entryName);
+          if (!fs.existsSync(_destIconPath)) {
+            await fs.promises.writeFile(_destIconPath, _entry.getData());
+            utils._writeImportLog(`提取整合包图标: ${_entryName}`);
+          }
+          break;
+        }
+      }
+    } catch (_iconErr) {
+      console.warn(`[Modpack] 提取根目录图标失败（非致命）: ${_iconErr.message}`);
+    }
+
     // 修正：mods 目录下误放的资源包 zip 移到 resourcepacks（整合包作者打包结构错误时自动修复）
     try {
       const relocated = relocateMisplacedResourcePacks(versionDir);

@@ -579,6 +579,26 @@
     align-items: center;
     gap: 6px;
     flex-shrink: 0;
+    flex-wrap: wrap;
+}
+
+/* 模组汉化弹窗 */
+.mod-translate-tab {
+    padding: 8px 16px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 13px;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+}
+.mod-translate-tab:hover {
+    color: var(--text-primary);
+}
+.mod-translate-tab.active {
+    color: var(--accent-color);
+    border-bottom-color: var(--accent-color);
 }
 
 /* 整合包导出 - 文件树勾选、导出表单 */

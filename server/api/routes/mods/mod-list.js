@@ -75,7 +75,7 @@ module.exports = {
       if (!imVersionId) { sendError(res, 'Missing versionId', 400); return; }
       try {
         const MAX_MODS = 200;
-        const mods = [];
+        const modList = [];
         const seenFiles = new Set();
         const imSettings = versions.loadSettingsCached();
 
@@ -85,7 +85,7 @@ module.exports = {
           const allFiles = await fs.promises.readdir(dir);
           const jarFiles = allFiles.filter((f) => (f.endsWith('.jar') || f.endsWith('.zip') || f.endsWith('.jar.disabled') || f.endsWith('.zip.disabled')));
           for (const f of jarFiles) {
-            if (mods.length >= MAX_MODS) break;
+            if (modList.length >= MAX_MODS) break;
             const isDisabled = f.endsWith('.disabled');
             const realName = isDisabled ? f.replace('.disabled', '') : f;
             if (seenFiles.has(realName)) continue;
@@ -105,9 +105,9 @@ module.exports = {
                 if (parsed.description) description = parsed.description.substring(0, 200);
                 if (parsed.version) version = parsed.version;
                 if (parsed.id) projectId = parsed.id;
-              } catch (e) {}
+              } catch (e) { console.error('[mod-list] parseModJar error for', jarPath, ':', e.message); }
             }
-            mods.push({ id, name, fileName: f, disabled: isDisabled, description: description || (isDisabled ? '已禁用' : '已安装的模组'), version: version || '1.0', size: stat.size || 0, source: src, icon, author, projectId });
+            modList.push({ id, name, fileName: f, jarPath, disabled: isDisabled, description: description || (isDisabled ? '已禁用' : '已安装的模组'), version: version || '1.0', size: stat.size || 0, source: src, icon, author, projectId });
           }
         }
 
@@ -121,7 +121,7 @@ module.exports = {
           const imHomeMods = path.join(os.homedir(), 'AppData', 'Roaming', '.minecraft', 'mods');
           if (imHomeMods !== imModsDir && imHomeMods !== imSharedModsDir) await scanInstalledDir(imHomeMods, '.minecraft');
         }
-        sendJSON(res, mods);
+        sendJSON(res, modList);
       } catch (e) { sendJSON(res, []); }
     });
 

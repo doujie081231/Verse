@@ -88,7 +88,7 @@ document.addEventListener('DOMContentLoaded', () => {
   renderSponsors();
   loadMachineId();
   updateActivationStatus();
-  setTimeout(checkAnnouncementPopup, 2000);
+  // 启动时不再自动弹出"更新公告"，新版本提示由更新检测单独处理，避免同时出现两个弹窗
 
   if (window.electronAPI?.platform && window.electronAPI.platform !== 'win32') {
     document.querySelectorAll('.win-only').forEach((el) => (el.style.display = 'none'));

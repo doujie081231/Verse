@@ -7,12 +7,18 @@ const dlManager = {
         this.order.push(id);
         this.updateFab();
         this.render();
+        // 同步到 V 岛（如果开启）
+        if (window.DynamicIsland && typeof window.DynamicIsland.isEnabled === 'function' && window.DynamicIsland.isEnabled()) {
+            try { window.DynamicIsland.show(name); } catch (e) {}
+        }
     },
     remove(id) {
+        const task = this.tasks.get(id);
         this.tasks.delete(id);
         this.order = this.order.filter(i => i !== id);
         this.updateFab();
         this.render();
+        // V 岛任务在 update(status=completed/failed) 时自动移除，这里不额外处理
     },
     async cancel(id) {
         const task = this.tasks.get(id);
@@ -74,6 +80,21 @@ const dlManager = {
         task._lastDomUpdate = now;
         this.updateFab();
         this.updateDom(id);
+        // 同步到 V 岛（如果开启）
+        if (window.DynamicIsland && typeof window.DynamicIsland.isEnabled === 'function' && window.DynamicIsland.isEnabled()) {
+            try {
+                window.DynamicIsland.update({
+                    name: task.name,
+                    progress: task.progress,
+                    status: task.status,
+                    message: task.message,
+                    speed: task.speed,
+                    files: task.files,
+                    stageHistory: task.stageHistory,
+                    currentFile: task.currentFile
+                });
+            } catch (e) {}
+        }
     },
     updateDom(id) {
         const taskEl = document.querySelector('.dl-task[data-task-id="' + id + '"]');

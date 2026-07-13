@@ -1252,6 +1252,48 @@ module.exports = {
           customIconData = _tryFindIcon(mcVersionsDir);
         }
 
+        // 本地无图标时，尝试从 Modrinth 在线搜索整合包图标并缓存到版本目录
+        if (!customIconData) {
+          try {
+            const packInfoPath = path.join(ctx.dirs.VERSIONS_DIR, cleanId, 'pack-info.json');
+            if (fs.existsSync(packInfoPath)) {
+              const packInfo = JSON.parse(fs.readFileSync(packInfoPath, 'utf8'));
+              const packName = packInfo.name || cleanId;
+              const modrinthApi = (ctx.urls && ctx.urls.MODRINTH_API) || 'https://api.modrinth.com/v2';
+              const searchUrl = `${modrinthApi}/search?query=${encodeURIComponent(packName)}&facets=${JSON.stringify([["project_type:modpack"]])}&limit=1`;
+              const https = require('https');
+              const searchResult = await new Promise((resolve) => {
+                const r = https.get(searchUrl, { timeout: 8000 }, (resp) => {
+                  let data = '';
+                  resp.on('data', (chunk) => data += chunk);
+                  resp.on('end', () => {
+                    try { resolve(JSON.parse(data)); } catch (_) { resolve(null); }
+                  });
+                });
+                r.on('error', () => resolve(null));
+                r.on('timeout', () => { r.destroy(); resolve(null); });
+              });
+              const iconUrl = searchResult && searchResult.hits && searchResult.hits[0] && searchResult.hits[0].icon;
+              if (iconUrl) {
+                const iconData = await new Promise((resolve) => {
+                  const r = https.get(iconUrl, { timeout: 10000 }, (resp) => {
+                    const chunks = [];
+                    resp.on('data', (chunk) => chunks.push(chunk));
+                    resp.on('end', () => resolve(Buffer.concat(chunks)));
+                  });
+                  r.on('error', () => resolve(null));
+                  r.on('timeout', () => { r.destroy(); resolve(null); });
+                });
+                if (iconData && iconData.length > 0) {
+                  const destIconPath = path.join(ctx.dirs.VERSIONS_DIR, cleanId, 'icon.png');
+                  try { fs.writeFileSync(destIconPath, iconData); } catch (_) {}
+                  customIconData = { data: iconData, mime: 'image/png' };
+                }
+              }
+            }
+          } catch (_) {}
+        }
+
         if (customIconData) {
           ctx.caches.VERSION_ICON_CACHE.set(cacheKey, { data: customIconData.data, mime: customIconData.mime, time: Date.now() });
           res.writeHead(200, {

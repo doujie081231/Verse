@@ -166,15 +166,10 @@ function setupWindowControls() {
 
 function setupVersionListClicks() {
   document.addEventListener('click', (e) => {
-    // 主页内嵌版本卡片：跳转到版本管理页"已安装"tab
+    // 主页内嵌版本卡片：跳转到独立的"已安装版本"页面
     const homeCard = e.target.closest('.home-current-version-card');
     if (homeCard) {
-      currentVersionTab = 'installed';
-      document.querySelectorAll('.tab-btn[data-tab]').forEach(b => b.classList.remove('active'));
-      const installedTab = document.querySelector('.tab-btn[data-tab="installed"]');
-      if (installedTab) installedTab.classList.add('active');
-      navigateToPage('versions');
-      renderVersions();
+      navigateToPage('installed-versions');
       return;
     }
 

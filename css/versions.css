@@ -905,7 +905,6 @@
 .home-current-version-card:hover {
     border-color: var(--accent);
     background: var(--bg-hover);
-    box-shadow: 0 0 0 3px var(--accent-glow);
 }
 
 .home-current-version-card .version-item-left {

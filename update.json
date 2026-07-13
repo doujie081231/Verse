@@ -1,13 +1,13 @@
 {
-  "version": "1.3.4",
-  "releaseDate": "2026-06-21T00:00:00Z",
-  "releaseName": "VersePC v1.3.4 测试版",
-  "releaseNotes": "VersePC v1.3.4 测试版更新",
+  "version": "1.1.0",
+  "releaseDate": "2026-07-13T00:00:00Z",
+  "releaseName": "VersePC v1.1.0",
+  "releaseNotes": "## v1.1.0 正式版\n\n### 更新系统重构\n- 更新源迁移至公开仓库 Verse\n- 统一通过 ghfast.top 代理访问 GitHub\n- 启动检查到新版本时弹出更新提示\n- 点击「立即更新」跳转到设置页更新区\n- 设置页面支持一键下载安装并自动重启\n- 保留夸克网盘备用下载渠道\n\n### 界面优化\n- 毛玻璃效果改为默认关闭，无背景时无需开启\n- 主页版本选择框去除边缘泛光\n- 点击版本选择框进入独立的已安装版本页面\n- 下载页面去除已安装 tab\n- 设置页更新公告卡片精简\n- 关于卡片去除所有 emoji\n- 赞助者卡片改为默认折叠\n\n### V岛助手增强\n- 支持通过文字指令操控软件\n- 实时显示每一步操作进度\n- 操作步骤上限从 8 步降到 5 步\n- 增加重复操作检测，避免循环\n- 任务完成后自动检查结果并生成报告\n- 去除所有 emoji 图标\n\n### 其他改动\n- 下载模组时不再弹出前置依赖确认窗口\n- 反馈邮箱更新为 verselauncher@verselauncher.cn",
   "files": {
     "win-x64": {
-      "url": "https://pan.quark.cn/s/0fb77d9c5233",
-      "size": 219156115,
-      "sha256": "da3ea2303bcd8150d8b2379e028c92e6feb9d0140d6d0594f8f62c78636fd9b8"
+      "url": "https://github.com/doujie081231/Verse/releases/download/v1.1.0/VersePC-Setup-1.1.0.exe",
+      "size": 163920323,
+      "sha256": "3AB175B5BA2F4799B19A881BB8B91BEB347810D1F998A4F5621E7F205D31F497"
     }
   }
 }

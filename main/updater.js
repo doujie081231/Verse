@@ -39,7 +39,8 @@ let _getMainWindow = null;
 let _setShuttingDown = null;
 let _isBeta = false;
 
-// 更新源（根据 isBeta 选择 beta 或正式版仓库）
+// 更新源（通过代理读公开仓库 Verse 的 update.json）
+// 测试版仍读 VersePC-beta 仓库
 let UPDATE_JSON_SOURCES = null;
 
 // 私有函数：按 isBeta 初始化更新源列表
@@ -47,30 +48,35 @@ function _ensureSources() {
   if (UPDATE_JSON_SOURCES) return;
   if (_isBeta) {
     UPDATE_JSON_SOURCES = [
+      'https://ghfast.top/https://raw.githubusercontent.com/doujie081231/VersePC-beta/main/update.json',
+      'https://ghproxy.net/https://raw.githubusercontent.com/doujie081231/VersePC-beta/main/update.json',
       'https://cdn.jsdelivr.net/gh/doujie081231/VersePC-beta@main/update.json',
-      'https://raw.githubusercontent.com/doujie081231/VersePC-beta/main/update.json',
-      'https://mirror.ghproxy.com/raw.githubusercontent.com/doujie081231/VersePC-beta/main/update.json',
     ];
   } else {
     UPDATE_JSON_SOURCES = [
-      'https://cdn.jsdelivr.net/gh/doujie081231/versePc@main/update.json',
-      'https://raw.githubusercontent.com/doujie081231/versePc/main/update.json',
-      'https://mirror.ghproxy.com/raw.githubusercontent.com/doujie081231/versePc/main/update.json',
+      'https://ghfast.top/https://raw.githubusercontent.com/doujie081231/Verse/main/update.json',
+      'https://ghproxy.net/https://raw.githubusercontent.com/doujie081231/Verse/main/update.json',
+      'https://cdn.jsdelivr.net/gh/doujie081231/Verse@main/update.json',
     ];
   }
 }
 
-// 下载镜像转换函数
+// 下载镜像转换函数（多代理轮询下载 GitHub Release，按速度排序）
 const DOWNLOAD_MIRRORS = [
-  (url) => url,
-  (url) => url.replace('https://github.com/', 'https://mirror.ghproxy.com/https://github.com/'),
   (url) => {
-    const match = url.match(/https:\/\/github\.com\/([^/]+)\/([^/]+)\/releases\/download\/([^/]+)\/(.+)/);
-    if (match) {
-      return `https://cdn.jsdelivr.net/gh/${match[1]}/${match[2]}@${match[3]}/${match[4]}`;
+    if (url.indexOf('https://github.com/') === 0) {
+      return 'https://ghfast.top/' + url;
     }
     return url;
   },
+  (url) => {
+    if (url.indexOf('https://github.com/') === 0) {
+      return 'https://ghproxy.net/' + url;
+    }
+    return url;
+  },
+  (url) => url.replace('https://github.com/', 'https://mirror.ghproxy.com/https://github.com/'),
+  (url) => url,
 ];
 
 /**
@@ -123,6 +129,155 @@ function compareVersions(a, b) {
 }
 
 /**
+ * 校验本地文件的大小和 SHA256 是否符合预期
+ * @param {string} filePath - 文件路径
+ * @param {number} expectedSize - 预期大小（字节）
+ * @param {string|null} expectedSha256 - 预期 SHA256（小写），为 null 则跳过校验
+ * @returns {Promise<boolean>} 校验通过返回 true
+ */
+async function _verifyFile(filePath, expectedSize, expectedSha256) {
+  try {
+    if (!fs.existsSync(filePath)) return false;
+    const stat = fs.statSync(filePath);
+    if (expectedSize > 0 && stat.size !== expectedSize) {
+      console.log('[Updater] Size mismatch:', stat.size, 'expected:', expectedSize);
+      return false;
+    }
+    if (expectedSha256) {
+      const crypto = require('crypto');
+      const hash = crypto.createHash('sha256');
+      const stream = fs.createReadStream(filePath);
+      await new Promise((resolve, reject) => {
+        stream.on('data', (chunk) => hash.update(chunk));
+        stream.on('end', resolve);
+        stream.on('error', reject);
+      });
+      const fileHash = hash.digest('hex');
+      if (fileHash !== expectedSha256) {
+        console.log('[Updater] SHA256 mismatch');
+        return false;
+      }
+    }
+    return true;
+  } catch (e) {
+    console.log('[Updater] Verify error:', e.message);
+    return false;
+  }
+}
+
+/**
+ * 用 net.fetch 流式下载文件，准确报告字节级进度
+ * 进度基于实际读取的字节数，不会因为文件预分配而虚报 100%
+ * @param {string} url - 下载地址
+ * @param {string} targetPath - 本地保存路径
+ * @param {number} expectedSize - 预期大小（用于无 content-length 时的进度计算）
+ * @param {(progress: Object) => void} [onProgress] - 进度回调
+ * @returns {Promise<boolean>} 下载成功返回 true
+ */
+async function _streamDownload(url, targetPath, expectedSize, onProgress) {
+  const controller = new AbortController();
+  // 30 秒无数据则中止（处理 ghfast.top 在 80% 断开的情况）
+  let noDataTimer = setTimeout(() => controller.abort(), 30000);
+
+  let response;
+  try {
+    response = await net.fetch(url, { signal: controller.signal, redirect: 'follow' });
+  } catch (e) {
+    clearTimeout(noDataTimer);
+    console.log('[Updater] Fetch failed:', e.message);
+    return false;
+  }
+  if (!response.ok) {
+    clearTimeout(noDataTimer);
+    console.log('[Updater] HTTP', response.status, response.statusText);
+    return false;
+  }
+
+  const contentLength = parseInt(response.headers.get('content-length') || '0', 10) || expectedSize;
+  const total = contentLength > 0 ? contentLength : expectedSize;
+
+  // 写入临时 .part 文件，下载完成后再重命名为目标文件，避免半成品被误判为完成
+  const tmpPath = targetPath + '.part';
+  try { fs.unlinkSync(tmpPath); } catch (_) {}
+  const fileStream = fs.createWriteStream(tmpPath, { flags: 'w' });
+
+  let transferred = 0;
+  let lastTime = Date.now();
+  let lastBytes = 0;
+  let smoothSpeed = 0;
+  let lastProgressTime = 0;
+
+  // 背压处理
+  let drainResolve, drainReject;
+  let drainPromise = new Promise((r, j) => { drainResolve = r; drainReject = j; });
+  fileStream.on('drain', () => drainResolve());
+  fileStream.on('error', (e) => { drainReject(e); });
+
+  const reader = response.body.getReader();
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      // 收到数据，重置无数据定时器
+      clearTimeout(noDataTimer);
+      noDataTimer = setTimeout(() => controller.abort(), 30000);
+
+      transferred += value.length;
+
+      // 写入文件，处理背压（write 返回 false 表示缓冲区满）
+      if (!fileStream.write(Buffer.from(value))) {
+        await drainPromise;
+        drainPromise = new Promise((r, j) => { drainResolve = r; drainReject = j; });
+      }
+
+      // 报告进度（最多每 300ms 一次，避免刷屏）
+      const now = Date.now();
+      if (onProgress && now - lastProgressTime >= 300) {
+        const elapsed = (now - lastTime) / 1000;
+        if (elapsed > 0) {
+          const instant = (transferred - lastBytes) / elapsed;
+          smoothSpeed = smoothSpeed === 0 ? instant : (smoothSpeed * 0.7 + instant * 0.3);
+        }
+        lastTime = now;
+        lastBytes = transferred;
+        lastProgressTime = now;
+        onProgress({
+          percent: total > 0 ? (transferred / total) * 100 : 0,
+          transferred,
+          total,
+          bytesPerSecond: Math.max(0, smoothSpeed),
+        });
+      }
+    }
+    clearTimeout(noDataTimer);
+
+    // 等待文件写入完成
+    await new Promise((resolve, reject) => {
+      fileStream.end(() => resolve());
+      fileStream.on('error', reject);
+    });
+
+    // 重命名 .part 为最终文件
+    try { fs.unlinkSync(targetPath); } catch (_) {}
+    fs.renameSync(tmpPath, targetPath);
+
+    // 最终进度上报 100%
+    if (onProgress && total > 0) {
+      onProgress({ percent: 100, transferred: total, total, bytesPerSecond: 0 });
+    }
+    return true;
+  } catch (e) {
+    clearTimeout(noDataTimer);
+    try { fileStream.destroy(); } catch (_) {}
+    try { fs.unlinkSync(tmpPath); } catch (_) {}
+    console.log('[Updater] Stream download error:', e.message);
+    return false;
+  }
+}
+
+/**
  * 多镜像下载文件，带 SHA256 校验
  * @param {Object} fileInfo - 文件信息（含 url、size、sha256）
  * @param {string} targetPath - 本地保存路径
@@ -130,55 +285,46 @@ function compareVersions(a, b) {
  * @returns {Promise<boolean>} 下载成功返回 true，全部镜像失败返回 false
  */
 async function downloadWithFallback(fileInfo, targetPath, onProgress) {
-  const crypto = require('crypto');
+  const expectedSize = fileInfo.size || 0;
+  const expectedSha256 = fileInfo.sha256 ? fileInfo.sha256.toLowerCase() : null;
 
-  for (const getMirrorUrl of DOWNLOAD_MIRRORS) {
+  // 预检查：文件已完整且校验通过，直接返回
+  if (await _verifyFile(targetPath, expectedSize, expectedSha256)) {
+    console.log('[Updater] File already complete and valid');
+    if (onProgress && expectedSize > 0) {
+      onProgress({ percent: 100, transferred: expectedSize, total: expectedSize, bytesPerSecond: 0 });
+    }
+    return true;
+  }
+  // 清理损坏的旧文件
+  try { if (fs.existsSync(targetPath)) fs.unlinkSync(targetPath); } catch (_) {}
+  try { if (fs.existsSync(targetPath + '.part')) fs.unlinkSync(targetPath + '.part'); } catch (_) {}
+
+  // 逐个镜像尝试，每个镜像最多重试 2 次（从头下载，不续传，避免代理返回损坏数据）
+  for (let i = 0; i < DOWNLOAD_MIRRORS.length; i++) {
+    const getMirrorUrl = DOWNLOAD_MIRRORS[i];
     const downloadUrl = getMirrorUrl(fileInfo.url);
-    try {
-      console.log('[Updater] Downloading from:', downloadUrl);
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000);
-      const response = await net.fetch(downloadUrl, { signal: controller.signal });
-      clearTimeout(timeout);
 
-      if (!response.ok) {
-        console.log('[Updater] Download failed, status:', response.status);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      console.log('[Updater] Downloading mirror', i + 1, '/' + DOWNLOAD_MIRRORS.length, 'attempt', attempt + 1, 'from:', downloadUrl.substring(0, 60));
+
+      const ok = await _streamDownload(downloadUrl, targetPath, expectedSize, onProgress);
+      if (!ok) {
+        // 清理可能残留的 .part 文件
+        try { if (fs.existsSync(targetPath + '.part')) fs.unlinkSync(targetPath + '.part'); } catch (_) {}
         continue;
       }
 
-      const totalSize = parseInt(response.headers.get('content-length') || fileInfo.size || '0');
-      const reader = response.body.getReader();
-      const chunks = [];
-      let received = 0;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-        received += value.length;
-        if (onProgress && totalSize > 0) {
-          onProgress({ percent: (received / totalSize) * 100, transferred: received, total: totalSize });
-        }
+      // 下载完成，立即校验
+      if (await _verifyFile(targetPath, expectedSize, expectedSha256)) {
+        console.log('[Updater] Download complete and verified');
+        return true;
       }
-
-      const buffer = Buffer.concat(chunks);
-
-      // SHA256 校验，不匹配则抛错切换下一镜像
-      if (fileInfo.sha256) {
-        const hash = crypto.createHash('sha256').update(buffer).digest('hex');
-        if (hash !== fileInfo.sha256) {
-          console.error('[Updater] SHA256 mismatch:', hash, 'expected:', fileInfo.sha256);
-          throw new Error('SHA256 校验失败');
-        }
-      }
-
-      fs.writeFileSync(targetPath, buffer);
-      console.log('[Updater] Download complete:', targetPath);
-      return true;
-    } catch (e) {
-      console.log('[Updater] Download source failed:', downloadUrl, e.message);
+      console.log('[Updater] Verification failed, retrying');
+      try { if (fs.existsSync(targetPath)) fs.unlinkSync(targetPath); } catch (_) {}
     }
   }
+
   return false;
 }
 
@@ -305,13 +451,11 @@ async function doDownloadUpdate(updateInfo) {
 
   const targetPath = path.join(app.getPath('temp'), `VersePC-Setup-${updateInfo.version}.exe`);
 
+  // 进度由 downloadWithFallback 通过 onProgress 回调直接上报，
+  // 基于实际读取的字节数，不会因为文件预分配而虚报 100%
   try {
     const success = await downloadWithFallback(fileInfo, targetPath, (progress) => {
-      sendToUpdateUI('download-progress', {
-        percent: progress.percent,
-        transferred: progress.transferred,
-        total: progress.total,
-      });
+      sendToUpdateUI('download-progress', progress);
     });
 
     if (success) {
@@ -433,7 +577,8 @@ function registerUpdaterIPC() {
   });
 
   ipcMain.handle('updater:open-release-page', async () => {
-    shell.openExternal('https://github.com/doujie081231/versePc/releases/latest');
+    const repo = _isBeta ? 'VersePC-beta' : 'Verse';
+    shell.openExternal('https://github.com/doujie081231/' + repo + '/releases/latest');
     return { success: true };
   });
 }

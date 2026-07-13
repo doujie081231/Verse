@@ -236,14 +236,117 @@ function toggleErrorVersions(id) {
 // ============================================================================
 // 版本列表渲染 - 将版本数据渲染为DOM卡片列表
 // ============================================================================
+
+// 渲染已安装版本列表到指定容器（供独立"已安装版本"页面和版本管理页复用）
+function renderInstalledVersionsInto(container) {
+  const versions = installedVersions;
+  if (!versions || versions.length === 0) {
+    container.innerHTML = '<p class="empty-text">暂无已安装版本，前往"下载"页面安装一个吧</p>';
+    return;
+  }
+
+  const errorVersions = versions.filter(v => v.error);
+  const normalVersions = versions.filter(v => !v.error);
+
+  const vanillaVersions = normalVersions.filter(v => {
+    return !v.isFabric && !v.isForge && !v.isNeoForge && !v.isOptiFine && !v.isLiteLoader && !v.isModpack;
+  });
+  const moddedVersions = normalVersions.filter(v => {
+    return v.isFabric || v.isForge || v.isNeoForge || v.isOptiFine || v.isLiteLoader || v.isModpack;
+  });
+
+  const renderVersionItem = (v) => {
+    const iconClass = v.type === 'snapshot' ? 'snapshot' : v.type === 'special' ? 'special' : 'installed';
+    const iconParams = `id=${encodeURIComponent(v.id)}&type=${v.type || 'release'}`;
+    const forgeParam = v.isForge ? '&forge=true' : '';
+    const fabricParam = v.isFabric ? '&fabric=true' : '';
+    const neoforgeParam = v.isNeoForge ? '&neoforge=true' : '';
+    const modpackParam = v.isModpack ? '&modpack=true' : '';
+    const extDirParam = v.externalVersionDir ? `&extDir=${encodeURIComponent(v.externalVersionDir)}` : '';
+    const iconUrl = `/api/version-icon?${iconParams}${forgeParam}${fabricParam}${neoforgeParam}${modpackParam}${extDirParam}&_t=${versionIconsTimestamp}`;
+    const externalBadgeHtml = v.isExternal ? '<span style="display:inline-block;background:rgba(255,165,0,0.15);color:#ffa500;font-size:10px;padding:1px 6px;border-radius:4px;margin-left:6px">外部文件夹</span>' : '';
+    const externalPathHtml = v.isExternal && v.externalPath ? `<span style="color:var(--text-muted);font-size:11px;margin-left:4px" title="${escapeHtml(v.externalPath)}">${escapeHtml(v.externalPath)}</span>` : '';
+    const displayName = v.isExternal ? (v.customName || v.id.replace(/ \[外部\d*\]/, '')) : (v.customName || v.id);
+    const deleteBtnHtml = `<button class="btn btn-danger btn-sm" onclick="event.stopPropagation();deleteVersion('${escapeOnclick(v.id)}')">${v.isExternal ? '移除' : '删除'}</button>`;
+    const settingsBtnHtml = `<button class="version-item-settings-btn" data-version-id="${escapeHtml(v.id)}" data-custom-name="${escapeHtml(v.customName || '')}" title="版本设置" onclick="event.stopPropagation();">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"></path></svg>
+    </button>`;
+    const selectedClass = currentLaunchVersionId === v.id ? ' selected' : '';
+    return `<div class="version-item version-item-clickable${selectedClass}"
+      data-version-id="${escapeHtml(v.id)}"
+      data-version-url=""
+      data-version-type="${v.type || 'release'}"
+      data-installed="true"
+      data-custom-name="${escapeHtml(v.customName || '')}">
+      <div class="version-item-left">
+        <div class="version-item-icon ${iconClass}">
+          <img src="${iconUrl}" alt="" class="version-icon-img">
+        </div>
+        <div class="version-item-info">
+          <span class="version-item-name">${displayName}${externalBadgeHtml}</span>
+          <span class="version-item-meta">${getVersionTypeLabel(v)} \u00B7 ${formatDate(v.releaseTime)}${externalPathHtml}</span>
+        </div>
+      </div>
+      <div class="version-item-actions">
+        ${settingsBtnHtml}
+        <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();openVersionSettings('${escapeOnclick(v.id)}','${escapeOnclick(displayName)}')">设置</button>
+        ${deleteBtnHtml}
+      </div>
+    </div>`;
+  };
+
+  let html = '';
+
+  if (moddedVersions.length > 0) {
+    html += moddedVersions.map(renderVersionItem).join('');
+  }
+
+  if (vanillaVersions.length > 0) {
+    html += `<div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:0 4px">
+        <span style="font-size:12px;color:var(--text-muted);font-weight:600">\u26A0 基础版本 (${vanillaVersions.length})</span>
+      </div>
+      ${vanillaVersions.map(renderVersionItem).join('')}
+    </div>`;
+  }
+
+  if (errorVersions.length > 0) {
+    const errorId = 'error-versions-' + Date.now();
+    const tntIcon = `<img src="assets/tnt.png" alt="TNT" width="40" height="40" style="image-rendering:pixelated;image-rendering:crisp-edges;">`;
+    html += `<div class="error-versions-section" style="margin-top:16px;padding-top:12px;border-top:1px solid rgba(239,68,68,0.2)">
+      <div class="error-versions-header" onclick="toggleErrorVersions('${errorId}')">
+        <span>\u26A0 错误的版本 (<span class="error-count">${errorVersions.length}</span>)</span>
+        <span class="error-chevron">▼</span>
+      </div>
+      <div class="error-versions-list" id="${errorId}">
+        ${errorVersions.map(v => {
+          const displayName = v.customName || v.id.replace(/ \[外部\d*\]/, '');
+          return `<div class="error-version-item">
+            <div class="error-version-icon">${tntIcon}</div>
+            <div class="error-version-info">
+              <span class="error-version-name">${escapeHtml(displayName)}</span>
+              <span class="error-version-reason">${escapeHtml(v.errorReason || '无法识别')}</span>
+            </div>
+            <button class="btn btn-danger btn-sm" style="flex-shrink:0;padding:4px 12px;font-size:12px" onclick="event.stopPropagation();quickDeleteErrorVersion('${escapeOnclick(v.id)}')">删除</button>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  }
+
+  container.innerHTML = html;
+}
+
 function renderVersions() {
   const container = document.getElementById('versions-list');
   if (!container) return;
-  let versions;
-
   if (currentVersionTab === 'installed') {
-    versions = installedVersions;
-  } else if (currentVersionTab === 'old') {
+    renderInstalledVersionsInto(container);
+    return;
+  }
+
+  let versions;
+  if (currentVersionTab === 'old') {
     versions = allVersions.filter(v => v.type === 'old_beta' || v.type === 'old_alpha');
   } else {
     versions = allVersions.filter(v => v.type === currentVersionTab);
@@ -251,100 +354,6 @@ function renderVersions() {
 
   if (versions.length === 0) {
     container.innerHTML = '<p class="empty-text">暂无版本</p>';
-    return;
-  }
-
-  if (currentVersionTab === 'installed') {
-    const errorVersions = versions.filter(v => v.error);
-    const normalVersions = versions.filter(v => !v.error);
-    
-    const vanillaVersions = normalVersions.filter(v => {
-      return !v.isFabric && !v.isForge && !v.isNeoForge && !v.isOptiFine && !v.isLiteLoader && !v.isModpack;
-    });
-    const moddedVersions = normalVersions.filter(v => {
-      return v.isFabric || v.isForge || v.isNeoForge || v.isOptiFine || v.isLiteLoader || v.isModpack;
-    });
-
-    const renderVersionItem = (v) => {
-      const iconClass = v.type === 'snapshot' ? 'snapshot' : v.type === 'special' ? 'special' : 'installed';
-      const iconParams = `id=${encodeURIComponent(v.id)}&type=${v.type || 'release'}`;
-      const forgeParam = v.isForge ? '&forge=true' : '';
-      const fabricParam = v.isFabric ? '&fabric=true' : '';
-      const neoforgeParam = v.isNeoForge ? '&neoforge=true' : '';
-      const modpackParam = v.isModpack ? '&modpack=true' : '';
-      const extDirParam = v.externalVersionDir ? `&extDir=${encodeURIComponent(v.externalVersionDir)}` : '';
-      const iconUrl = `/api/version-icon?${iconParams}${forgeParam}${fabricParam}${neoforgeParam}${modpackParam}${extDirParam}&_t=${versionIconsTimestamp}`;
-      const externalBadgeHtml = v.isExternal ? '<span style="display:inline-block;background:rgba(255,165,0,0.15);color:#ffa500;font-size:10px;padding:1px 6px;border-radius:4px;margin-left:6px">外部文件夹</span>' : '';
-      const externalPathHtml = v.isExternal && v.externalPath ? `<span style="color:var(--text-muted);font-size:11px;margin-left:4px" title="${escapeHtml(v.externalPath)}">${escapeHtml(v.externalPath)}</span>` : '';
-      const displayName = v.isExternal ? (v.customName || v.id.replace(/ \[外部\d*\]/, '')) : (v.customName || v.id);
-      const deleteBtnHtml = `<button class="btn btn-danger btn-sm" onclick="event.stopPropagation();deleteVersion('${escapeOnclick(v.id)}')">${v.isExternal ? '移除' : '删除'}</button>`;
-      const settingsBtnHtml = `<button class="version-item-settings-btn" data-version-id="${escapeHtml(v.id)}" data-custom-name="${escapeHtml(v.customName || '')}" title="版本设置" onclick="event.stopPropagation();">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"></path></svg>
-      </button>`;
-      const selectedClass = currentLaunchVersionId === v.id ? ' selected' : '';
-      return `<div class="version-item version-item-clickable${selectedClass}"
-        data-version-id="${escapeHtml(v.id)}"
-        data-version-url=""
-        data-version-type="${v.type || 'release'}"
-        data-installed="true"
-        data-custom-name="${escapeHtml(v.customName || '')}">
-        <div class="version-item-left">
-          <div class="version-item-icon ${iconClass}">
-            <img src="${iconUrl}" alt="" class="version-icon-img">
-          </div>
-          <div class="version-item-info">
-            <span class="version-item-name">${displayName}${externalBadgeHtml}</span>
-            <span class="version-item-meta">${getVersionTypeLabel(v)} \u00B7 ${formatDate(v.releaseTime)}${externalPathHtml}</span>
-          </div>
-        </div>
-        <div class="version-item-actions">
-          ${settingsBtnHtml}
-          <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();openVersionSettings('${escapeOnclick(v.id)}','${escapeOnclick(displayName)}')">设置</button>
-          ${deleteBtnHtml}
-        </div>
-      </div>`;
-    };
-
-    let html = '';
-
-    if (moddedVersions.length > 0) {
-      html += moddedVersions.map(renderVersionItem).join('');
-    }
-
-    if (vanillaVersions.length > 0) {
-      html += `<div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:0 4px">
-          <span style="font-size:12px;color:var(--text-muted);font-weight:600">\u26A0 基础版本 (${vanillaVersions.length})</span>
-        </div>
-        ${vanillaVersions.map(renderVersionItem).join('')}
-      </div>`;
-    }
-
-    if (errorVersions.length > 0) {
-      const errorId = 'error-versions-' + Date.now();
-      const tntIcon = `<img src="assets/tnt.png" alt="TNT" width="40" height="40" style="image-rendering:pixelated;image-rendering:crisp-edges;">`;
-      html += `<div class="error-versions-section" style="margin-top:16px;padding-top:12px;border-top:1px solid rgba(239,68,68,0.2)">
-        <div class="error-versions-header" onclick="toggleErrorVersions('${errorId}')">
-          <span>\u26A0 错误的版本 (<span class="error-count">${errorVersions.length}</span>)</span>
-          <span class="error-chevron">▼</span>
-        </div>
-        <div class="error-versions-list" id="${errorId}">
-          ${errorVersions.map(v => {
-            const displayName = v.customName || v.id.replace(/ \[外部\d*\]/, '');
-            return `<div class="error-version-item">
-              <div class="error-version-icon">${tntIcon}</div>
-              <div class="error-version-info">
-                <span class="error-version-name">${escapeHtml(displayName)}</span>
-                <span class="error-version-reason">${escapeHtml(v.errorReason || '无法识别')}</span>
-              </div>
-              <button class="btn btn-danger btn-sm" style="flex-shrink:0;padding:4px 12px;font-size:12px" onclick="event.stopPropagation();quickDeleteErrorVersion('${escapeOnclick(v.id)}')">删除</button>
-            </div>`;
-          }).join('')}
-        </div>
-      </div>`;
-    }
-
-    container.innerHTML = html;
     return;
   }
 
@@ -441,21 +450,24 @@ async function navigateToPage(pageName) {
     _pageTransitionLock = true;
     currentPage.style.animation = '';
     requestAnimationFrame(() => {
-      currentPage.classList.remove('active');
-      currentPage.style.animation = '';
-      target.classList.add('active');
-      target.scrollTop = 0;
-      target.style.animation = 'pageIn 0.18s var(--ease-out-expo) backwards';
-      setTimeout(() => {
-        _pageTransitionLock = false;
-        if (_pendingPageTransition && _pendingPageTransition !== pageName) {
-          const pending = _pendingPageTransition;
-          _pendingPageTransition = null;
-          navigateToPage(pending);
-        } else {
-          _pendingPageTransition = null;
-        }
-      }, 80);
+      try {
+        currentPage.classList.remove('active');
+        currentPage.style.animation = '';
+        target.classList.add('active');
+        target.scrollTop = 0;
+        target.style.animation = 'pageIn 0.18s var(--ease-out-expo) backwards';
+      } finally {
+        setTimeout(() => {
+          _pageTransitionLock = false;
+          if (_pendingPageTransition && _pendingPageTransition !== pageName) {
+            const pending = _pendingPageTransition;
+            _pendingPageTransition = null;
+            navigateToPage(pending);
+          } else {
+            _pendingPageTransition = null;
+          }
+        }, 80);
+      }
     });
   } else if (!currentPage) {
     target.classList.add('active');
@@ -525,6 +537,18 @@ async function navigateToPage(pageName) {
     modDetailHistory = [];
   } else if (pageName === 'downloads') {
     dlManager.render();
+  } else if (pageName === 'installed-versions') {
+    const container = document.getElementById('installed-versions-list');
+    if (container) {
+      if (!installedVersions || installedVersions.length === 0) {
+        container.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><p>加载已安装版本...</p></div>';
+        loadVersions(false).then(() => {
+          renderInstalledVersionsInto(container);
+        });
+      } else {
+        renderInstalledVersionsInto(container);
+      }
+    }
   }
 }
 
@@ -852,12 +876,14 @@ function cancelInstall() {
 async function pollInstallProgress(sessionId) {
   const taskId = 'version-' + sessionId;
   let smoothInstallPct = 0;
+  let _pollErrorCount = 0;
 
   const poll = async () => {
     try {
       if (!dlManager.tasks.has(taskId)) return;
       const data = await API.getInstallProgress(sessionId);
       if (!data || !data.sessionId) return;
+      _pollErrorCount = 0;
 
       const rawPct = data.progress || 0;
       if (rawPct > smoothInstallPct) {
@@ -918,11 +944,19 @@ async function pollInstallProgress(sessionId) {
       if (data.status === 'failed') {
         showToast('安装失败: ' + (data.message || '未知错误'), 'error');
         currentInstallSessionId = null;
+        dlManager.update(taskId, { status: 'failed', message: data.message || '安装失败', progress: smoothPct });
         return;
       }
-      if (data.status === 'cancelled') { currentInstallSessionId = null; return; }
+      if (data.status === 'cancelled') { currentInstallSessionId = null; dlManager.update(taskId, { status: 'failed', message: '已取消', progress: smoothPct }); return; }
       setTimeout(poll, 500);
     } catch (e) {
+      _pollErrorCount++;
+      if (_pollErrorCount > 5) {
+        console.error('[Install] 进度查询多次失败，停止轮询:', e.message);
+        dlManager.update(taskId, { status: 'failed', message: '进度查询失败' });
+        currentInstallSessionId = null;
+        return;
+      }
       if (dlManager.tasks.has(taskId)) setTimeout(poll, 1000);
     }
   };
