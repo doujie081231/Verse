@@ -50,13 +50,15 @@ async function _synthesize(text, voice) {
 }
 
 function registerTTSIPC() {
-    // 朗读文本，返回 MP3 音频 Buffer
+    // 朗读文本，返回 MP3 音频 Uint8Array
     ipcMain.handle('tts:speak', async (event, text, voice) => {
         try {
             if (!text || !String(text).trim()) return { ok: false, error: '空文本' };
             const buf = await _synthesize(text, voice);
             if (!buf || buf.length === 0) return { ok: false, error: '合成结果为空' };
-            return { ok: true, data: buf };
+            // 转成 Uint8Array，确保 IPC 序列化正确
+            const arr = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+            return { ok: true, data: arr };
         } catch (e) {
             console.error('[TTS] 合成失败:', e.message);
             return { ok: false, error: e.message };

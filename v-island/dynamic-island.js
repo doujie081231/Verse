@@ -1291,10 +1291,17 @@
                 if (this.queue.length === 0) { this.playing = false; return; }
                 this.playing = true;
                 var item = this.queue.shift();
-                // 主方案 msedge-tts，失败直接跳过（不降级原生）
-                this._playWithEdge(item.text, function (ok) {
+                var done = false;
+                var finish = function () {
+                    if (done) return;
+                    done = true;
                     if (item.onEnd) item.onEnd();
                     self._drain();
+                };
+                // 8 秒超时保护，确保引导页不会卡住
+                setTimeout(finish, 8000);
+                this._playWithEdge(item.text, function (ok) {
+                    finish();
                 });
             },
 
