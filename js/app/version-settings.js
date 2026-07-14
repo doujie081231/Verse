@@ -1270,7 +1270,9 @@ async function _translateWithAI(entries, aiConfig, isJson, onProgress) {
 
     let res;
     let lastError;
+    let attempts = 0;
     for (let retry = 0; retry < 3; retry++) {
+      attempts = retry + 1;
       try {
         res = await window.electronAPI.ai.chat(reqConfig);
         if (res && res.ok && res.reply) {
@@ -1287,12 +1289,19 @@ async function _translateWithAI(entries, aiConfig, isJson, onProgress) {
           }
         }
         lastError = (res && res.error) || (res && res.reply === '(空回复)' ? '空回复' : '返回格式异常');
+        // 余额不足、Key 无效等不可恢复的错误，立即停止重试
+        if (lastError && (lastError.indexOf('余额不足') !== -1 ||
+            lastError.indexOf('API Key 无效') !== -1 ||
+            lastError.indexOf('权限不足') !== -1 ||
+            lastError.indexOf('接口地址或模型名称') !== -1)) {
+          break;
+        }
       } catch (e) {
         lastError = e.message;
       }
       if (retry < 2) await new Promise(r => setTimeout(r, 1500));
     }
-    throw new Error('AI 请求失败（批次 ' + batchNum + '，重试3次）：' + lastError);
+    throw new Error('AI 请求失败（批次 ' + batchNum + '，重试' + attempts + '次）：' + lastError);
   }
 
   for (let i = 0; i < batches.length; i += PARALLEL) {

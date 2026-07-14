@@ -42,7 +42,6 @@ const sharedState = require('./main/shared-state');
 
 /* 单实例锁 - 必须在所有初始化之前执行，防止重复启动导致闪窗口 */
 const { app } = require('electron');
-const { checkTampering: _chkTamper, autoRecover: _autoRecover } = require('./activation/activation-verify');
 
 const gotTheLockEarly = app.requestSingleInstanceLock();
 if (!gotTheLockEarly) {
@@ -821,10 +820,6 @@ app.whenReady().then(async () => {
   try {
     try { _bootLog('app.whenReady enter'); } catch (e) {}
     console.log('VersePC starting...');
-
-    try { _bootLog('before _autoRecover'); } catch (e) {}
-    _autoRecover();
-    try { _bootLog('after _autoRecover'); } catch (e) {}
 
     // versepc:// 协议处理器：server.js 未就绪时对 /api/ 请求返回 503
     let _serverReady = false;

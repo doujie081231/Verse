@@ -94,6 +94,79 @@ function _doRequest(options) {
     });
 }
 
+// 将 AI 服务商返回的错误转换为用户能看懂的中文提示
+function _friendlyError(status, body) {
+    var raw = (body || '').substring(0, 300);
+    var lower = raw.toLowerCase();
+
+    // 余额不足 / 配额用尽（DeepSeek 用 402，OpenAI 用 429+insufficient_quota）
+    if (status === 402 || lower.indexOf('insufficient_balance') !== -1 ||
+        lower.indexOf('insufficient balance') !== -1 ||
+        lower.indexOf('insufficient_quota') !== -1 ||
+        lower.indexOf('insufficient quota') !== -1 ||
+        lower.indexOf('额度') !== -1 && lower.indexOf('不足') !== -1) {
+        return 'AI 账户余额不足，请登录对应服务商官网充值后重试（错误码 ' + status + '）';
+    }
+
+    // API Key 无效或过期
+    if (status === 401 || lower.indexOf('invalid api key') !== -1 ||
+        lower.indexOf('invalid_api_key') !== -1 ||
+        lower.indexOf('unauthorized') !== -1 ||
+        lower.indexOf('authentication') !== -1) {
+        return 'API Key 无效或已过期，请在设置中检查并重新填写正确的 API Key（错误码 ' + status + '）';
+    }
+
+    // 权限不足 / 内容被拒绝
+    if (status === 403 || lower.indexOf('permission_denied') !== -1 ||
+        lower.indexOf('forbidden') !== -1) {
+        if (lower.indexOf('content') !== -1 && lower.indexOf('filter') !== -1) {
+            return '请求内容被 AI 服务商拒绝（可能涉及违规内容），请换一种说法重试（错误码 ' + status + '）';
+        }
+        return 'API Key 权限不足，请检查该 Key 是否有对应模型的调用权限（错误码 ' + status + '）';
+    }
+
+    // 请求过于频繁 / 限流
+    if (status === 429 || lower.indexOf('rate_limit') !== -1 ||
+        lower.indexOf('rate limit') !== -1 ||
+        lower.indexOf('too many requests') !== -1) {
+        return '请求过于频繁，已触发限流，请稍等几秒后重试（错误码 ' + status + '）';
+    }
+
+    // 接口地址或模型不存在
+    if (status === 404 || lower.indexOf('model not found') !== -1 ||
+        lower.indexOf('model_not_found') !== -1 ||
+        lower.indexOf('does not exist') !== -1) {
+        return '接口地址或模型名称不正确，请检查供应商配置和所选模型是否匹配（错误码 ' + status + '）';
+    }
+
+    // 请求超时
+    if (status === 408) {
+        return 'AI 请求超时，请检查网络连接后重试（错误码 ' + status + '）';
+    }
+
+    // 请求内容过大
+    if (status === 413 || lower.indexOf('too large') !== -1 ||
+        lower.indexOf('maximum context') !== -1 ||
+        lower.indexOf('context length') !== -1) {
+        return '对话内容过长，超出了 AI 模型的处理上限，请缩短内容后重试（错误码 ' + status + '）';
+    }
+
+    // 请求格式错误（参数不对）
+    if (status === 400 || lower.indexOf('invalid_request') !== -1 ||
+        lower.indexOf('invalid request') !== -1 ||
+        lower.indexOf('bad request') !== -1) {
+        return '请求参数有误，可能是模型名称或消息格式不正确（错误码 ' + status + '）';
+    }
+
+    // AI 服务端错误
+    if (status >= 500) {
+        return 'AI 服务商暂时不可用，请稍后重试（错误码 ' + status + '）';
+    }
+
+    // 其他未知错误，保留原始信息供排查
+    return 'AI 请求失败（错误码 ' + status + '）：' + raw;
+}
+
 function registerAIProxyIPC() {
     ipcMain.handle('ai:chat', async (event, params) => {
         try {
@@ -139,7 +212,7 @@ function registerAIProxyIPC() {
             var resp = await _doRequest({ url: url, headers: headers, body: body, timeout: cfg.timeout || 60000 });
 
             if (resp.status >= 400) {
-                return { ok: false, error: 'AI 请求失败（' + resp.status + '）：' + resp.body.substring(0, 300) };
+                return { ok: false, error: _friendlyError(resp.status, resp.body) };
             }
 
             var data;
