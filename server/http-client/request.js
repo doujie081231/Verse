@@ -101,9 +101,9 @@ async function fetchJSON(urlStr, retriesOrHeaders = 3, timeoutMs) {
 
   const headers = { 'User-Agent': 'VersePC/2.0', 'Connection': 'keep-alive', ...extraHeaders };
   const useMirror = mirrorUrl && _isMirrorAvailable();
-  // 多步策略：镜像 4s → 官方 10s → 官方完整超时；不走镜像时官方 10s → 官方完整超时
+  // 多步策略：镜像 8s → 官方 10s → 官方完整超时；不走镜像时官方 10s → 官方完整超时
   const steps = useMirror
-    ? [{ url: mirrorUrl, t: 4000, isMirror: true }, { url: urlStr, t: Math.min(reqTimeout, 10000) }, { url: urlStr, t: reqTimeout }]
+    ? [{ url: mirrorUrl, t: 8000, isMirror: true }, { url: urlStr, t: Math.min(reqTimeout, 10000) }, { url: urlStr, t: reqTimeout }]
     : [{ url: urlStr, t: Math.min(reqTimeout, 10000) }, { url: urlStr, t: reqTimeout }];
 
   let lastErr = null;

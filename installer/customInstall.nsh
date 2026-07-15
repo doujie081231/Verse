@@ -34,6 +34,36 @@
         ${EndIf}
         Delete "$TEMP\vc_redist.x64.exe"
     _vcpp_found:
+
+    ; --- 数据目录配置 ---
+    ; 新用户：数据自动放安装目录；老用户：弹窗选择是否迁移到安装目录
+    ; 如果安装目录已有 data-config.json（覆盖安装），跳过
+    IfFileExists "$INSTDIR\data-config.json" _data_dir_done 0
+    IfFileExists "$PROFILE\.versepc\*.*" 0 _setup_new_data_dir
+        ; 老用户，C盘有数据
+        MessageBox MB_YESNO|MB_ICONQUESTION "检测到 C 盘已有 VersePC 数据。$\n$\n是否将数据迁移到安装目录？$\n$\n选「是」：迁移数据到安装目录（推荐，数据跟软件走）$\n选「否」：继续使用 C 盘数据（保持现状）" IDYES _migrate_data IDNO _data_dir_done
+    _migrate_data:
+        DetailPrint "正在迁移数据到安装目录，请耐心等待..."
+        CreateDirectory "$INSTDIR\data"
+        nsExec::ExecToLog `xcopy "$PROFILE\.versepc\*" "$INSTDIR\data\" /E /I /Y /Q /C`
+        Pop $0
+        ${If} $0 == "0"
+            DetailPrint "数据迁移成功，正在清理 C 盘旧数据..."
+            RMDir /r "$PROFILE\.versepc"
+            ; 用 PowerShell 写 JSON（自动转义反斜杠）
+            nsExec::ExecToLog `powershell -NoProfile -Command "@{dataDir='$INSTDIR\data'} | ConvertTo-Json -Compress | Out-File -FilePath '$INSTDIR\data-config.json' -Encoding utf8"`
+            DetailPrint "数据目录已设置为 $INSTDIR\data"
+        ${Else}
+            MessageBox MB_OK|MB_ICONEXCLAMATION "数据迁移失败（代码 $0），将继续使用 C 盘数据。$\n$\n你可以稍后在软件设置中手动修改数据目录。"
+            RMDir /r "$INSTDIR\data"
+        ${EndIf}
+        Goto _data_dir_done
+    _setup_new_data_dir:
+        ; 新用户，数据放安装目录
+        CreateDirectory "$INSTDIR\data"
+        nsExec::ExecToLog `powershell -NoProfile -Command "@{dataDir='$INSTDIR\data'} | ConvertTo-Json -Compress | Out-File -FilePath '$INSTDIR\data-config.json' -Encoding utf8"`
+        DetailPrint "数据目录设置为 $INSTDIR\data"
+    _data_dir_done:
 !macroend
 
 !macro customUnInit
@@ -51,7 +81,12 @@
         Goto _versions_done
     _remove_versions:
         DetailPrint "删除版本文件夹"
+        ; 删除 C 盘旧数据目录
+        IfFileExists "$PROFILE\.versepc\versions\*.*" 0 +2
         RMDir /r "$PROFILE\.versepc\versions"
+        ; 删除安装目录下的数据目录
+        IfFileExists "$INSTDIR\data\versions\*.*" 0 +2
+        RMDir /r "$INSTDIR\data\versions"
     _versions_done:
 !macroend
 

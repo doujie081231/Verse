@@ -4,23 +4,6 @@ async function selectWallpaper(element) {
 
     const mode = element.dataset.wallpaper;
 
-    // 麦香主题需要 VT- 激活码解锁，未激活时弹出激活框，不切换主题
-    if (mode === 'auroraVideo') {
-        let themeActivated = false;
-        try {
-            if (window.electronAPI?.themeActivateStatus) {
-                const status = await window.electronAPI.themeActivateStatus();
-                themeActivated = !!status?.activated;
-            } else {
-                console.warn('[Theme] themeActivateStatus API not available');
-            }
-        } catch (e) { console.error('[Theme] Status check failed:', e); }
-        if (!themeActivated) {
-            showMaixiangActivateInline();
-            return;
-        }
-    }
-
     if (typeof switchWallpaperMode === 'function') {
         switchWallpaperMode(mode);
     }

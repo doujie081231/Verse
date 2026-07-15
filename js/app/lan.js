@@ -420,11 +420,14 @@ async function portmapDoCreate() {
             document.getElementById('portmap-connected-title').textContent = name;
             document.getElementById('portmap-room-addr').textContent = result.connectInfo || (result.publicIP ? result.publicIP + ':' + port : (result.localIPs && result.localIPs[0] ? result.localIPs[0] + ':' + port : '检测失败'));
             document.getElementById('portmap-room-port').textContent = port;
+            // 记录当前映射的外部端口，离开房间时用于清理 UPnP 规则
+            window._portmapCurrentUpnpPort = (result.upnp && result.upnp.success) ? parseInt(port, 10) : null;
             if (result.upnp && result.upnp.success) {
                 addPortmapLog('UPnP 端口映射成功');
             } else if (result.upnp) {
                 addPortmapLog('端口映射失败: ' + (result.upnp.error || '未知'));
                 addPortmapLog('提示: UPnP不可用不影响局域网联机，但远程联机需要路由器开启UPnP或手动设置端口转发');
+                addPortmapLog('建议: 若反复失败，可在路由器后台手动添加端口转发规则（外部端口 ' + port + ' → 内部 IP:' + port + '）');
             }
             addPortmapLog('公网IP: ' + (result.publicIP || '未检测到'));
             addPortmapLog('连接地址: ' + (result.connectInfo || '未获取'));
@@ -441,19 +444,35 @@ function portmapDoJoin() {
     const addr = document.getElementById('portmap-join-addr').value.trim();
     const name = document.getElementById('portmap-join-name').value.trim();
     if (!addr) { alert('请输入服务器地址'); return; }
+    const guide = '已复制地址: ' + addr + '\n\n接下来在 Minecraft 中加入：\n1. 打开 Minecraft 多人游戏\n2. 点击"添加服务器"\n3. 服务器地址填入: ' + addr + (name ? '\n4. 服务器名称建议填: ' + name : '');
     navigator.clipboard.writeText(addr).then(() => {
-        alert('已复制地址: ' + addr + '\n\n在Minecraft多人游戏中添加该地址即可加入。' + (name ? '\n建议使用名称: ' + name : ''));
+        alert(guide);
     }).catch(() => {
         const ta = document.createElement('textarea');
         ta.value = addr;
         document.body.appendChild(ta); ta.select();
-        document.execCommand('copy');
+        try { document.execCommand('copy'); } catch (_) {}
         document.body.removeChild(ta);
-        alert('已复制地址: ' + addr + '\n\n在Minecraft多人游戏中添加该地址即可加入。');
+        alert(guide);
     });
 }
 
-function portmapLeave() {
+async function portmapLeave() {
+    // 离开房间前先清理路由器上的 UPnP 映射，避免残留规则累积
+    const upnpPort = window._portmapCurrentUpnpPort;
+    if (upnpPort) {
+        try {
+            await fetch('/api/lan/upnp-unmap', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ externalPort: upnpPort })
+            });
+            addPortmapLog('已清理路由器上的 UPnP 端口映射 (' + upnpPort + ')');
+        } catch (e) {
+            console.warn('[Portmap] Failed to cleanup UPnP mapping:', e.message);
+        }
+        window._portmapCurrentUpnpPort = null;
+    }
     document.getElementById('portmap-connected').style.display = 'none';
     document.getElementById('portmap-tabs').style.display = '';
     document.getElementById('portmap-create-panel').style.display = '';

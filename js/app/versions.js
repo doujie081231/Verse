@@ -239,9 +239,15 @@ function toggleErrorVersions(id) {
 
 // 渲染已安装版本列表到指定容器（供独立"已安装版本"页面和版本管理页复用）
 function renderInstalledVersionsInto(container) {
-  const versions = installedVersions;
+  const selectedFolder = getSelectedFolder();
+  let versions = installedVersions;
+  if (selectedFolder === '__internal') {
+    versions = versions.filter(v => !v.isExternal);
+  } else {
+    versions = versions.filter(v => v.isExternal && v.externalPath === selectedFolder);
+  }
   if (!versions || versions.length === 0) {
-    container.innerHTML = '<p class="empty-text">暂无已安装版本，前往"下载"页面安装一个吧</p>';
+    container.innerHTML = '<p class="empty-text">该文件夹下暂无版本，前往"下载"页面安装一个吧</p>';
     return;
   }
 
@@ -538,11 +544,13 @@ async function navigateToPage(pageName) {
   } else if (pageName === 'downloads') {
     dlManager.render();
   } else if (pageName === 'installed-versions') {
+    populateFolderSelector();
     const container = document.getElementById('installed-versions-list');
     if (container) {
       if (!installedVersions || installedVersions.length === 0) {
         container.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><p>加载已安装版本...</p></div>';
         loadVersions(false).then(() => {
+          populateFolderSelector();
           renderInstalledVersionsInto(container);
         });
       } else {
@@ -1074,7 +1082,11 @@ async function confirmAddExternalFolder() {
       }
       setTimeout(() => {
         closeExternalFolderModal();
-        loadVersions(true);
+        loadVersions(true).then(() => {
+          populateFolderSelector();
+          const container = document.getElementById('installed-versions-list');
+          if (container) renderInstalledVersionsInto(container);
+        });
       }, 1500);
     } else {
       document.getElementById('external-folder-error').textContent = result.error || '添加失败';
@@ -1087,6 +1099,56 @@ async function confirmAddExternalFolder() {
     confirmBtn.disabled = false;
     confirmBtn.textContent = '添加';
   }
+}
+
+let _selectedFolder = '__internal';
+
+function getSelectedFolder() {
+  try { return localStorage.getItem('versepc_selected_folder') || '__internal'; }
+  catch (e) { return '__internal'; }
+}
+
+function setSelectedFolder(folder) {
+  _selectedFolder = folder;
+  try { localStorage.setItem('versepc_selected_folder', folder); } catch (e) {}
+}
+
+async function populateFolderSelector() {
+  const select = document.getElementById('folder-selector');
+  if (!select) return;
+  const currentVal = getSelectedFolder();
+  _selectedFolder = currentVal;
+  let html = '<option value="__internal">游戏文件夹</option>';
+  try {
+    const folders = await API.listExternalFolders();
+    if (folders && folders.length > 0) {
+      for (const f of folders) {
+        const label = f.name || f.path;
+        html += `<option value="${escapeHtml(f.path)}" title="${escapeHtml(f.path)}">${escapeHtml(label)}${f.versionCount != null ? ' (' + f.versionCount + ')' : ''}</option>`;
+      }
+    }
+  } catch (e) {}
+  select.innerHTML = html;
+  select.value = currentVal;
+}
+
+function onFolderSelectorChange() {
+  const select = document.getElementById('folder-selector');
+  if (!select) return;
+  setSelectedFolder(select.value);
+  const container = document.getElementById('installed-versions-list');
+  if (container) renderInstalledVersionsInto(container);
+}
+
+async function refreshInstalledVersions() {
+  const container = document.getElementById('installed-versions-list');
+  if (container) {
+    container.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><p>正在刷新...</p></div>';
+  }
+  _versionsLoadTime = 0;
+  await loadVersions(true);
+  await populateFolderSelector();
+  if (container) renderInstalledVersionsInto(container);
 }
 
 function openModLoaderModal(gameVersion) {

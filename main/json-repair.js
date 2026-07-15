@@ -8,9 +8,10 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 
-// 与 main.js 中的 CONFIG_PATH / STORE_PATH 保持一致
-const CONFIG_PATH = path.join(os.homedir(), '.versepc', 'window-config.json');
-const STORE_PATH = path.join(os.homedir(), '.versepc', 'app-store.json');
+// 跟随 DATA_DIR，避免修改数据目录后修复逻辑找不到文件
+const { DATA_DIR, WINDOW_CONFIG_FILE, APP_STORE_FILE } = require('./paths');
+const CONFIG_PATH = WINDOW_CONFIG_FILE;
+const STORE_PATH = APP_STORE_FILE;
 
 /**
  * 自动修复单个 JSON 文件
@@ -69,7 +70,7 @@ async function autoRepairJsonFileAsync(filePath, backupSuffix) {
  * @returns {Promise<void>}
  */
 async function repairVersePCDataAsync() {
-  const dataDir = path.join(os.homedir(), '.versepc');
+  const dataDir = DATA_DIR;
   try { await fs.promises.access(dataDir); } catch { return; }
   await autoRepairJsonFileAsync(CONFIG_PATH, '.corrupted.json');
   await autoRepairJsonFileAsync(STORE_PATH, '.corrupted.json');
@@ -97,7 +98,7 @@ async function repairVersePCDataAsync() {
   } catch (e) {
     console.error('[AutoRepair] Version scan error:', e.message);
   }
-  console.log('[AutoRepair] Data integrity check completed');
+  console.log('[AutoRepair] Data integrity check completed for:', dataDir);
 }
 
 // 私有函数：通过 setImmediate 延迟执行数据修复，避免阻塞当前调用栈

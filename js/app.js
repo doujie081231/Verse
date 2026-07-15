@@ -86,32 +86,11 @@ document.addEventListener('DOMContentLoaded', () => {
   init();
   setTimeout(initSettingsPages, 500);
   renderSponsors();
-  loadMachineId();
-  updateActivationStatus();
   // 启动时不再自动弹出"更新公告"，新版本提示由更新检测单独处理，避免同时出现两个弹窗
 
   if (window.electronAPI?.platform && window.electronAPI.platform !== 'win32') {
     document.querySelectorAll('.win-only').forEach((el) => (el.style.display = 'none'));
   }
-
-  let _acChk = 0;
-  const _acTick = async () => {
-    try {
-      const s = await window.electronAPI?.activateStatus?.();
-      if (!s || !s.activated) {
-        _acChk++;
-        if (_acChk > 2) {
-          document.querySelectorAll('.nav-btn').forEach((b) => {
-            if (b.id === 'nav-explore-btn') b.style.display = 'none';
-          });
-        }
-      } else {
-        _acChk = 0;
-      }
-    } catch (_) {}
-  };
-  setInterval(_acTick, 120000);
-  setTimeout(_acTick, 30000);
 });
 
 /* @versepc-protected: anti-ai-plagiarism-v1.0 */

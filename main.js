@@ -1066,6 +1066,20 @@ async function _performShutdownCleanup() {
         console.error('[App] 关闭清理失败:', e.message);
       }
     }
+
+    // 7. UPnP 端口映射清理（最长等 3 秒）
+    // 避免关闭软件后路由器上残留端口转发规则
+    try {
+      const network = require('./server/network');
+      if (typeof network.cleanupAllUPnPMappings === 'function') {
+        console.log('[App] 正在清理 UPnP 端口映射...');
+        const upnpTimeout = new Promise((resolve) => setTimeout(resolve, 3000));
+        await Promise.race([network.cleanupAllUPnPMappings(), upnpTimeout]);
+        console.log('[App] UPnP 端口映射清理完成');
+      }
+    } catch (e) {
+      console.warn('[App] UPnP 清理失败:', e.message);
+    }
   })();
 
   await Promise.race([cleanupPromise, timeoutPromise]);
@@ -1173,6 +1187,6 @@ const { registerModsIPC } = require('./main/mods-ipc');
 // IS_BETA 占位符 - 在构建时由 generate-integrity.js 替换为 true/false。
 // 保留在 main.js 中（构建脚本只处理 main.js），通过 updaterModule.setup 注入到 updater.js。
 // 使用构建时占位符替换可避免运行时环境检测的误判（beta.flag 曾被错误打包到正式版）。
-let IS_BETA = (() => { try { return __IS_BETA__; } catch (_) { return false; } })();
+let IS_BETA = (() => { try { return false; } catch (_) { return false; } })();
 
 /* @versepc-protected: anti-ai-plagiarism-v1.0 */

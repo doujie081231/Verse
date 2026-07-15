@@ -1,6 +1,6 @@
 /**
  * @file server/http-client/mirror.js - 镜像源管理
- * @description 镜像熔断（连续失败 3 次暂停 1 分钟）、镜像 URL 选择（BMCLAPI / MCIM / Forge maven）、镜像测速。
+ * @description 镜像熔断（连续失败 3 次暂停 1 分钟）、镜像 URL 选择（根据下载源设置动态调整顺序）、镜像测速。
  *   通过 ctx (../context) 访问共享状态。
  */
 
@@ -29,41 +29,66 @@ function _mirrorSuccess() {
 }
 
 /**
- * 获取原始 URL 对应的镜像 URL 列表（BMCLAPI / MCIM / Forge maven），原始 URL 始终在末尾
+ * 读取当前下载源设置
+ * @returns {string} downloadSource: china-first | auto | official-first | mojang
+ */
+function _getDownloadSource() {
+  try {
+    const { loadSettingsCached } = require('./settings');
+    const settings = loadSettingsCached();
+    return settings.downloadSource || 'china-first';
+  } catch (e) {
+    return 'china-first';
+  }
+}
+
+/**
+ * 获取原始 URL 对应的镜像 URL 列表，根据下载源设置动态调整顺序
  * @param {string} originalUrl - 原始 URL
- * @returns {string[]} 镜像 URL 列表（含原始 URL）
+ * @returns {string[]} URL 列表（含原始 URL），顺序由下载源设置决定
  */
 function getMirrorUrls(originalUrl) {
   if (!originalUrl) return [originalUrl];
-  const urls = [];
-  let hasBmclapi = false;
-  // BMCLAPI 镜像映射
+
+  const downloadSource = _getDownloadSource();
+
+  // mojang 模式：只使用官方源，不使用任何镜像
+  if (downloadSource === 'mojang') {
+    return [originalUrl];
+  }
+
+  const mirrorUrls = [];
+  const officialUrl = originalUrl;
+
+  // 收集 BMCLAPI 镜像
   for (const [original, mirror] of Object.entries(ctx.mirrors.BMCLAPI_MIRROR)) {
     if (originalUrl.startsWith(original)) {
       const mirrored = originalUrl.replace(original, mirror);
-      if (mirrored !== originalUrl) {
-        urls.push(mirrored);
-        hasBmclapi = true;
+      if (mirrored !== originalUrl && !mirrorUrls.includes(mirrored)) {
+        mirrorUrls.push(mirrored);
       }
       break;
     }
   }
-  // MCIM 镜像映射
-  for (const [original, mirror] of Object.entries(ctx.mirrors.MCIM_MIRROR)) {
-    if (originalUrl.startsWith(original)) {
-      const mirrored = originalUrl.replace(original, mirror);
-      if (mirrored !== originalUrl && !urls.includes(mirrored)) urls.push(mirrored);
-      break;
-    }
-  }
-  // libraries.minecraft.net 额外补 Forge maven 与 BMCLAPI maven 镜像
+
+  // libraries.minecraft.net 额外补 Forge maven 镜像
   if (originalUrl.startsWith('https://libraries.minecraft.net/')) {
     const forgeMirror = originalUrl.replace('https://libraries.minecraft.net/', 'https://maven.minecraftforge.net/');
-    if (!urls.includes(forgeMirror)) urls.push(forgeMirror);
-    const bmclapiMaven = originalUrl.replace('https://libraries.minecraft.net/', 'https://bmclapi2.bangbang93.com/maven/');
-    if (!urls.includes(bmclapiMaven)) urls.push(bmclapiMaven);
+    if (!mirrorUrls.includes(forgeMirror)) mirrorUrls.push(forgeMirror);
   }
-  urls.push(originalUrl);
+
+  // 熔断时跳过镜像
+  const mirrorAvailable = _isMirrorAvailable();
+
+  let urls;
+  if (downloadSource === 'china-first') {
+    // 国内优先：镜像在前，官方在后（熔断时跳过镜像）
+    urls = mirrorAvailable ? [...mirrorUrls, officialUrl] : [officialUrl];
+  } else {
+    // auto / official-first：官方在前，镜像在后（熔断时跳过镜像）
+    urls = mirrorAvailable ? [officialUrl, ...mirrorUrls] : [officialUrl];
+  }
+
   return urls;
 }
 

@@ -177,6 +177,22 @@ function dismissAnnouncementModal() {
     }, 200);
 }
 
+function announcementGotoUpdateSettings() {
+    dismissAnnouncementModal();
+    if (typeof navigateToPage === 'function') {
+        navigateToPage('settings-other');
+    } else if (typeof switchPage === 'function') {
+        switchPage('settings-other');
+    }
+    setTimeout(function() {
+        var btnGroup = document.getElementById('updater-btn-group');
+        if (btnGroup) {
+            var card = btnGroup.closest('.card');
+            if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    }, 300);
+}
+
 async function checkAnnouncementPopup() {
     await showAnnouncementModal(false);
 }
