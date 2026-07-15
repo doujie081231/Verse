@@ -111,9 +111,9 @@ const ctx = {
     VERSION_MANIFEST_URL: 'https://piston-meta.mojang.com/mc/game/version_manifest_v2.json',
     VERSION_MANIFEST_MIRROR: 'https://bmclapi2.bangbang93.com/mc/game/version_manifest_v2.json',
     MODRINTH_API: 'https://api.modrinth.com/v2',
-    MODRINTH_API_MIRROR: 'https://mod.mcimirror.top/modrinth/v2',
+    MODRINTH_API_MIRROR: 'https://api.modrinth.com/v2',
     CURSEFORGE_API: 'https://api.curseforge.com/v1',
-    CURSEFORGE_API_MIRROR: 'https://mod.mcimirror.top/curseforge/v1',
+    CURSEFORGE_API_MIRROR: 'https://api.curseforge.com/v1',
     JAVA_RUNTIME_URL: 'https://launchermeta.mojang.com/v1/products/java-runtime/2ec0cc96c44e5a76b9c8b7c39df7210883d12871/all.json',
     FABRIC_META_URL: 'https://meta.fabricmc.net/v2',
     FORGE_MAVEN_URL: 'https://maven.minecraftforge.net/net/minecraftforge/forge',
@@ -134,18 +134,9 @@ const ctx = {
       'https://meta.fabricmc.net/': 'https://bmclapi2.bangbang93.com/fabric-meta/',
       'https://maven.minecraftforge.net/': 'https://bmclapi2.bangbang93.com/maven/',
       'https://maven.neoforged.net/': 'https://bmclapi2.bangbang93.com/maven/',
-      'https://maven.fabricmc.net/': 'https://bmclapi2.bangbang93.com/maven/',
-      'https://cdn.modrinth.com/': 'https://mod.mcimirror.top/',
-      'https://edge.forgecdn.net/': 'https://mod.mcimirror.top/',
-      'https://mediafilez.forgecdn.net/': 'https://mod.mcimirror.top/',
-      'https://media.forgecdn.net/': 'https://mod.mcimirror.top/'
+      'https://maven.fabricmc.net/': 'https://bmclapi2.bangbang93.com/maven/'
     },
-    MCIM_MIRROR: {
-      'https://cdn.modrinth.com/': 'https://mod.mcimirror.top/',
-      'https://edge.forgecdn.net/': 'https://mod.mcimirror.top/',
-      'https://mediafilez.forgecdn.net/': 'https://mod.mcimirror.top/',
-      'https://media.forgecdn.net/': 'https://mod.mcimirror.top/'
-    },
+    MCIM_MIRROR: {},
     JAVA_DOWNLOAD_MIRRORS: [
       { name: 'BMCLAPI', urlMap: {
         'https://launchermeta.mojang.com/': 'https://bmclapi2.bangbang93.com/',

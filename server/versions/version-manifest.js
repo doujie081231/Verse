@@ -1,13 +1,27 @@
 /**
  * @file server/versions/version-manifest.js - 版本清单与详情获取
- * @description 从多个镜像源并发拉取版本清单，回退磁盘缓存；带 TTL 缓存的版本详情。
+ * @description 从多个源获取版本清单，顺序由下载源设置决定；回退磁盘缓存。
  */
 
 const { fs, ctx, http } = require('./shared');
 const { saveDiskCache } = require('./version-settings');
 
 /**
- * 获取版本清单：并发请求多个镜像源，任一成功即用；全部失败时回退磁盘缓存
+ * 读取当前下载源设置
+ * @returns {string} downloadSource: china-first | auto | official-first | mojang
+ */
+function _getDownloadSource() {
+  try {
+    const { loadSettingsCached } = require('../http-client/settings');
+    const settings = loadSettingsCached();
+    return settings.downloadSource || 'china-first';
+  } catch (e) {
+    return 'china-first';
+  }
+}
+
+/**
+ * 获取版本清单：根据下载源设置决定请求顺序，并发请求，任一成功即用；全部失败时回退磁盘缓存
  * @param {boolean} forceRefresh - 是否强制刷新缓存
  * @returns {Promise<Object>} 版本清单对象
  * @throws {Error} 所有源失败且无缓存时抛出
@@ -18,12 +32,25 @@ async function getVersionManifest(forceRefresh = false) {
     return ctx.caches.versionCache;
   }
 
-  const urls = [
+  const downloadSource = _getDownloadSource();
+
+  const bmclapiUrls = [
     ctx.urls.VERSION_MANIFEST_MIRROR,
     'https://bmclapi2.bangbang93.com/mc/game/version_manifest_v2.json',
-    'https://bmclapi2.bangbang93.com/mc/game/version_manifest.json',
+    'https://bmclapi2.bangbang93.com/mc/game/version_manifest.json'
+  ];
+  const officialUrls = [
     ctx.urls.VERSION_MANIFEST_URL
   ];
+
+  let urls;
+  if (downloadSource === 'mojang') {
+    urls = officialUrls;
+  } else if (downloadSource === 'china-first') {
+    urls = [...bmclapiUrls, ...officialUrls];
+  } else {
+    urls = [...officialUrls, ...bmclapiUrls];
+  }
 
   const fetchWithValidation = async (url) => {
     const manifest = await http.fetchJSON(url);
