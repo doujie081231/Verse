@@ -402,26 +402,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   readFileBuffer: (filePath) => ipcRenderer.invoke('read-file-buffer', filePath),
 
   /**
-   * 验证激活码
-   * @param {string} code - 激活码
-   * @returns {Promise<Object>} 验证结果
-   */
-  activateVerify: (code) => ipcRenderer.invoke('activate-verify', code),
-
-  /** 查询当前激活状态 */
-  activateStatus: () => ipcRenderer.invoke('activate-status'),
-
-  /**
-   * 验证主题激活码
-   * @param {string} code - 主题激活码
-   * @returns {Promise<Object>} 验证结果
-   */
-  themeActivateVerify: (code) => ipcRenderer.invoke('theme-activate-verify', code),
-
-  /** 查询主题激活状态 */
-  themeActivateStatus: () => ipcRenderer.invoke('theme-activate-status'),
-
-  /**
    * 持久化存储 API
    * @namespace store
    */

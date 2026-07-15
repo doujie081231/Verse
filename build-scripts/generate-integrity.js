@@ -33,28 +33,6 @@ function main() {
     fs.writeFileSync(mainPath, mainContent);
     console.log(`  main.js: __IS_BETA__ -> ${isBeta}`);
 
-    const avPath = path.join(projectRoot, 'activation', 'activation-verify.js');
-    const avBakPath = path.join(projectRoot, 'activation', 'activation-verify.js.bak');
-    if (isBeta && fs.existsSync(avPath)) {
-        const avContent = fs.readFileSync(avPath, 'utf8');
-        const avLines = avContent.split('\n').length;
-        if (avLines > 5) {
-            fs.copyFileSync(avPath, avBakPath);
-            try {
-                execSync(
-                    `npx javascript-obfuscator "${avPath}" --output "${avPath}" --target node --string-array-encoding rc4 --string-array-threshold 1 --rename-globals false --self-defending false`,
-                    { stdio: 'pipe', cwd: projectRoot }
-                );
-                console.log('  activation-verify.js: obfuscated');
-            } catch (e) {
-                console.warn('  WARN: activation-verify obfuscation failed:', e.message);
-                fs.copyFileSync(avBakPath, avPath);
-            }
-        } else {
-            console.log('  activation-verify.js: already obfuscated, skipping');
-        }
-    }
-
     for (const file of INTEGRITY_FILES) {
         const filePath = path.join(projectRoot, file);
         if (!fs.existsSync(filePath)) {

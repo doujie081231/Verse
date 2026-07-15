@@ -101,7 +101,8 @@ function findNeoForgeCoreJars(versionJson, searchBases, gameArgs) {
     return [];
   }
   if (hasPatchedClientLib && _isNewScheme) {
-    console.log(`[findNeoForgeCoreJars] NeoForge ${neoForgeVersion} 使用 --no-mod-manifest，patched jar 不含 mod 类，需添加 universal jar`);
+    console.log(`[findNeoForgeCoreJars] NeoForge ${neoForgeVersion} 使用 --no-mod-manifest，universal jar 由 PathBasedLocator 自动加载，不添加到 classpath`);
+    return [];
   }
 
   const result = [];
@@ -876,56 +877,11 @@ async function mergeNeoForgeLoaderToVersion(versionId, gameVersion, neoVersion, 
     console.log(`[NeoForge] 合并运行时库: 新增 ${added} 个，跳过 ${skipped} 个（已存在/父版本已有），总计 ${versionJson.libraries.length} 个库`);
   }
 
-  // [CRITICAL FIX - 2026-07-12] NeoForge 20.6+（新版本号方案）使用 --no-mod-manifest 标志构建
-  // patched jar，导致 patched jar 不含 NeoForge mod 类（NeoForgeMod.class 等）。
-  // 必须将 universal jar 作为库条目添加到版本 JSON，确保它被包含在 classpath 中。
-  // 对于旧版 NeoForge（47.x/48.x/49.x），patched jar 已含 mod 类，不需要添加 universal jar。
-  {
-    const _neoVerParts2 = neoVersion.split(/[.\-]/);
-    const _neoMajor2 = parseInt(_neoVerParts2[0], 10) || 0;
-    const _neoMinor2 = parseInt(_neoVerParts2[1], 10) || 0;
-    const _isNewScheme2 = (_neoMajor2 === 20 && _neoMinor2 >= 6) || _neoMajor2 >= 21;
-    if (_isNewScheme2) {
-      const _universalLibName = `net.neoforged:neoforge:${neoVersion}:universal`;
-      const _hasUniversalLib = (versionJson.libraries || []).some((l) => l.name === _universalLibName);
-      if (!_hasUniversalLib) {
-        const _universalJarRel = `net/neoforged/neoforge/${neoVersion}/neoforge-${neoVersion}-universal.jar`;
-        const _universalJarPath = path.join(ctx.dirs.LIBRARIES_DIR, _universalJarRel);
-        if (fs.existsSync(_universalJarPath)) {
-          const _stat = fs.statSync(_universalJarPath);
-          const _crypto = require('crypto');
-          const _sha1 = _crypto.createHash('sha1').update(fs.readFileSync(_universalJarPath)).digest('hex');
-          versionJson.libraries = versionJson.libraries || [];
-          versionJson.libraries.push({
-            name: _universalLibName,
-            downloads: {
-              artifact: {
-                path: _universalJarRel,
-                url: '',
-                size: _stat.size,
-                sha1: _sha1
-              }
-            }
-          });
-          console.log(`[NeoForge] 已添加 universal jar 库条目: ${_universalLibName} (${_stat.size} bytes)`);
-        } else {
-          console.warn(`[NeoForge] universal jar 不存在: ${_universalJarPath}，将在下载阶段补全`);
-          versionJson.libraries = versionJson.libraries || [];
-          versionJson.libraries.push({
-            name: _universalLibName,
-            downloads: {
-              artifact: {
-                path: `net/neoforged/neoforge/${neoVersion}/neoforge-${neoVersion}-universal.jar`,
-                url: '',
-                size: 0,
-                sha1: ''
-              }
-            }
-          });
-        }
-      }
-    }
-  }
+  // NeoForge 20.6+ 使用 --no-mod-manifest 构建 patched jar，patched jar 不含 NeoForge mod 类。
+  // universal jar 不能作为库条目添加到 classpath，否则 FML 的 PathBasedLocator 会跳过它
+  // ("already located earlier")，导致 NeoForge mod 不被加载，游戏启动即崩溃。
+  // 正确做法：不添加 universal jar 库条目，让 PathBasedLocator 通过 --fml.neoForgeVersion
+  // 参数自动发现并加载 universal jar 作为 mod。
 
   if (onProgress) onProgress(0.5, '下载 NeoForge 库文件...');
 
@@ -1201,7 +1157,14 @@ async function getNeoForgeVersionsForGame(gameVersion) {
   const p = gameVersion.split('.');
   const mcMajor = parseInt(p[0], 10) || 0;
   const mcMinor = parseInt(p[1], 10) || 0;
-  const neoPrefix = mcMajor + '.' + mcMinor;
+  const mcPatch = parseInt(p[2], 10) || 0;
+  // NeoForge 版本号规则：
+  //   MC 1.20.1 及以前: 使用旧版 Forge，版本号 47.x / 1.20.1-47.x
+  //   MC 1.20.5+ (NeoForge): 版本号格式为 <MC次版本>.<MC patch版本>.<NeoForge补丁>
+  //     例如 MC 1.21.1 对应 NeoForge 21.1.xxx，MC 1.20.5 对应 20.5.xxx
+  const isNewNeoScheme = (mcMajor === 1 && mcMinor === 20 && mcPatch >= 5) ||
+                         (mcMajor === 1 && mcMinor >= 21);
+  const neoPrefix = isNewNeoScheme ? `${mcMinor}.${mcPatch}` : `${mcMajor}.${mcMinor}`;
 
   let allNeoForgeVersions = [];
   let allForgeVersions = [];
@@ -1239,28 +1202,28 @@ async function getNeoForgeVersionsForGame(gameVersion) {
     return [];
   }
 
-  const neoForgePrefix = /^\d+\.\d+/;
   const matched = [];
-  const fallback = [];
   for (const ver of allNeoForgeVersions) {
     if (typeof ver !== 'string') continue;
+    // 严格按 NeoForge 版本前缀匹配，例如 MC 1.21.1 只匹配 21.1.x
     if (ver.startsWith(neoPrefix + '.')) {
       matched.push(ver);
-    }
-    if (!ver.includes('-beta') && !ver.includes('-alpha')) {
-      fallback.push(ver);
     }
   }
 
   const forgeMatched = [];
-  for (const ver of allForgeVersions) {
-    if (typeof ver !== 'string') continue;
-    if (ver.startsWith(gameVersion + '-') || ver.startsWith(gameVersion + '.')) {
-      forgeMatched.push(ver);
+  // 旧版 Forge（MC 1.20.1）版本格式为 "1.20.1-47.x"，只有在旧 MC 版本下才需要
+  if (!isNewNeoScheme) {
+    for (const ver of allForgeVersions) {
+      if (typeof ver !== 'string') continue;
+      if (ver.startsWith(gameVersion + '-') || ver.startsWith(gameVersion + '.')) {
+        forgeMatched.push(ver);
+      }
     }
   }
 
-  let result = matched.length > 0 ? matched : fallback.slice(-10);
+  // 如果未匹配到兼容版本，返回空列表，避免显示错误版本误导用户
+  let result = matched.length > 0 ? matched : [];
   if (forgeMatched.length > 0) {
     for (const fv of forgeMatched) {
       if (!result.includes(fv)) result.push(fv);

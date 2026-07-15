@@ -1066,6 +1066,20 @@ async function _performShutdownCleanup() {
         console.error('[App] 关闭清理失败:', e.message);
       }
     }
+
+    // 7. UPnP 端口映射清理（最长等 3 秒）
+    // 避免关闭软件后路由器上残留端口转发规则
+    try {
+      const network = require('./server/network');
+      if (typeof network.cleanupAllUPnPMappings === 'function') {
+        console.log('[App] 正在清理 UPnP 端口映射...');
+        const upnpTimeout = new Promise((resolve) => setTimeout(resolve, 3000));
+        await Promise.race([network.cleanupAllUPnPMappings(), upnpTimeout]);
+        console.log('[App] UPnP 端口映射清理完成');
+      }
+    } catch (e) {
+      console.warn('[App] UPnP 清理失败:', e.message);
+    }
   })();
 
   await Promise.race([cleanupPromise, timeoutPromise]);

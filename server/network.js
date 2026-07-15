@@ -1,8 +1,7 @@
 /**
  * @file server/network.js
- * @description UPnP/网络/mcPing 功能模块，从 server.js 抽取的 LAN 房间、UPnP 端口映射、
- *   WS 中继、MC Ping 等网络功能。通过 ctx (./context) 访问共享状态，通过 utils (./utils)
- *   访问工具函数，通过 httpClient (./http-client) 访问 HTTP 客户端功能。
+ * @description UPnP 端口映射与 MC Ping 功能模块。通过 ctx (./context) 访问共享状态，
+ *   通过 utils (./utils) 访问工具函数，通过 httpClient (./http-client) 访问 HTTP 客户端功能。
  */
 
 const fs = require('fs');
@@ -12,156 +11,13 @@ const https = require('https');
 const net = require('net');
 const dgram = require('dgram');
 const url = require('url');
-const crypto = require('crypto');
 const os = require('os');
-
-const WebSocket = require('ws');
 
 const ctx = require('./context');
 const utils = require('./utils');
 const httpClient = require('./http-client');
 
 /* 辅助函数 */
-
-/**
- * 生成 6 位房间码（大写字母+数字，去除易混淆字符 I/O/0/1）
- * @returns {string} 6 位房间码
- */
-function generateRoomCode() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  const bytes = crypto.randomBytes(6);
-  let code = '';
-  for (let i = 0; i < 6; i++) code += chars[bytes[i] % chars.length];
-  return code;
-}
-
-/* LAN 房间 */
-
-/**
- * 创建 LAN 房间，启动 TCP 中继服务器将外部连接转发到本机 MC 服务器端口
- * @param {string} roomName - 房间名称
- * @param {number} gamePort - 本机 MC 服务器端口
- * @param {string} playerName - 主机玩家名
- * @returns {Object} { code: string, relayPort: number, name: string }
- */
-function createLANRoom(roomName, gamePort, playerName) {
-  const code = generateRoomCode();
-  while (ctx.network.lanRooms.has(code)) { code = generateRoomCode(); }
-
-  const net = require('net');
-  const dgram = require('dgram');
-
-  const relayPort = 30000 + Math.floor(Math.random() * 1000);
-
-  const room = {
-    code,
-    name: roomName || `房间 ${code}`,
-    hostPlayer: playerName || '主机',
-    gamePort: parseInt(gamePort, 10) || 25565,
-    relayPort,
-    peers: new Map(),
-    connections: new Map(),
-    createdAt: Date.now(),
-    status: 'waiting'
-  };
-
-  const relayServer = net.createServer((clientSocket) => {
-    const peerId = crypto.randomUUID();
-    clientSocket.peerId = peerId;
-
-    const mcServer = net.createConnection({ host: '127.0.0.1', port: room.gamePort }, () => {
-      room.connections.set(peerId, { client: clientSocket, server: mcServer, connected: true });
-      room.peers.set(peerId, { id: peerId, name: `玩家${room.peers.size + 1}`, connectedAt: Date.now() });
-    });
-
-    clientSocket.on('data', (data) => {
-      if (mcServer.writable) mcServer.write(data);
-    });
-
-    mcServer.on('data', (data) => {
-      if (clientSocket.writable) clientSocket.write(data);
-    });
-
-    clientSocket.on('close', () => {
-      mcServer.destroy();
-      room.connections.delete(peerId);
-      room.peers.delete(peerId);
-    });
-
-    mcServer.on('close', () => {
-      clientSocket.destroy();
-      room.connections.delete(peerId);
-    });
-
-    clientSocket.on('error', () => { mcServer.destroy(); });
-    mcServer.on('error', () => { clientSocket.destroy(); });
-  });
-
-  relayServer.listen(relayPort, '0.0.0.0', () => {
-    room.status = 'active';
-  });
-
-  relayServer.on('error', (e) => {
-    console.error(`[LAN] Relay server error:`, e.message);
-    room.status = 'error';
-  });
-
-  room.relayServer = relayServer;
-  ctx.network.lanRooms.set(code, room);
-  ctx.network.lanRelayServers.set(code, relayServer);
-
-  return { code, relayPort, name: room.name };
-}
-
-/**
- * 销毁 LAN 房间，关闭所有连接与中继服务器
- * @param {string} code - 房间码
- * @returns {void}
- */
-function destroyLANRoom(code) {
-  const room = ctx.network.lanRooms.get(code);
-  if (!room) return;
-
-  room.connections.forEach((conn) => {
-    if (conn.client) conn.client.destroy();
-    if (conn.server) conn.server.destroy();
-  });
-  room.peers.clear();
-  room.connections.clear();
-
-  const relay = ctx.network.lanRelayServers.get(code);
-  if (relay) {
-    relay.close();
-    ctx.network.lanRelayServers.delete(code);
-  }
-
-  ctx.network.lanRooms.delete(code);
-}
-
-/**
- * 获取 LAN 房间信息
- * @param {string} code - 房间码
- * @returns {Object|null} 房间信息对象，房间不存在返回 null
- */
-function getLANRoomInfo(code) {
-  const room = ctx.network.lanRooms.get(code);
-  if (!room) return null;
-
-  return {
-    code: room.code,
-    name: room.name,
-    hostPlayer: room.hostPlayer,
-    gamePort: room.gamePort,
-    relayPort: room.relayPort,
-    status: room.status,
-    peerCount: room.peers.size,
-    peers: Array.from(room.peers.values()).map((p) => ({
-      id: p.id,
-      name: p.name,
-      connectedAt: p.connectedAt
-    }))
-  };
-}
 
 /* UPnP */
 
@@ -483,7 +339,6 @@ async function upnpDeletePortMapping(externalPort) {
       }, (res) => {
         if (res.statusCode === 200 || res.statusCode === 204) {
           ctx.network.upnpMappings.delete(externalPort);
-          ctx.network.upnpGatewayCache = null;
           resolve({ success: true });
         } else {
           reject(new Error(`UPnP DeletePortMapping failed: ${res.statusCode}`));
@@ -535,178 +390,6 @@ async function getPublicIP() {
     } catch (e) { continue; }
   }
   return null;
-}
-
-/* WebSocket 中继 */
-
-/**
- * 启动 WebSocket 中继服务器（用于联机房间数据转发）
- * @param {number} port - 监听端口
- * @returns {Object} { success: boolean, port?: number, error?: string }
- */
-function startWSRelayServer(port) {
-  if (ctx.network.wsRelayServer) return { success: true, port: ctx.network.wsRelayServer.port };
-
-  try {
-    ctx.network.wsRelayServer = new WebSocket.Server({ port, maxPayload: 10 * 1024 * 1024 });
-    ctx.network.wsRelayServer.port = port;
-
-    ctx.network.wsRelayServer.on('connection', (ws, req) => {
-      ws.isAlive = true;
-      ws.on('pong', () => { ws.isAlive = true; });
-
-      ws.on('message', (data) => {
-        try {
-          const msg = JSON.parse(data.toString());
-          handleWSMessage(ws, msg);
-        } catch (e) {}
-      });
-
-      ws.on('close', () => {
-        if (ws.roomCode) {
-          const room = ctx.network.wsRelayRooms.get(ws.roomCode);
-          if (room) {
-            if (ws.role === 'host') {
-              room.host = null;
-              room.clients.forEach((c) => { try { c.close(); } catch (e) {} });
-              ctx.network.wsRelayRooms.delete(ws.roomCode);
-            } else {
-              room.clients.delete(ws);
-              if (room.host) {
-                try { room.host.send(JSON.stringify({ type: 'peer-left', peerId: ws.peerId })); } catch (e) {}
-              }
-            }
-          }
-        }
-      });
-    });
-
-    /* 30 秒心跳检测，清理失效连接 */
-    const interval = setInterval(() => {
-      ctx.network.wsRelayServer.clients.forEach((ws) => {
-        if (!ws.isAlive) return ws.terminate();
-        ws.isAlive = false;
-        ws.ping();
-      });
-    }, 30000);
-
-    ctx.network.wsRelayServer.on('close', () => clearInterval(interval));
-
-    return { success: true, port };
-  } catch (e) {
-    return { success: false, error: e.message };
-  }
-}
-
-/**
- * 处理 WebSocket 中继消息（创建/加入房间、MC 数据转发、房间列表等）
- * @param {WebSocket} ws - WebSocket 连接
- * @param {Object} msg - 消息对象
- * @returns {void}
- */
-function handleWSMessage(ws, msg) {
-  switch (msg.type) {
-    case 'create-room': {
-      const code = msg.code || generateRoomCode();
-      while (ctx.network.wsRelayRooms.has(code)) { code = generateRoomCode(); }
-
-      ws.roomCode = code;
-      ws.role = 'host';
-
-      const room = {
-        code,
-        host: ws,
-        clients: new Set(),
-        gamePort: msg.gamePort || 25565,
-        roomName: msg.roomName || `房间 ${code}`,
-        hostPlayer: msg.hostPlayer || '主机',
-        createdAt: Date.now()
-      };
-      ctx.network.wsRelayRooms.set(code, room);
-
-      ws.send(JSON.stringify({ type: 'room-created', code, gamePort: room.gamePort }));
-      break;
-    }
-    case 'join-room': {
-      const code = (msg.code || '').toUpperCase().trim();
-      const room = ctx.network.wsRelayRooms.get(code);
-
-      if (!room || !room.host) {
-        ws.send(JSON.stringify({ type: 'join-failed', error: '房间不存在' }));
-        return;
-      }
-
-      ws.roomCode = code;
-      ws.role = 'client';
-      ws.peerId = crypto.randomUUID();
-      ws.playerName = msg.playerName || '玩家';
-
-      room.clients.add(ws);
-
-      ws.send(JSON.stringify({
-        type: 'join-success',
-        code,
-        peerId: ws.peerId,
-        roomName: room.roomName,
-        hostPlayer: room.hostPlayer
-      }));
-
-      try {
-        room.host.send(JSON.stringify({
-          type: 'peer-joined',
-          peerId: ws.peerId,
-          playerName: ws.playerName
-        }));
-      } catch (e) {}
-      break;
-    }
-    case 'mc-data': {
-      if (ws.role === 'client' && ws.roomCode) {
-        const room = ctx.network.wsRelayRooms.get(ws.roomCode);
-        if (room && room.host) {
-          try { room.host.send(JSON.stringify({ type: 'mc-data', data: msg.data, peerId: ws.peerId })); } catch (e) {}
-        }
-      } else if (ws.role === 'host' && ws.roomCode) {
-        const room = ctx.network.wsRelayRooms.get(ws.roomCode);
-        if (room && msg.peerId) {
-          room.clients.forEach((client) => {
-            if (client.peerId === msg.peerId) {
-              try { client.send(JSON.stringify({ type: 'mc-data', data: msg.data })); } catch (e) {}
-            }
-          });
-        }
-      }
-      break;
-    }
-    case 'mc-connect': {
-      if (ws.role === 'client' && ws.roomCode) {
-        const room = ctx.network.wsRelayRooms.get(ws.roomCode);
-        if (room && room.host) {
-          try { room.host.send(JSON.stringify({ type: 'mc-connect', peerId: ws.peerId, playerName: ws.playerName })); } catch (e) {}
-        }
-      }
-      break;
-    }
-    case 'mc-disconnect': {
-      if (ws.role === 'client' && ws.roomCode) {
-        const room = ctx.network.wsRelayRooms.get(ws.roomCode);
-        if (room && room.host) {
-          try { room.host.send(JSON.stringify({ type: 'mc-disconnect', peerId: ws.peerId })); } catch (e) {}
-        }
-      }
-      break;
-    }
-    case 'list-rooms': {
-      const rooms = [];
-      ctx.network.wsRelayRooms.forEach((room, code) => {
-        if (room.host) {
-          rooms.push({ code, name: room.roomName, hostPlayer: room.hostPlayer, peers: room.clients.size });
-        }
-      });
-      ws.send(JSON.stringify({ type: 'room-list', rooms }));
-      break;
-    }
-  }
 }
 
 /* Minecraft 协议 VarInt 编解码 */
@@ -850,9 +533,6 @@ async function mcPing(host, port = 25565, timeout = 5000) {
 }
 
 module.exports = {
-  createLANRoom,
-  destroyLANRoom,
-  getLANRoomInfo,
   getLocalIPForGateway,
   discoverUPnPGateway,
   _ssdpSearch,
@@ -860,9 +540,14 @@ module.exports = {
   upnpAddPortMapping,
   upnpDeletePortMapping,
   getPublicIP,
-  startWSRelayServer,
-  handleWSMessage,
   encodeVarInt,
   decodeVarInt,
-  mcPing
+  mcPing,
+  // 清理所有 UPnP 映射，应用退出时调用
+  async cleanupAllUPnPMappings() {
+    const mappings = Array.from(ctx.network.upnpMappings.keys());
+    for (const extPort of mappings) {
+      try { await upnpDeletePortMapping(extPort); } catch (e) {}
+    }
+  }
 };

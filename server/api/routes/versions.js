@@ -807,6 +807,8 @@ module.exports = {
         const folderName = afName || path.basename(afPath);
         folders.push({ path: afPath, name: folderName, addedAt: new Date().toISOString() });
         versions.saveExternalFolders(folders);
+        ctx.caches._versionsCache = null;
+        ctx.caches._versionsCacheTime = 0;
         sendJSON(res, {
           success: true,
           folder: { path: afPath, name: folderName },
@@ -838,6 +840,8 @@ module.exports = {
           return;
         }
         versions.saveExternalFolders(folders);
+        ctx.caches._versionsCache = null;
+        ctx.caches._versionsCacheTime = 0;
         sendJSON(res, { success: true });
       } catch (e) { sendJSON(res, { success: false, error: e.message }); }
     });

@@ -13,16 +13,14 @@
  * 依赖注入：registerStoreIPC({ app, isPathAllowed }) 接收主进程注入的依赖
  */
 
-const { ipcMain, shell, clipboard, net } = require('electron');
+const { ipcMain, shell, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
 
-// 存储文件路径
-const STORE_PATH = path.join(os.homedir(), '.versepc', 'app-store.json');
-
-// 激活 schema 版本 - 升级此版本会使旧 schema 的激活记录失效，强制重新激活
-const ACTIVATION_SCHEMA_VERSION = 3;
+// 存储文件路径 - 跟随 DATA_DIR，避免修改数据目录后激活信息丢失
+const { APP_STORE_FILE } = require('./paths');
+const STORE_PATH = APP_STORE_FILE;
 
 /**
  * 安全写入文件 - 先备份再原子写入，防止写入中断导致文件损坏
@@ -245,207 +243,6 @@ function registerStoreIPC({ app, isPathAllowed }) {
     }
   });
 
-  /* 激活验证 */
-  ipcMain.handle('activate-verify', async (event, code) => {
-    try {
-      const crypto = require('crypto');
-      const requestJson = (url, body) => new Promise((resolve, reject) => {
-        try {
-          const req = net.request({ url, method: 'POST' });
-          const payload = JSON.stringify(body);
-          req.setHeader('Content-Type', 'application/json');
-          req.setHeader('User-Agent', 'VersePC/' + app.getVersion());
-          req.on('response', (res) => {
-            let text = '';
-            res.on('data', (chunk) => { text += chunk.toString(); });
-            res.on('end', () => {
-              try {
-                if ((res.headers?.['content-type'] || '').indexOf('application/json') === -1) {
-                  return reject(new Error('服务端返回非JSON(' + res.statusCode + ')'));
-                }
-                resolve(JSON.parse(text || '{}'));
-              } catch (e) {
-                reject(new Error('解析服务端响应失败'));
-              }
-            });
-          });
-          req.on('error', (err) => reject(err));
-          req.write(payload);
-          req.end();
-        } catch (err) {
-          reject(err);
-        }
-      });
-
-      const parts = [];
-      try { parts.push(os.hostname()); } catch (e) {}
-      try { parts.push(os.arch()); } catch (e) {}
-      try { parts.push(os.platform()); } catch (e) {}
-      try { const cpus = os.cpus(); if (cpus.length > 0) parts.push(cpus[0].model); } catch (e) {}
-      try { parts.push(String(os.totalmem())); } catch (e) {}
-      try {
-        const nets = os.networkInterfaces();
-        for (const name of Object.keys(nets)) {
-          for (const iface of nets[name]) {
-            if (!iface.internal && iface.mac && iface.mac !== '00:00:00:00:00:00') {
-              parts.push(iface.mac);
-              break;
-            }
-          }
-        }
-      } catch (e) {}
-      const machineId = crypto.createHash('sha256').update(parts.join('|')).digest('hex').toUpperCase().substring(0, 16);
-
-      let c = (code || '').trim().toUpperCase();
-      if (!c) return { success: false, message: '请输入激活码' };
-      const codeMatch = c.match(/(VU-[A-F0-9]{6,12})/i);
-      if (codeMatch) c = codeMatch[1].toUpperCase();
-      if (!c.startsWith('VU-')) return { success: false, message: '旧版激活码已失效，请前往官网申请新密钥\nhttps://verselauncher.cn/community' };
-
-      const baseUrl = 'https://www.verselauncher.cn';
-      const endpoints = [baseUrl + '/api/activate/verify', baseUrl + '/.netlify/functions/activate/verify', baseUrl + '/functions/api/activate/verify'];
-
-      let data = null;
-      let lastErr = null;
-      const body = { activation_code: c, machine_id: machineId, app_version: app.getVersion() };
-      // 依次尝试多个激活接口，任一成功即返回
-      for (const url of endpoints) {
-        try {
-          const json = await requestJson(url, body);
-          data = json?.data || json;
-          lastErr = null;
-          break;
-        } catch (err) {
-          lastErr = err.message || '网络异常';
-        }
-      }
-
-      if (!data || !data.activated) {
-        return { success: false, message: lastErr ? ('激活验证失败: ' + lastErr) : '激活码无效或与本机不匹配' };
-      }
-
-      const activationType = data.type || 'single';
-      const store = loadStore();
-      store['activation_type'] = activationType;
-      store['activation_code'] = c;
-      store['activation_time'] = new Date().toISOString();
-      store['activation_schema_ver'] = ACTIVATION_SCHEMA_VERSION;
-      fs.writeFile(STORE_PATH, JSON.stringify(store, null, 2), () => {});
-
-      return { success: true, type: activationType, message: activationType === 'permanent' ? '永久激活成功！' : '单次激活成功！' };
-    } catch (e) {
-      return { success: false, message: '验证过程出错: ' + e.message };
-    }
-  });
-
-  ipcMain.handle('activate-status', async () => {
-    const store = loadStore();
-    // 旧 schema 的激活记录失效，强制重新激活
-    if (store['activation_type'] && store['activation_schema_ver'] !== ACTIVATION_SCHEMA_VERSION) {
-      delete store['activation_type'];
-      delete store['activation_code'];
-      delete store['activation_time'];
-      delete store['activation_version'];
-      delete store['activation_schema_ver'];
-      fs.writeFile(STORE_PATH, JSON.stringify(store, null, 2), () => {});
-      return { activated: false, type: null, time: null };
-    }
-    return {
-      activated: !!store['activation_type'],
-      type: store['activation_type'] || null,
-      time: store['activation_time'] || null
-    };
-  });
-
-  /* 主题激活验证 */
-  ipcMain.handle('theme-activate-verify', async (event, code) => {
-    try {
-      const crypto = require('crypto');
-      const requestJson = (url, body) => new Promise((resolve, reject) => {
-        try {
-          const payload = JSON.stringify(body);
-          const req = net.request({ url, method: 'POST', headers: { 'Content-Type': 'application/json' } });
-          req.on('response', (res) => {
-            let text = '';
-            res.on('data', (chunk) => text += chunk.toString());
-            res.on('end', () => {
-              try {
-                if (res.statusCode < 200 || res.statusCode >= 300) {
-                  return reject(new Error('服务端错误: ' + res.statusCode));
-                }
-                resolve(JSON.parse(text || '{}'));
-              } catch (e) {
-                reject(new Error('解析服务端响应失败'));
-              }
-            });
-          });
-          req.on('error', (err) => reject(err));
-          req.write(payload);
-          req.end();
-        } catch (err) { reject(err); }
-      });
-
-      const parts = [];
-      try { parts.push(os.hostname()); } catch (e) {}
-      try { parts.push(os.arch()); } catch (e) {}
-      try { parts.push(os.platform()); } catch (e) {}
-      try { const cpus = os.cpus(); if (cpus.length > 0) parts.push(cpus[0].model); } catch (e) {}
-      try { parts.push(String(os.totalmem())); } catch (e) {}
-      try {
-        const nets = os.networkInterfaces();
-        for (const name of Object.keys(nets)) {
-          for (const iface of nets[name]) {
-            if (!iface.internal && iface.mac && iface.mac !== '00:00:00:00:00:00') { parts.push(iface.mac); break; }
-          }
-        }
-      } catch (e) {}
-      const machineId = crypto.createHash('sha256').update(parts.join('|')).digest('hex').toUpperCase().substring(0, 16);
-
-      let c = (code || '').trim().toUpperCase();
-      if (!c) return { success: false, message: '请输入激活码' };
-      const codeMatch = c.match(/(VT-[A-F0-9]{6,12})/i);
-      if (codeMatch) c = codeMatch[1].toUpperCase();
-      if (!c.startsWith('VT-')) return { success: false, message: '请输入麦香主题激活码（VT-开头）' };
-
-      const baseUrl = 'https://www.verselauncher.cn';
-      const endpoints = [baseUrl + '/api/activate/verify', baseUrl + '/.netlify/functions/activate/verify', baseUrl + '/functions/api/activate/verify'];
-
-      let data = null;
-      let lastErr = null;
-      const body = { activation_code: c, machine_id: machineId, app_version: app.getVersion() };
-      for (const url of endpoints) {
-        try {
-          const json = await requestJson(url, body);
-          data = json?.data || json;
-          lastErr = null;
-          break;
-        } catch (err) { lastErr = err.message || '网络异常'; }
-      }
-
-      if (!data || !data.activated) {
-        return { success: false, message: lastErr ? ('激活验证失败: ' + lastErr) : '激活码无效或与本机不匹配' };
-      }
-
-      const store = loadStore();
-      store['theme_activation_code'] = c;
-      store['theme_activation_time'] = new Date().toISOString();
-      fs.writeFile(STORE_PATH, JSON.stringify(store, null, 2), () => {});
-
-      return { success: true, message: '麦香主题已解锁' };
-    } catch (e) {
-      return { success: false, message: '验证过程出错: ' + e.message };
-    }
-  });
-
-  ipcMain.handle('theme-activate-status', async () => {
-    const store = loadStore();
-    return {
-      activated: !!store['theme_activation_code'],
-      code: store['theme_activation_code'] || null,
-      time: store['theme_activation_time'] || null
-    };
-  });
-
   /* 预览服务器停止 */
   ipcMain.handle('preview:stop', async () => {
     if (global._previewServer) {
@@ -475,7 +272,6 @@ function registerStoreIPC({ app, isPathAllowed }) {
 
 module.exports = {
   STORE_PATH,
-  ACTIVATION_SCHEMA_VERSION,
   safeWriteFileSync,
   safeReadJsonFile,
   loadStore,

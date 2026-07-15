@@ -510,13 +510,6 @@ const API = {
         apiPost('/api/resources/download', { versionId, projectId, projectType, targetVersionId, savePath, customName }, 120000),
 
     // === 局域网联机 (LAN) ===
-    lanCreateRoom: (name, port, playerName) =>
-        apiPost('/api/lan/create', { name, port, playerName }),
-    lanJoinRoom: (code, playerName) =>
-        apiPost('/api/lan/join', { code, playerName }),
-    lanGetRoomInfo: (code) => apiGet('/api/lan/info', { code }),
-    lanLeaveRoom: (code, peerId) => apiPost('/api/lan/leave', { code, peerId }),
-    lanDestroyRoom: (code) => apiPost('/api/lan/destroy', { code }),
     lanGetMyIP: () => apiGet('/api/lan/my-ip'),
     lanUPnPMap: (internalPort, externalPort, description) =>
         apiPost('/api/lan/upnp-map', { internalPort, externalPort, description }),
