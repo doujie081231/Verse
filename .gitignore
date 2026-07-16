@@ -119,7 +119,7 @@ activation/obfuscate-activation.js
 obfuscate-config.json
 activate-tool.html
 
-# 历史误提交的测试截图和临时文件，清理后防止再次入库
+# 历史误提交的测试截图和临时开发文件，清理后防止再次入库
 _test_screenshots/
 dogfood-output/
 Explorer
@@ -139,3 +139,15 @@ v-island-agent-done.png
 v-island-realtime-progress.png
 v-island-success.png
 versepc-home.png
+
+# 第二批清理：旧图标、临时文档、上传脚本、配置文件等
+activate-tool.html
+copy-to-release.bat
+create-activation-tool.bat
+editor-preload.cjs
+editor.html
+file-browser.html
+files-to-upload.json
+generate_docs.py
+obfuscate-config.json
+forge-installer-wrapper/
