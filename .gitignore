@@ -151,3 +151,6 @@ files-to-upload.json
 generate_docs.py
 obfuscate-config.json
 forge-installer-wrapper/
+*鉴别材料*
+*技术报告*
+*诊断报告*
