@@ -1,13 +1,13 @@
 {
-  "version": "1.1.13",
-  "releaseDate": "2026-07-15T00:00:00Z",
-  "releaseName": "VersePC v1.1.13",
-  "releaseNotes": "## v1.1.13 正式版更新\n\n### 核心修复\n- 修复下载源设置不生效的问题：现在软件会按你选的下载源来下载，不再强制走国内镜像\n- 修复部分用户启动游戏时显示\"网络连接错误\"的问题（镜像超时从4秒放宽到8秒）\n- 移除已失效的镜像域名，避免连接失败\n\n### 功能优化\n- 移除激活码模块，所有功能对所有用户免费开放\n- 修复端口映射UPnP功能：离开房间时自动清理映射规则\n- 版本管理新增文件夹选择器，支持按文件夹隔离显示版本\n- 修复添加外部文件夹后版本不显示的问题\n- 更新公告弹窗新增\"更新设置\"跳转按钮\n- 修复发现新版本弹窗按钮不可见的问题\n\n### 启动修复\n- 修复 NeoForge 1.21.1 启动崩溃问题（移除手动添加核心文件导致的冲突）",
+  "version": "1.1.14",
+  "releaseDate": "2026-07-16T00:00:00Z",
+  "releaseName": "VersePC v1.1.14",
+  "releaseNotes": "## v1.1.14 正式版更新\n\n### 版本管理修复\n- 修复删除版本后版本列表不刷新的问题：删除版本后页面立即更新\n- 修复 NeoForge 26.2 被错误识别为整合包导致不显示的问题\n- 修复 Forge 26.2 版本因继承链错误被过滤隐藏的问题\n\n### 加载器安装修复\n- 修复 NeoForge/Forge 26.2 安装失败问题（自动创建 launcher_profiles.json）\n- 安装器执行失败时输出详细错误信息（包含 stderr/stdout）\n- 修复 NeoForge 版本 inheritsFrom 被错误改写的问题",
   "files": {
     "win-x64": {
-      "url": "https://github.com/doujie081231/Verse/releases/download/v1.1.13/VersePC-Setup-1.1.13.exe",
-      "size": 163895983,
-      "sha256": "9824100F08E1424A23E1C4F6750759F3C483CF439711915714A4AA003BD107C0"
+      "url": "https://github.com/doujie081231/Verse/releases/download/v1.1.14/VersePC-Setup-1.1.14.exe",
+      "size": 163895973,
+      "sha256": "0FF44BE49475E7B2F44F5C9E15C4630836C7F8E639271D0E6E8BE2AF982DAA18"
     }
   }
 }

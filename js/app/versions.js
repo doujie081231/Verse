@@ -1018,6 +1018,8 @@ async function deleteVersion(versionId) {
     if (r.success) {
       showToast(`版本 ${versionId} 已${isPermanent ? '永久删除' : '删除'}`, 'success');
       await loadVersions(true);
+      const installedContainer = document.getElementById('installed-versions-list');
+      if (installedContainer) renderInstalledVersionsInto(installedContainer);
     } else {
       showToast(r.error || '删除失败', 'error');
     }

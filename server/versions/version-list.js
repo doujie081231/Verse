@@ -295,6 +295,7 @@ function fixModpackInheritsFrom(installed, loaderIdPattern) {
   for (const v of installed) {
     if (!v.inheritsFrom || v.isExternal) continue;
     if (loaderIdPattern.test(v.id)) continue;
+    if (v.isForge || v.isFabric || v.isNeoForge || v.isOptiFine || v.isLiteLoader) continue;
     if (!bareMcVersionPattern.test(v.inheritsFrom)) continue;
     const baseMcId = v.inheritsFrom;
     const candidates = installed.filter((l) =>
