@@ -854,6 +854,31 @@ async function runPatchProcessor({ mcJarPath, clientLzmaPath, patchedJarPath, pr
         '--install-client', targetDir
     ];
     console.log(`${logPrefix} 目标目录: ${targetDir}`);
+
+    // 4.5 确保 launcher_profiles.json 存在（官方安装器需要检测到启动器 profile）
+    const launcherProfilesPath = path.join(targetDir, 'launcher_profiles.json');
+    if (!fs.existsSync(launcherProfilesPath)) {
+        try {
+            const minimalProfiles = {
+                profiles: {
+                    VersePC: {
+                        name: 'VersePC',
+                        type: 'custom',
+                        created: new Date().toISOString(),
+                        lastUsed: new Date().toISOString(),
+                        icon: 'VersePC'
+                    }
+                },
+                selectedProfile: 'VersePC',
+                clientToken: 'versepc-' + Date.now()
+            };
+            fs.writeFileSync(launcherProfilesPath, JSON.stringify(minimalProfiles, null, 2), 'utf8');
+            console.log(`${logPrefix} 已创建 launcher_profiles.json`);
+        } catch (e) {
+            console.warn(`${logPrefix} 创建 launcher_profiles.json 失败（非致命）: ${e.message}`);
+        }
+    }
+
     if (onProgress) onProgress(0.9, '正在运行官方安装器...');
 
     // 进度关键词映射
@@ -905,7 +930,9 @@ async function runPatchProcessor({ mcJarPath, clientLzmaPath, patchedJarPath, pr
             if (stderr.trim()) console.warn(`${logPrefix} [stderr] ${stderr.trim()}`);
             if (code !== 0) {
                 console.error(`${logPrefix} 安装器进程退出码: ${code}`);
-                reject(new Error(`官方安装器执行失败 (退出码 ${code})`));
+                const errDetail = stderr.trim() ? `\nstderr: ${stderr.trim().substring(0, 2000)}` : '';
+                const stdoutDetail = stdout.trim() ? `\nstdout: ${stdout.trim().substring(0, 1000)}` : '';
+                reject(new Error(`官方安装器执行失败 (退出码 ${code})${errDetail}${stdoutDetail}`));
             } else {
                 console.log(`${logPrefix} 安装器进程正常退出`);
                 resolve();

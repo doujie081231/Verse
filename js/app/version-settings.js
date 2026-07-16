@@ -557,6 +557,8 @@ async function deleteCurrentVersion() {
       showToast(`版本 ${deletedNames} 已删除`, 'success');
       closeVersionSettings();
       await loadVersions(true);
+      const installedContainer = document.getElementById('installed-versions-list');
+      if (installedContainer) renderInstalledVersionsInto(installedContainer);
     } else {
       showToast(r.error || '删除失败', 'error');
     }
