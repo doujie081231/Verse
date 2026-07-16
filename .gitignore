@@ -118,5 +118,24 @@ files-to-upload.json
 activation/obfuscate-activation.js
 obfuscate-config.json
 activate-tool.html
-.git-backup/
-.github/workflows/
+
+# 历史误提交的测试截图和临时文件，清理后防止再次入库
+_test_screenshots/
+dogfood-output/
+Explorer
+after-install-failed.png
+asar-extract.js
+before-neoforge-install.png
+check-natives.js
+current-state.png
+during-neoforge-install.png
+forge-installer.js
+progress.png
+test-screenshot.png
+update-beta.json
+update-hosts.ps1
+update-test-1.png
+v-island-agent-done.png
+v-island-realtime-progress.png
+v-island-success.png
+versepc-home.png
