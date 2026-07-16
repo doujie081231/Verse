@@ -1083,6 +1083,7 @@ async function confirmAddExternalFolder() {
       setTimeout(() => {
         closeExternalFolderModal();
         loadVersions(true).then(() => {
+          setSelectedFolder(folderPath);
           populateFolderSelector();
           const container = document.getElementById('installed-versions-list');
           if (container) renderInstalledVersionsInto(container);
@@ -1120,8 +1121,9 @@ async function populateFolderSelector() {
   _selectedFolder = currentVal;
   let html = '<option value="__internal">游戏文件夹</option>';
   try {
-    const folders = await API.listExternalFolders();
-    if (folders && folders.length > 0) {
+    const result = await API.listExternalFolders();
+    const folders = result && result.folders ? result.folders : [];
+    if (folders.length > 0) {
       for (const f of folders) {
         const label = f.name || f.path;
         html += `<option value="${escapeHtml(f.path)}" title="${escapeHtml(f.path)}">${escapeHtml(label)}${f.versionCount != null ? ' (' + f.versionCount + ')' : ''}</option>`;
