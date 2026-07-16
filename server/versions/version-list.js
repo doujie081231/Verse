@@ -516,59 +516,60 @@ function getInstalledVersions(forceRefresh) {
     return ctx.caches._versionsCache;
   }
   const installed = [];
-  if (!fs.existsSync(ctx.dirs.VERSIONS_DIR)) return installed;
-  const skipFolders = new Set(['cache', 'blclient', 'pcl', 'temp']);
-  try {
-    const dirs = fs.readdirSync(ctx.dirs.VERSIONS_DIR);
-    for (const dir of dirs) {
-      const versionDir = path.join(ctx.dirs.VERSIONS_DIR, dir);
-      try {
-        if (!fs.statSync(versionDir).isDirectory()) continue;
-        if (skipFolders.has(dir.toLowerCase())) continue;
-      } catch (e) { continue; }
-      const jsonFile = findVersionJson(versionDir);
-      if (jsonFile) {
+  if (fs.existsSync(ctx.dirs.VERSIONS_DIR)) {
+    const skipFolders = new Set(['cache', 'blclient', 'pcl', 'temp']);
+    try {
+      const dirs = fs.readdirSync(ctx.dirs.VERSIONS_DIR);
+      for (const dir of dirs) {
+        const versionDir = path.join(ctx.dirs.VERSIONS_DIR, dir);
         try {
-          const data = JSON.parse(fs.readFileSync(jsonFile, 'utf-8'));
-          const info = detectVersionInfo(data, dir);
-          let inheritsFrom = data.inheritsFrom || null;
-          if (!inheritsFrom && (info.isNeoForge || info.isForge)) {
-            const m = (data.id || dir).match(/^(\d+\.\d+(?:\.\d+)?(?:-rc\d+|-pre\d+|-snapshot.*)?)/i);
-            if (m) inheritsFrom = m[1];
+          if (!fs.statSync(versionDir).isDirectory()) continue;
+          if (skipFolders.has(dir.toLowerCase())) continue;
+        } catch (e) { continue; }
+        const jsonFile = findVersionJson(versionDir);
+        if (jsonFile) {
+          try {
+            const data = JSON.parse(fs.readFileSync(jsonFile, 'utf-8'));
+            const info = detectVersionInfo(data, dir);
+            let inheritsFrom = data.inheritsFrom || null;
+            if (!inheritsFrom && (info.isNeoForge || info.isForge)) {
+              const m = (data.id || dir).match(/^(\d+\.\d+(?:\.\d+)?(?:-rc\d+|-pre\d+|-snapshot.*)?)/i);
+              if (m) inheritsFrom = m[1];
+            }
+            if (inheritsFrom && !data.inheritsFrom) data.inheritsFrom = inheritsFrom;
+            installed.push({
+              id: data.id || dir,
+              type: info.isAprilFools ? 'special' : (data.type || 'release'),
+              releaseTime: data.releaseTime || '',
+              mainClass: data.mainClass || '',
+              installed: true,
+              inheritsFrom: inheritsFrom,
+              isFabric: info.isFabric,
+              isForge: info.isForge,
+              isNeoForge: info.isNeoForge,
+              isOptiFine: info.isOptiFine,
+              isLiteLoader: info.isLiteLoader,
+              isModpack: info.isModpack,
+              modpackLoader: info.modpackLoader,
+              baseVersion: info.baseVersion,
+              isAprilFools: info.isAprilFools || false,
+              isExternal: false,
+              isolation: true,
+              hasMods: false,
+              hasSaves: false,
+              hasResourcepacks: false,
+              error: false,
+              errorReason: '',
+              customName: '',
+              description: ''
+            });
+          } catch (e) {
           }
-          if (inheritsFrom && !data.inheritsFrom) data.inheritsFrom = inheritsFrom;
-          installed.push({
-            id: data.id || dir,
-            type: info.isAprilFools ? 'special' : (data.type || 'release'),
-            releaseTime: data.releaseTime || '',
-            mainClass: data.mainClass || '',
-            installed: true,
-            inheritsFrom: inheritsFrom,
-            isFabric: info.isFabric,
-            isForge: info.isForge,
-            isNeoForge: info.isNeoForge,
-            isOptiFine: info.isOptiFine,
-            isLiteLoader: info.isLiteLoader,
-            isModpack: info.isModpack,
-            modpackLoader: info.modpackLoader,
-            baseVersion: info.baseVersion,
-            isAprilFools: info.isAprilFools || false,
-            isExternal: false,
-            isolation: true,
-            hasMods: false,
-            hasSaves: false,
-            hasResourcepacks: false,
-            error: false,
-            errorReason: '',
-            customName: '',
-            description: ''
-          });
-        } catch (e) {
+        } else {
         }
-      } else {
       }
-    }
-  } catch (e) {}
+    } catch (e) {}
+  }
 
   // 扫描外部目录中的版本
   const externalFolders = loadExternalFolders();

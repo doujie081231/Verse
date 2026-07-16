@@ -212,12 +212,12 @@
 }
 
 .modal-btn--primary {
-    background-color: var(--primary);
-    color: #ffffff;
+    background-color: var(--accent);
+    color: var(--accent-text);
 }
 
 .modal-btn--primary:hover {
-    background-color: color-mix(in srgb, var(--primary) 90%, black);
+    background-color: var(--accent-hover);
 }
 
 .modal-btn--secondary {
