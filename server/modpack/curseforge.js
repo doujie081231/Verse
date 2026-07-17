@@ -102,9 +102,9 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
     fs.mkdirSync(versionDir, { recursive: true });
   }
 
-  // 移除硬编码 API Key fallback：内置 Key 会被打包进发布版，存在泄露风险
-  // 无 Key 时走已有的降级逻辑（仅解压 overrides，提示用户在设置中配置）
-  const cfApiKey = settings.curseforgeApiKey || '';
+  // CurseForge API Key：优先使用用户配置的 Key，无配置时使用内置公共 Key 兜底
+  // 与 mod-search / mod-download 等模块保持一致，避免整合包导入时无法获取下载链接
+  const cfApiKey = settings.curseforgeApiKey || '$2a$10$bL4bIL5pUWqfcO7KQtnMReakwtfHbNKh6v1uTpKlzhwoueEJQnPnm';
 
   let loaderVersionId = null;
 
@@ -200,6 +200,25 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
       if (cfLoaderMainClass) versionJson.mainClass = cfLoaderMainClass;
       fs.writeFileSync(path.join(versionDir, `${versionId}.json`), JSON.stringify(versionJson, null, 2));
       versions._invalidateResolvedJsonCache(versionId);
+      // [关键修复] 复制继承版本（Forge/NeoForge/Fabric）的主 jar 到新版本目录，
+      // 命名为 ${versionId}.jar。原因：Forge 的 ignoreList 等启动参数使用
+      // ${version_name}.jar 占位符，启动时会被替换为 ${versionId}.jar。
+      // 若整合包版本ID（如"剑与王国"）与继承版本ID（如"1.20.1-forge-47.4.20"）不同，
+      // 替换后的文件名在 classpath 中不存在，导致 patched jar 未被 ignoreList 跳过，
+      // 被 JPMS 加载为自动模块，与 minecraft 模块 split package 冲突，游戏启动即崩溃。
+      // 复制 jar 后，${versionId}.jar 存在，占位符替换能正确匹配，从源头消除冲突。
+      if (loaderVersionId) {
+        try {
+          const _srcLoaderJar = path.join(ctx.dirs.VERSIONS_DIR, loaderVersionId, `${loaderVersionId}.jar`);
+          const _dstVersionJar = path.join(versionDir, `${versionId}.jar`);
+          if (fs.existsSync(_srcLoaderJar) && !fs.existsSync(_dstVersionJar)) {
+            fs.copyFileSync(_srcLoaderJar, _dstVersionJar);
+            console.log(`[CurseForge] 已复制主 jar 到版本目录: ${versionId}.jar`);
+          }
+        } catch (_jarCopyErr) {
+          console.warn(`[CurseForge] 复制主 jar 失败 (非致命): ${_jarCopyErr.message}`);
+        }
+      }
     } else {
       const versionJson = {
         id: versionId,
@@ -211,6 +230,19 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
       };
       fs.writeFileSync(path.join(versionDir, `${versionId}.json`), JSON.stringify(versionJson, null, 2));
       versions._invalidateResolvedJsonCache(versionId);
+      // 无加载器场景：复制原版 jar 到新版本目录，原因同上
+      if (mcVersion) {
+        try {
+          const _srcVanillaJar = path.join(ctx.dirs.VERSIONS_DIR, mcVersion, `${mcVersion}.jar`);
+          const _dstVersionJar = path.join(versionDir, `${versionId}.jar`);
+          if (fs.existsSync(_srcVanillaJar) && !fs.existsSync(_dstVersionJar)) {
+            fs.copyFileSync(_srcVanillaJar, _dstVersionJar);
+            console.log(`[CurseForge] 已复制原版 jar 到版本目录: ${versionId}.jar`);
+          }
+        } catch (_jarCopyErr) {
+          console.warn(`[CurseForge] 复制原版 jar 失败 (非致命): ${_jarCopyErr.message}`);
+        }
+      }
     }
 
     progress('loader', '模组加载器就绪', 40);
@@ -361,7 +393,7 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
             const destPath = path.join(modsDir, fileName);
             if (cfModFiles[index]) { cfModFiles[index].name = fileName; cfModFiles[index]._destPath = destPath; }
 
-            if (utils.isJarIntact(destPath)) {
+            if (utils.isJarIntactDeep(destPath)) {
               cfDownloaded = true;
             } else {
               const perTryAbort = new AbortController();
@@ -461,6 +493,7 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
 
       if (cfDownloaded) {
         if (cfModFiles[index]) { cfModFiles[index].status = 'completed'; cfModFiles[index].progress = 100; }
+        cfDownloadedCount++;
       } else if (cfModFiles[index]) {
         if (abortSignal && abortSignal.aborted) {
           cfModFiles[index].status = 'failed'; cfModFiles[index].error = '已取消';
@@ -468,13 +501,16 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
           cfModFiles[index].status = 'failed'; cfModFiles[index].error = '下载失败';
           cfFailedCount++;
           console.error(`[CurseForge] Mod ${projectID}:${fileID} 最终下载失败`);
-          if (cfFailedCount > Math.max(5, cfFiles.length * 0.1) && cfFailedCount > cfDownloadedCount) {
-            console.error(`[CurseForge] 失败数(${cfFailedCount})超过阈值，取消剩余下载`);
+          // 熔断保护：仅当失败率超过 40% 且失败数明显大于成功数时才取消
+          // 避免前期少量失败就触发熔断导致整个整合包下载失败
+          const totalAttempts = cfDownloadedCount + cfFailedCount;
+          const failRatio = cfFailedCount / Math.max(totalAttempts, 1);
+          if (cfFailedCount > Math.max(20, cfFiles.length * 0.4) && failRatio > 0.75) {
+            console.error(`[CurseForge] 失败率过高(${cfFailedCount}/${totalAttempts} = ${(failRatio * 100).toFixed(1)}%)，取消剩余下载`);
             if (abortSignal) try { abortSignal.abort(); } catch (_) {}
           }
         }
       }
-      cfDownloadedCount++;
       cfInFlight--;
       cfUpdateOverall();
     };
@@ -514,6 +550,37 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
     await Promise.all(cfPool);
     try { _cfAgent.destroy(); } catch (_) {}
     if (abortSignal && abortSignal.aborted) throw new Error('下载已取消');
+
+    // 保存失败模组列表，方便用户后续补下载或排查
+    const _cfFailedModsList = [];
+    for (let i = 0; i < cfFiles.length; i++) {
+      if (cfModFiles[i] && cfModFiles[i].status === 'failed') {
+        _cfFailedModsList.push({
+          projectID: cfFiles[i].projectID,
+          fileID: cfFiles[i].fileID,
+          name: cfModFiles[i].name || `Mod #${cfFiles[i].projectID}`,
+          error: cfModFiles[i].error || '下载失败'
+        });
+      }
+    }
+    if (_cfFailedModsList.length > 0) {
+      try {
+        const failedListPath = path.join(versionDir, 'failed-mods.json');
+        fs.writeFileSync(failedListPath, JSON.stringify({
+          packName,
+          mcVersion,
+          totalMods: cfFiles.length,
+          failedCount: _cfFailedModsList.length,
+          downloadedCount: cfDownloadedCount,
+          failedAt: new Date().toISOString(),
+          failedMods: _cfFailedModsList,
+          note: '这些模组在导入时下载失败，可重新导入整合包补下载，或手动从 CurseForge 下载后放入 mods 文件夹'
+        }, null, 2));
+        console.log(`[CurseForge] 已保存失败模组列表: ${failedListPath} (${_cfFailedModsList.length}/${cfFiles.length})`);
+      } catch (e) {
+        console.warn(`[CurseForge] 保存失败模组列表失败: ${e.message}`);
+      }
+    }
 
     progress('repair', '正在修复损坏的模组文件...', 88);
     const cfRepairResult = await _repairCorruptedModJars(versionDir);

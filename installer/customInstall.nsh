@@ -75,7 +75,10 @@
     nsExec::ExecToStack 'taskkill /F /IM VersePC.exe /T'
     Sleep 500
 
-    MessageBox MB_YESNO|MB_ICONQUESTION|MB_DEFBUTTON2 "是否保留游戏版本和存档数据？$\n$\n版本文件夹包含已安装的游戏版本和存档，保留后可重新安装 VersePC 继续使用。" IDYES _keep_versions IDNO _remove_versions
+    ; 静默卸载时（如覆盖安装调用旧卸载器）不弹窗，默认保留用户数据
+    IfSilent _keep_versions _ask_keep_versions
+    _ask_keep_versions:
+        MessageBox MB_YESNO|MB_ICONQUESTION|MB_DEFBUTTON2 "是否保留游戏版本和存档数据？$\n$\n版本文件夹包含已安装的游戏版本和存档，保留后可重新安装 VersePC 继续使用。" IDYES _keep_versions IDNO _remove_versions
     _keep_versions:
         DetailPrint "保留版本文件夹"
         Goto _versions_done

@@ -1,13 +1,13 @@
 {
-  "version": "1.1.14",
-  "releaseDate": "2026-07-16T00:00:00Z",
-  "releaseName": "VersePC v1.1.14",
-  "releaseNotes": "## v1.1.14 正式版更新\n\n### 版本管理修复\n- 修复删除版本后版本列表不刷新的问题：删除版本后页面立即更新\n- 修复 NeoForge 26.2 被错误识别为整合包导致不显示的问题\n- 修复 Forge 26.2 版本因继承链错误被过滤隐藏的问题\n\n### 加载器安装修复\n- 修复 NeoForge/Forge 26.2 安装失败问题（自动创建 launcher_profiles.json）\n- 安装器执行失败时输出详细错误信息（包含 stderr/stdout）\n- 修复 NeoForge 版本 inheritsFrom 被错误改写的问题",
+  "version": "1.1.15",
+  "releaseDate": "2026-07-17T00:00:00Z",
+  "releaseName": "VersePC v1.1.15",
+  "releaseNotes": "## v1.1.15 正式版更新\n\n### 核心修复\n- 修复导入整合包时因 JPMS split package 问题导致的游戏崩溃（Forge/NeoForge）\n- 修复 `isJarIntact` 函数中 EOCD 位置校验漏洞，误判截断损坏的 jar 文件为正常\n- 修复 `resolveMaxMemory` 内存分配逻辑，避免可用内存不足时分配过量导致 OOM 静默退出\n- 修复因损坏的 mod jar 文件导致游戏启动崩溃的问题\n\n### 下载优化\n- 新增下载失败 mod 列表保存功能，便于后续排查\n- 恢复 64 并发下载和 45 秒无数据超时，提升下载速度",
   "files": {
     "win-x64": {
-      "url": "https://github.com/doujie081231/Verse/releases/download/v1.1.14/VersePC-Setup-1.1.14.exe",
-      "size": 163895973,
-      "sha256": "0FF44BE49475E7B2F44F5C9E15C4630836C7F8E639271D0E6E8BE2AF982DAA18"
+      "url": "https://github.com/doujie081231/Verse/releases/download/v1.1.15/VersePC-Setup-1.1.15.exe",
+      "size": 163897923,
+      "sha256": "F9154BE21AC965B30F61B6D2DF32774D5464AD393BB7B2CAC20CF556A0243245"
     }
   }
 }

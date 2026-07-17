@@ -23,17 +23,27 @@ function resolveMaxMemory({ memoryMode, memoryValue, totalMB, freeMB, modCount }
   else if (totalMB <= 8192) autoMB = Math.floor(totalMB * 0.55);
   else if (totalMB <= 16384) autoMB = Math.floor(totalMB * 0.6);
   else autoMB = Math.floor(totalMB * 0.65);
-  if (freeMB < 1024 && totalMB > 4096) autoMB = Math.min(autoMB, freeMB + 512);
-  autoMB = Math.max(512, Math.min(autoMB, totalMB - 1536));
-  autoMB = Math.max(autoMB, 512);
-  autoMB = Math.min(autoMB, 32768);
-  // [关键修复 2026-06-30] mod 数量多时提高内存下限，避免大型整合包 OOM 崩溃
-  // 旧逻辑：仅按物理内存比例分配，312 个 mod 在默认 4096MB 下 mod loading 早期即 OOM
-  if (modCount >= 200) autoMB = Math.max(autoMB, 8192);
-  else if (modCount >= 100) autoMB = Math.max(autoMB, 6144);
-  else if (modCount >= 50) autoMB = Math.max(autoMB, 5120);
-  // 提高下限后仍受物理内存约束（保留系统占用），并避免超分配
+
+  // 受物理内存约束（保留系统占用）
   autoMB = Math.min(autoMB, totalMB - 1536);
+
+  // 关键修复：始终受当前可用内存约束，避免分配超过可用内存导致 OOM
+  // 保留 1GB 给系统/启动器自身，防止游戏启动后系统内存不足被强制终止
+  // 之前的逻辑只在 freeMB < 1024 时才约束，导致 7.49GB 可用时仍分配 9728MB，OOM 静默退出
+  const safeFreeMB = Math.max(0, freeMB - 1024);
+  if (autoMB > safeFreeMB) {
+    autoMB = safeFreeMB;
+  }
+
+  // mod 数量多时提高内存下限，避免大型整合包 OOM 崩溃
+  // 但下限同样受 safeFreeMB 约束，宁可降低下限也不能超过可用内存
+  let modFloor = 2048;
+  if (modCount >= 200) modFloor = 8192;
+  else if (modCount >= 100) modFloor = 6144;
+  else if (modCount >= 50) modFloor = 5120;
+  modFloor = Math.min(modFloor, safeFreeMB);
+  autoMB = Math.max(autoMB, modFloor);
+
   autoMB = Math.max(autoMB, 512);
   autoMB = Math.min(autoMB, 32768);
   autoMB = Math.floor(autoMB / 256) * 256;

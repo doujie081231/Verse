@@ -550,6 +550,10 @@ function buildLaunchArguments(versionJson, settings, account, versionId, customG
     }
   }
 
+  // Forge 1.20.1 split package 冲突已在导入流程源头修复（curseforge.js/importer.js
+  // 复制继承版本 jar 到新版本目录并命名为 ${versionId}.jar），此处不再需要临时补丁。
+  // 保留 NeoForge patched jar 的 ignoreList 处理（下方），因其处理的是另一种场景。
+
   // Forge 1.20.6+/NeoForge: 把 module-path (-p) 中的引导 JAR 加入 ignoreList，
   // 避免 BootstrapLauncher 从 classpath 重复加载这些 JAR 为 JPMS 模块，
   // 触发 "Module X reads more than one module named Y" 冲突。

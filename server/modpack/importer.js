@@ -282,6 +282,25 @@ async function _importHmcl(zip, hmclEntry, filePath, progress, targetVersion = '
         }
         fs.writeFileSync(path.join(versionDir, `${versionId}.json`), JSON.stringify(versionJson, null, 2));
         versions._invalidateResolvedJsonCache(versionId);
+        // [关键修复] 复制继承版本的主 jar 到新版本目录，命名为 ${versionId}.jar。
+        // 原因：Forge 的 ignoreList 等启动参数使用 ${version_name}.jar 占位符，
+        // 启动时替换为 ${versionId}.jar。若整合包版本ID（如"剑与王国"）与继承版本ID
+        // （如"1.20.1-forge-47.4.20"）不同，替换后的文件名在 classpath 中不存在，
+        // 导致 patched jar 未被 ignoreList 跳过，被 JPMS 加载为自动模块，
+        // 与 minecraft 模块 split package 冲突，游戏启动即崩溃。
+        const _hmclInherits = loaderVersionId || mcVersion;
+        if (_hmclInherits) {
+          try {
+            const _srcJar = path.join(ctx.dirs.VERSIONS_DIR, _hmclInherits, `${_hmclInherits}.jar`);
+            const _dstJar = path.join(versionDir, `${versionId}.jar`);
+            if (fs.existsSync(_srcJar) && !fs.existsSync(_dstJar)) {
+              fs.copyFileSync(_srcJar, _dstJar);
+              console.log(`[HMCL] 已复制主 jar 到版本目录: ${versionId}.jar`);
+            }
+          } catch (_jarCopyErr) {
+            console.warn(`[HMCL] 复制主 jar 失败 (非致命): ${_jarCopyErr.message}`);
+          }
+        }
     }
 
     progress('extract', '解压覆盖文件...', 20);

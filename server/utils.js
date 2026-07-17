@@ -621,10 +621,53 @@ function isJarIntact(filePath) {
     const fd2 = fs.openSync(filePath, 'r');
     fs.readSync(fd2, buf, 0, buf.length, searchStart);
     fs.closeSync(fd2);
+    let eocdOffset = -1;
     for (let i = buf.length - 22; i >= 0; i--) {
-      if (buf.readUInt32LE(i) === 0x06054B50) return true;
+      if (buf.readUInt32LE(i) === 0x06054B50) { eocdOffset = i; break; }
     }
+    if (eocdOffset < 0) return false;
+    // 关键修复：验证 EOCD 必须位于文件末尾（考虑注释长度）
+    // ZIP 规范要求 EOCD 是文件最后一条记录，其位置 + 22 + commentLength 应等于文件大小
+    // 之前缺少此约束，导致文件中间字节序列误匹配 EOCD 签名时通过校验
+    // 而真实文件可能被截断或末尾追加了垃圾数据，Java ZipFileSystem 会拒绝加载
+    const commentLen = buf.readUInt16LE(eocdOffset + 20);
+    const eocdOffsetInFile = searchStart + eocdOffset;
+    if (eocdOffsetInFile + 22 + commentLen !== stat.size) return false;
+    const cdOffset = buf.readUInt32LE(eocdOffset + 16);
+    if (cdOffset < 0 || cdOffset + 4 > stat.size) return false;
+    const cdHdr = Buffer.alloc(4);
+    const fd3 = fs.openSync(filePath, 'r');
+    fs.readSync(fd3, cdHdr, 0, 4, cdOffset);
+    fs.closeSync(fd3);
+    if (cdHdr.readUInt32LE(0) !== 0x02014B50) return false;
+    return true;
+  } catch (e) {
     return false;
+  }
+}
+
+/**
+ * 深度检查 JAR 文件完整性（在 isJarIntact 基础上，用 AdmZip 验证所有条目可读）
+ * 能检测出 ZIP 结构完整但内部数据损坏的情况（如中央目录有条目但本地数据损坏）
+ * 用于 mods 目录的严格校验，避免游戏启动时才发现内部损坏
+ * @param {string} filePath - JAR 文件路径
+ * @returns {boolean} 文件完整返回 true
+ */
+function isJarIntactDeep(filePath) {
+  try {
+    if (!isJarIntact(filePath)) return false;
+    const AdmZip = getAdmZip();
+    const zip = new AdmZip(filePath);
+    const entries = zip.getEntries();
+    for (const entry of entries) {
+      if (entry.isDirectory) continue;
+      try {
+        entry.getData();
+      } catch (e) {
+        return false;
+      }
+    }
+    return true;
   } catch (e) {
     return false;
   }
@@ -784,6 +827,7 @@ module.exports = {
   makePngChunk,
   crc32,
   isJarIntact,
+  isJarIntactDeep,
   calculateSHA1,
   verifyFileSha1,
   verifyFileSha1Sync

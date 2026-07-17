@@ -663,7 +663,7 @@ async function _importMrpack(zip, manifestEntry, filePath, progress, targetVersi
       if (fileEntry.fileSize > 0 && fs.existsSync(destPath)) {
         try {
           const st = fs.statSync(destPath);
-          if (st.size === fileEntry.fileSize && utils.isJarIntact(destPath)) {
+          if (st.size === fileEntry.fileSize && utils.isJarIntactDeep(destPath)) {
             if (modFiles[index]) { modFiles[index].status = 'completed'; modFiles[index].progress = 100; }
             okCount++; inFlight--; updateOverall();
             return;
@@ -671,7 +671,7 @@ async function _importMrpack(zip, manifestEntry, filePath, progress, targetVersi
         } catch (_) {}
       }
 
-      if (!utils.isJarIntact(destPath)) {
+      if (!utils.isJarIntactDeep(destPath)) {
         const fileSize = fileEntry.fileSize || 0;
         let downloaded = false;
         const allUrls = [];

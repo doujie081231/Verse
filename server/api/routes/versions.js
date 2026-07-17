@@ -546,26 +546,32 @@ module.exports = {
         let deleteError = '';
 
         if (isExternal) {
-          // 外部版本：从外部文件夹列表中移除
-          const settings = versions.loadSettingsCached();
-          const extFolders = versions.loadExternalFolders();
-          const matchFolder = extFolders.find((f) => {
-            const checkId = dvId.replace(/ \[外部\d*\]/, '');
-            return f.name === checkId || f.path.includes(checkId);
-          });
-          if (matchFolder) {
-            const externalFolders = versions.loadExternalFolders();
-            const idx = externalFolders.findIndex((f) => f.path === matchFolder.path);
-            if (idx >= 0) {
-              externalFolders.splice(idx, 1);
-              versions.saveExternalFolders(externalFolders);
+          // 外部版本：遍历所有外部文件夹，删除对应的单个版本目录
+          if (cleanId.includes('..') || cleanId.includes('/') || cleanId.includes('\\')) {
+            deleteError = '无效的版本ID';
+          } else {
+            const extFolders = versions.loadExternalFolders();
+            for (const folder of extFolders) {
+              const extVersionDir = path.join(folder.path, 'versions', cleanId);
+              if (fs.existsSync(extVersionDir)) {
+                try {
+                  fs.rmSync(extVersionDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 500 });
+                  deleted = true;
+                } catch (e) {
+                  try {
+                    const { execSync } = require('child_process');
+                    execSync(`rmdir /s /q "${extVersionDir}"`, { timeout: 10000, windowsHide: true });
+                    deleted = true;
+                  } catch (_) {
+                    deleteError = e.message || '删除失败';
+                  }
+                }
+              }
             }
             const extSettingsDir = path.join(ctx.dirs.DATA_DIR, 'external-settings');
             const extSettingsFile = path.join(extSettingsDir, `${cleanId.replace(/[/\\?%*:|"<>]/g, '_')}-settings.json`);
             try { if (fs.existsSync(extSettingsFile)) fs.unlinkSync(extSettingsFile); } catch (_) {}
-            deleted = true;
-          } else {
-            deleted = true;
+            if (!deleted && !deleteError) { deleted = true; }
           }
         } else {
           // 本地版本：永久删除直接 rmSync，否则优先送回收站
@@ -627,7 +633,28 @@ module.exports = {
               return;
             }
           } else {
-            deleted = true;
+            const extFolders = versions.loadExternalFolders();
+            for (const folder of extFolders) {
+              const extVersionDir = path.join(folder.path, 'versions', cleanId);
+              if (fs.existsSync(extVersionDir)) {
+                try {
+                  fs.rmSync(extVersionDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 500 });
+                  deleted = true;
+                } catch (e) {
+                  try {
+                    const { execSync } = require('child_process');
+                    execSync(`rmdir /s /q "${extVersionDir}"`, { timeout: 10000, windowsHide: true });
+                    deleted = true;
+                  } catch (_) {
+                    deleteError = e.message || '删除失败';
+                  }
+                }
+              }
+            }
+            const extSettingsDir2 = path.join(ctx.dirs.DATA_DIR, 'external-settings');
+            const extSettingsFile2 = path.join(extSettingsDir2, `${cleanId.replace(/[/\\?%*:|"<>]/g, '_')}-settings.json`);
+            try { if (fs.existsSync(extSettingsFile2)) fs.unlinkSync(extSettingsFile2); } catch (_) {}
+            if (!deleted && !deleteError) { deleted = true; }
           }
         }
 

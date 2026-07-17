@@ -41,7 +41,7 @@ async function _repairCorruptedModJars(versionDir) {
             if (stat.isDirectory()) { scanDir(fullPath); continue; }
             if (!item.toLowerCase().endsWith('.jar')) continue;
             if (stat.size < 100) { corruptedJars.push({ path: fullPath, reason: 'too_small' }); continue; }
-            if (!utils.isJarIntact(fullPath)) { corruptedJars.push({ path: fullPath, reason: 'corrupted' }); }
+            if (!utils.isJarIntactDeep(fullPath)) { corruptedJars.push({ path: fullPath, reason: 'corrupted' }); }
         }
     }
     scanDir(modsDir);
@@ -72,7 +72,7 @@ async function _repairCorruptedModJars(versionDir) {
                             newZip.addLocalFile(f, path.dirname(rel));
                         }
                         newZip.writeZip(jar.path);
-                        if (utils.isJarIntact(jar.path)) { fixed = true; }
+                        if (utils.isJarIntactDeep(jar.path)) { fixed = true; }
                     }
                 } catch (e) {
                     logger.warn(`PowerShell修复失败 ${path.basename(jar.path)}: ${e.message}`);
@@ -91,7 +91,7 @@ async function _repairCorruptedModJars(versionDir) {
                     function addDirToZip(zip, dir, base) { for (const i of fs.readdirSync(dir)) { const p = path.join(dir, i); if (fs.statSync(p).isDirectory()) addDirToZip(zip, p, base); else zip.addLocalFile(p, path.relative(base, path.dirname(p)).replace(/\\/g, '/')); } }
                     addDirToZip(newZip, tempDir2, tempDir2);
                     newZip.writeZip(jar.path);
-                    if (utils.isJarIntact(jar.path)) { fixed = true; }
+                    if (utils.isJarIntactDeep(jar.path)) { fixed = true; }
                 } catch (e) {}
                 if (fs.existsSync(tempDir2)) fs.rmSync(tempDir2, { recursive: true, force: true });
             }
@@ -100,7 +100,11 @@ async function _repairCorruptedModJars(versionDir) {
         } catch (e) {
             console.warn(`[Modpack] 修复失败 ${path.basename(jar.path)}: ${e.message}`);
         }
-        if (fixed) repaired++; else failed++;
+        if (fixed) { repaired++; }
+        else {
+            try { fs.unlinkSync(jar.path); logger.warn(`[Modpack] 已删除无法修复的损坏JAR: ${path.basename(jar.path)}`); } catch (_) {}
+            failed++;
+        }
     }
 
     return { repaired, failed };
@@ -145,7 +149,7 @@ async function _extractOverridesWithVerification(zip, versionDir, entries) {
 
         if (isModJar) {
             const jarStat = fs.existsSync(destPath) ? fs.statSync(destPath) : null;
-            if (!jarStat || jarStat.size < 100 || !utils.isJarIntact(destPath)) {
+            if (!jarStat || jarStat.size < 100 || !utils.isJarIntactDeep(destPath)) {
                 corrupted++;
                 logger.warn(`解压后JAR损坏: ${relPath} (${jarStat?.size || 0} bytes)，标记待修复`);
             }
