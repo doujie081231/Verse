@@ -154,3 +154,12 @@ forge-installer-wrapper/
 *鉴别材料*
 *技术报告*
 *诊断报告*
+
+# 第三批清理：测试文件、开发配置、构建工具（非项目源码）
+.prettierignore
+.prettierrc.json
+eslint.config.js
+.npmrc
+build-tools/
+test/
+*.test.js
