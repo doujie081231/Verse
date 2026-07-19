@@ -359,6 +359,49 @@ async function startTunnel(params, onLog) {
 }
 
 /**
+ * Minecraft VarInt 编码（无符号）
+ */
+function writeVarInt(value) {
+  value = value >>> 0;
+  const buf = Buffer.alloc(5);
+  let i = 0;
+  do {
+    let b = value & 0x7F;
+    value >>>= 7;
+    if (value !== 0) b |= 0x80;
+    buf[i++] = b;
+  } while (value !== 0);
+  return buf.slice(0, i);
+}
+
+/**
+ * 构造 Minecraft Server List Ping 数据包
+ * Handshake (nextState=1) + Status Request
+ */
+function buildMinecraftPing(port) {
+  // Handshake 载荷：ProtocolVersion + ServerAddr + Port + NextState
+  const protoVer = writeVarInt(0);
+  const addr = Buffer.from('127.0.0.1', 'utf8');
+  const addrLen = writeVarInt(addr.length);
+  const portBytes = Buffer.alloc(2);
+  portBytes.writeUInt16BE(port);
+  const nextState = writeVarInt(1);
+  const hsPayload = Buffer.concat([protoVer, addrLen, addr, portBytes, nextState]);
+
+  // Handshake 包帧：VarInt(长度) + VarInt(packetID=0) + payload
+  const hsPid = writeVarInt(0);
+  const hsLen = writeVarInt(hsPid.length + hsPayload.length);
+  const handshake = Buffer.concat([hsLen, hsPid, hsPayload]);
+
+  // Status Request 包：VarInt(长度=1) + VarInt(packetID=0)
+  const reqPid = writeVarInt(0);
+  const reqLen = writeVarInt(reqPid.length);
+  const request = Buffer.concat([reqLen, reqPid]);
+
+  return Buffer.concat([handshake, request]);
+}
+
+/**
  * 启动本地中继：把控制 socket 的数据双向转发到本地 gamePort
  * 控制连接的 socket 在 OK TUNNEL 后变成数据通道
  */
@@ -366,7 +409,6 @@ function startLocalRelay(controlSocket, gamePort, log) {
   // 一个本地游戏连接（可能因为断开重建多个）
   let gameSocket = null;
   let stopped = false;
-  let _lastGameActivity = Date.now();   // 上次 gameSocket 收到数据的时间
   let _l2rTimer = null;                 // L2R 保活定时器
 
   const connectGame = () => {
@@ -381,10 +423,13 @@ function startLocalRelay(controlSocket, gamePort, log) {
     });
     s.on('close', () => {
       log('本地游戏连接关闭');
-      gameSocket = null;
+      // 只有当前 gameSocket 还是自己时才置空
+      // 防止旧 socket 的 close 异步覆盖新引用
+      if (gameSocket === s) {
+        gameSocket = null;
+      }
     });
     s.on('data', (data) => {
-      _lastGameActivity = Date.now();
       // 游戏数据 → 控制 socket（隧道）
       try { controlSocket.write(data); } catch (_) {}
     });
@@ -435,20 +480,22 @@ function startLocalRelay(controlSocket, gamePort, log) {
     }
   };
 
-  // L2R 保活：gameSocket 空闲超过 25 秒则重建连接
-  // 防止 Minecraft 局域网服务器因连接空闲而断开
+  // L2R 保活：每 25 秒向游戏端口发一次 Minecraft Protocol Ping
+  // 使用独立 TCP 连接，不干扰主 gameSocket 的数据流
+  // Ping 包 = Handshake(Status) + Status Request，让游戏服务器保持活跃
   _l2rTimer = setInterval(() => {
-    if (stopped || !gameSocket || gameSocket.destroyed) return;
-    const idle = Date.now() - _lastGameActivity;
-    if (idle > 25000) {
-      log('L2R 保活：gameSocket 已空闲 ' + Math.round(idle / 1000) + ' 秒，重建连接');
-      const oldSocket = gameSocket;
-      gameSocket = null;
-      try { oldSocket.end(); } catch (_) {}
-      // 重建连接
-      connectGame();
-    }
-  }, 30000);
+    if (stopped) return;
+    const ps = net.connect(gamePort, '127.0.0.1', () => {
+      try { ps.write(buildMinecraftPing(gamePort)); } catch (_) {}
+    });
+    ps.setTimeout(5000);
+    ps.on('data', () => {});        // 消费响应，不转发
+    ps.on('timeout', () => { try { ps.destroy(); } catch (_) {} });
+    ps.on('error', () => {});
+    ps.on('close', () => {});
+    // 5 秒后自动关闭
+    setTimeout(() => { try { ps.destroy(); } catch (_) {} }, 5000);
+  }, 25000);
 }
 
 /**
