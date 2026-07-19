@@ -346,55 +346,7 @@
         </div>
 
         <div id="page-resourcepacks" class="page">
-          <div class="page-header">
-            <h2>材质包</h2>
-            <div class="page-actions">
-              <button class="btn btn-secondary" onclick="openFolder('resourcepacks')">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
-                打开文件夹
-              </button>
-            </div>
-          </div>
-          <div class="mod-filter-bar">
-            <div class="search-bar">
-              <input type="text" id="resourcepack-search-input" placeholder="搜索材质包..." class="search-input">
-              <button id="resourcepack-search-btn" class="btn btn-primary">搜索</button>
-            </div>
-            <div class="filter-row">
-              <div class="filter-group">
-                <label class="filter-label">游戏版本</label>
-                <div class="custom-select custom-select-sm" id="resourcepack-filter-version-wrapper">
-                  <div class="custom-select-trigger" id="resourcepack-filter-version-trigger">
-                    <span class="custom-select-value" id="resourcepack-filter-version-value">全部</span>
-                    <svg class="custom-select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                  </div>
-                  <div class="custom-select-dropdown" id="resourcepack-filter-version-dropdown">
-                    <div class="custom-select-options" id="resourcepack-filter-version-options"></div>
-                  </div>
-                </div>
-              </div>
-              <div class="filter-group">
-                <label class="filter-label">分辨率</label>
-                <div class="custom-select custom-select-sm" id="resourcepack-filter-resolution-wrapper">
-                  <div class="custom-select-trigger" id="resourcepack-filter-resolution-trigger">
-                    <span class="custom-select-value" id="resourcepack-filter-resolution-value">全部</span>
-                    <svg class="custom-select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                  </div>
-                  <div class="custom-select-dropdown" id="resourcepack-filter-resolution-dropdown">
-                    <div class="custom-select-options" id="resourcepack-filter-resolution-options"></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div id="resourcepack-browse-list" class="mod-list">
-            <div class="loading-spinner"><div class="spinner"></div></div>
-          </div>
-          <div class="pagination">
-            <button id="resourcepack-prev-btn" class="btn btn-secondary btn-sm">上一页</button>
-            <span id="resourcepack-page-info" class="page-info">1/1</span>
-            <button id="resourcepack-next-btn" class="btn btn-secondary btn-sm">下一页</button>
-          </div>
+          <!-- Vue 渐进式改造：内容由 PageResourcepacks 组件渲染 -->
         </div>
 
         <div id="page-shaders" class="page">
@@ -2136,6 +2088,7 @@
   <script src="js/vue/page-mod-favorites.js"></script>
   <script src="js/vue/page-modpacks.js"></script>
   <script src="js/vue/page-datapacks.js"></script>
+  <script src="js/vue/page-resourcepacks.js"></script>
   <script>
     // 挂载 Vue 到首页、版本页、已安装版本页容器
     window.addEventListener('DOMContentLoaded', function() {
@@ -2150,6 +2103,7 @@
         if (window.VersePC.PageModFavorites) Vue.createApp(PageModFavorites).mount('#page-mod-favorites');
         if (window.VersePC.PageModpacks) Vue.createApp(PageModpacks).mount('#page-modpacks');
         if (window.VersePC.PageDatapacks) Vue.createApp(PageDatapacks).mount('#page-datapacks');
+        if (window.VersePC.PageResourcepacks) Vue.createApp(PageResourcepacks).mount('#page-resourcepacks');
       }
     });
   </script>
