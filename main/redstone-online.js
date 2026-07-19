@@ -402,12 +402,30 @@ function buildMinecraftPing(port) {
 }
 
 /**
+ * 构造 Minecraft 完整 Keep Alive Ping
+ * = Handshake(nextState=1) + Status Request + Ping Request(8 bytes timestamp)
+ * 服务器依次响应 Status Response 和 Ping Response，保持连接活跃
+ */
+function buildFullPing(port) {
+  const ping = buildMinecraftPing(port); // Handshake + Status Request
+
+  // Ping Request (packet ID=1 in Status state, payload = 8 bytes random/long)
+  const payload = Buffer.alloc(8);
+  payload.writeBigUInt64BE(BigInt(Date.now()), 0);
+  const reqPid = writeVarInt(1);
+  const reqLen = writeVarInt(reqPid.length + payload.length);
+  const pingRequest = Buffer.concat([reqLen, reqPid, payload]);
+
+  return Buffer.concat([ping, pingRequest]);
+}
+
+/**
  * 启动本地中继：把控制 socket 的数据双向转发到本地 gamePort
  * 控制连接的 socket 在 OK TUNNEL 后变成数据通道
  *
  * 关键设计：
  *   1. 隧道开启后立即创建 gameSocket 到游戏端口，不等待控制数据
- *   2. 通过 gameSocket 自身发送 Minecraft Status Ping 保活（需空闲才发）
+ *   2. 通过 gameSocket 自身发送完整 Minecraft Ping 保活（每 10 秒检测，8 秒空闲时触发）
  *   3. `gameSocket === s` 判断防止旧 socket close 异步覆盖新引用
  */
 function startLocalRelay(controlSocket, gamePort, log) {
@@ -483,22 +501,21 @@ function startLocalRelay(controlSocket, gamePort, log) {
     }
   };
 
-  // L2R 保活：每 20 秒检测 gameSocket 空闲状态
-  // 如果超过 18 秒没有数据交互 → 通过 gameSocket 自身发送 Minecraft Status Ping
-  // 这会让 MC 游戏服务器保持连接活跃，同时不干扰有玩家时的正常数据流
+  // L2R 保活：每 10 秒检测 gameSocket 空闲状态
+  // 空闲超 8 秒时通过 gameSocket 自身发送完整 Minecraft Ping
+  // (Handshake + Status Request + Ping Request)
+  // MC 服务器收到后会响应 Status Response + Ping Response，从而保持连接活跃
   _l2rTimer = setInterval(() => {
     if (stopped) return;
     if (!gameSocket || gameSocket.destroyed) {
-      // gameSocket 已断开 → 尝试重建
       connectGame(true);
       return;
     }
     const idle = Date.now() - _lastActivity;
-    if (idle > 18000) {
-      // 空闲超过 18 秒，通过 gameSocket 发 MC 协议心跳
-      try { gameSocket.write(buildMinecraftPing(gamePort)); } catch (_) {}
+    if (idle > 8000) {
+      try { gameSocket.write(buildFullPing(gamePort)); } catch (_) {}
     }
-  }, 20000);
+  }, 10000);
 }
 
 /**
