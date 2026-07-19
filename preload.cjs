@@ -607,6 +607,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
      */
     stop: () => ipcRenderer.invoke('redstone:stop'),
     /**
+     * 扫描本机 MC 局域网端口（探测 java 进程的监听端口）
+     * @returns {Promise<{ok:boolean, port?:number, error?:string}>}
+     */
+    scanPort: () => ipcRenderer.invoke('redstone:scan-port'),
+    /**
      * 查询当前状态
      * @returns {Promise<{ok:boolean, running:boolean, address?:string, listenPort?:number, apikey?:string}>}
      */
@@ -618,11 +623,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
      */
     onLog: (callback) => ipcRenderer.on('redstone:log', (event, msg) => callback(msg)),
     /**
-     * 监听隧道断开通知（服务器端断开 / 连接超时）
+     * 监听隧道断开通知（彻底断开，已超出最大重连次数）
      * @param {()=>void} callback
      * @returns {void}
      */
     onDisconnected: (callback) => ipcRenderer.on('redstone:disconnected', () => callback()),
+    /**
+     * 监听自动重连开始通知
+     * @param {(info:{attempt:number, maxAttempts:number, delay:number})=>void} callback
+     * @returns {void}
+     */
+    onReconnecting: (callback) => ipcRenderer.on('redstone:reconnecting', (event, info) => callback(info || {})),
+    /**
+     * 监听自动重连成功通知
+     * @param {(info:{address:string})=>void} callback
+     * @returns {void}
+     */
+    onReconnected: (callback) => ipcRenderer.on('redstone:reconnected', (event, info) => callback(info || {})),
   },
 
   /** 当前运行平台（如 'win32' / 'darwin' / 'linux'） */

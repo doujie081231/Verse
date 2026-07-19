@@ -131,6 +131,14 @@
       <path d="M7 14h10"/>
     </symbol>
 
+    <!-- 私人服务器 - 服务器 -->
+    <symbol id="icon-server" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="2" y="2" width="20" height="8" rx="2" ry="2"/>
+      <rect x="2" y="14" width="20" height="8" rx="2" ry="2"/>
+      <circle cx="6" cy="6" r="1" fill="currentColor"/>
+      <circle cx="6" cy="18" r="1" fill="currentColor"/>
+    </symbol>
+
     <!-- 控制台 - 终端 -->
     <symbol id="icon-console" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <polyline points="4 17 10 11 4 5"/>
@@ -295,6 +303,11 @@
             <svg class="nav-icon-svg"><use href="#icon-explore"/></svg>
             <span>实验性</span>
           </button>
+          <button class="nav-btn nav-btn-experimental" data-page="private-server" title="私人服务器">
+            <span class="nav-btn-experimental-badge">实验</span>
+            <svg class="nav-icon-svg"><use href="#icon-server"/></svg>
+            <span>私人服务器</span>
+          </button>
         </div>
         <div class="sidebar-footer">
           <button class="nav-btn" data-page="console" title="控制台">
@@ -363,6 +376,10 @@
 
         <div id="page-explore" class="page">
           <!-- Vue 渐进式改造：内容由 PageExplore 组件渲染 -->
+        </div>
+
+        <div id="page-private-server" class="page">
+          <!-- 私人服务器页面（开发中） -->
         </div>
 
         <div id="page-toolbox" class="page">

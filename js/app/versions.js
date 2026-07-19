@@ -418,14 +418,14 @@ async function navigateToPage(pageName) {
     return;
   }
 
-  if (pageName === 'explore') {
+  if (pageName === 'explore' || pageName === 'private-server') {
     if (currentPage) {
       currentPage.classList.remove('active');
       currentPage.style.animation = '';
     }
     document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.nav-sub-btn').forEach(b => b.classList.remove('active'));
-    const navBtn = document.querySelector('.nav-btn[data-page="explore"]');
+    const navBtn = document.querySelector(`.nav-btn[data-page="${pageName}"]`);
     if (navBtn) navBtn.classList.add('active');
     target.classList.add('active');
     target.scrollTop = 0;

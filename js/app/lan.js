@@ -483,22 +483,48 @@ async function redstoneStart() {
     const server = _redstoneServers[_redstoneServerIdx % _redstoneServers.length];
     if (!server) { alert('请选择服务器'); return; }
 
-    // 检查游戏是否在运行（对齐红石联机模组：必须有 mcServer 才能 openLan）
+    // 检查游戏是否在运行，自动检测局域网端口
+    // 如果启动器能追踪到最好，否则自动扫描 java 进程的监听端口
     let gameStatus;
+    let gamePort;
     try {
         gameStatus = await API.getGameStatus();
         if (!gameStatus || !gameStatus.running) {
-            addRedstoneLog('错误: 游戏未运行，请先启动 Minecraft 并进入存档');
-            updateRedstoneStatus('游戏未运行', 'disconnected');
-            showToast('请先启动 Minecraft 并进入存档，然后在游戏内开放局域网联机', 'error');
-            return;
+            // 游戏不在运行——但可能游戏是自己启动（非启动器），尝试扫端口
+            addRedstoneLog('未检测到启动器追踪的游戏进程，正在扫描端口...');
+            updateRedstoneStatus('扫描端口...', 'connecting');
+            const scanResult = await window.electronAPI.redstoneOnline.scanPort();
+            if (scanResult && scanResult.ok && scanResult.port) {
+                gamePort = scanResult.port;
+                addRedstoneLog('端口扫描成功: ' + gamePort);
+            } else {
+                addRedstoneLog('错误: 未找到 Minecraft 游戏进程，请先启动游戏并进入存档');
+                updateRedstoneStatus('游戏未运行', 'disconnected');
+                showToast('未找到 Minecraft 游戏进程，请先启动游戏', 'error');
+                return;
+            }
+        } else if (!gameStatus.lanPort) {
+            // 游戏在运行但未开放局域网，尝试扫端口
+            addRedstoneLog('未检测到局域网端口，正在扫描...');
+            updateRedstoneStatus('扫描端口...', 'connecting');
+            const scanResult = await window.electronAPI.redstoneOnline.scanPort();
+            if (scanResult && scanResult.ok && scanResult.port) {
+                gamePort = scanResult.port;
+                addRedstoneLog('端口扫描成功: ' + gamePort);
+            } else {
+                addRedstoneLog('错误: 未检测到局域网端口，请在游戏内按 Esc → 对局域网开放');
+                updateRedstoneStatus('未开放局域网', 'disconnected');
+                showToast('请在游戏内按 Esc → 对局域网开放，然后才能开启隧道', 'error');
+                return;
+            }
+        } else {
+            // 正常路径：启动器追踪到游戏进程且有 lanPort
+            gamePort = gameStatus.lanPort;
+            addRedstoneLog('检测到局域网端口: ' + gamePort);
         }
     } catch (e) {
         addRedstoneLog('检查游戏状态失败: ' + e.message);
-    }
-    const gamePort = gameStatus && gameStatus.lanPort ? gameStatus.lanPort : 25565;
-    if (gamePort !== 25565) {
-        addRedstoneLog('注意: 检测到局域网端口为 ' + gamePort + '，红石联机建议使用 25565');
+        return;
     }
 
     const maxPlayers = parseInt(document.getElementById('redstone-max-players').value) || 1;
@@ -573,7 +599,13 @@ async function redstoneInitPage() {
     // 防止页面切换后 _redstoneRunning 与主进程不一致
     try {
         const status = await window.electronAPI.redstoneOnline.getStatus();
-        if (!status.running) {
+        if (status.reconnecting) {
+            // 正在自动重连中
+            _redstoneRunning = true;
+            const btn = document.getElementById('redstone-action-btn');
+            if (btn) { btn.textContent = '关闭隧道'; btn.disabled = false; }
+            updateRedstoneStatus('正在自动重连...', 'connecting');
+        } else if (!status.running) {
             _redstoneRunning = false;
             const btn = document.getElementById('redstone-action-btn');
             if (btn) { btn.textContent = '开启隧道'; btn.disabled = false; }
@@ -604,7 +636,45 @@ async function redstoneInitPage() {
         window._redstoneLogListener = true;
         try { window.electronAPI.redstoneOnline.onLog((msg) => addRedstoneLog(msg)); } catch (_) {}
     }
-    // 监听断连通知
+    // 监听自动重连中通知
+    if (!window._redstoneReconnectingListener) {
+        window._redstoneReconnectingListener = true;
+        try {
+            window.electronAPI.redstoneOnline.onReconnecting((info) => {
+                _redstoneRunning = true;
+                const btn = document.getElementById('redstone-action-btn');
+                if (btn) { btn.textContent = '关闭隧道'; btn.disabled = false; }
+                updateRedstoneStatus(
+                    '正在自动重连 (' + (info.attempt || 0) + '/' + (info.maxAttempts || 5) + ')',
+                    'connecting'
+                );
+                addRedstoneLog('隧道异常断开，' + (info.delay || 0) / 1000 + ' 秒后自动重连');
+                showToast('隧道断开，正在自动重连...', 'info');
+            });
+        } catch (_) {}
+    }
+    // 监听自动重连成功通知
+    if (!window._redstoneReconnectedListener) {
+        window._redstoneReconnectedListener = true;
+        try {
+            window.electronAPI.redstoneOnline.onReconnected((info) => {
+                _redstoneRunning = true;
+                const btn = document.getElementById('redstone-action-btn');
+                if (btn) { btn.textContent = '关闭隧道'; btn.disabled = false; }
+                const info2 = document.getElementById('redstone-connected-info');
+                if (info2) info2.style.display = '';
+                if (info && info.address) {
+                    document.getElementById('redstone-room-addr').textContent = info.address;
+                    updateRedstoneStatus('隧道已开启 | ' + info.address, 'connected');
+                } else {
+                    updateRedstoneStatus('隧道已开启', 'connected');
+                }
+                addRedstoneLog('自动重连成功');
+                showToast('隧道已自动重连', 'success');
+            });
+        } catch (_) {}
+    }
+    // 监听彻底断开通知（超出最大重连次数）
     if (!window._redstoneDisconnectListener) {
         window._redstoneDisconnectListener = true;
         try {
@@ -616,7 +686,7 @@ async function redstoneInitPage() {
                 const info = document.getElementById('redstone-connected-info');
                 if (info) info.style.display = 'none';
                 updateRedstoneStatus('连接已断开', 'disconnected');
-                addRedstoneLog('隧道连接已断开（服务器端关闭或网络超时）');
+                addRedstoneLog('隧道连接已彻底断开（自动重连已达最大次数）');
                 showToast('红石联机隧道已断开，请重新开启', 'error');
             });
         } catch (_) {}
