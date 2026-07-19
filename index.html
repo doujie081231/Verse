@@ -506,16 +506,7 @@
         </div>
 
         <div id="page-console" class="page">
-          <div class="page-header">
-            <h2>游戏日志</h2>
-            <div class="page-actions">
-              <button id="export-log-btn" class="btn btn-accent btn-sm" onclick="exportGameLog()">导出日志</button>
-              <button id="clear-log-btn" class="btn btn-secondary btn-sm">清空</button>
-            </div>
-          </div>
-          <div id="console-output" class="console-output">
-            <p class="console-wait">等待游戏启动...</p>
-          </div>
+          <!-- Vue 渐进式改造：内容由 PageConsole 组件渲染 -->
         </div>
       </div>
     </div>
@@ -617,6 +608,7 @@
   <script src="js/vue/page-settings-other.js"></script>
   <script src="js/vue/page-java.js"></script>
   <script src="js/vue/page-downloads.js"></script>
+  <script src="js/vue/page-console.js"></script>
   <script>
     // 挂载 Vue 到首页、版本页、已安装版本页容器
     window.addEventListener('DOMContentLoaded', function() {
@@ -643,6 +635,7 @@
         if (window.VersePC.PageSettingsOther) Vue.createApp(PageSettingsOther).mount('#page-settings-other');
         if (window.VersePC.PageJava) Vue.createApp(PageJava).mount('#page-java');
         if (window.VersePC.PageDownloads) Vue.createApp(PageDownloads).mount('#page-downloads');
+        if (window.VersePC.PageConsole) Vue.createApp(PageConsole).mount('#page-console');
       }
     });
   </script>
