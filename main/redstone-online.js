@@ -434,11 +434,14 @@ function startLocalRelay(controlSocket, gamePort, log) {
   let _lastActivity = Date.now();       // 最近一次 gameSocket 有数据交互的时间
   let _l2rTimer = null;                 // L2R 保活定时器
 
-  /** 连接到本地游戏端口 */
+  /** 连接到本地游戏端口，连接后立即发一次 MC Ping 保活 */
   const connectGame = (quiet) => {
     if (stopped) return null;
     const s = net.connect(gamePort, '127.0.0.1', () => {
       if (!quiet) log('已连接本地游戏端口 ' + gamePort);
+      // 连接建立后立即发送一次完整 Ping，防止 MC 因无数据立刻关闭连接
+      try { s.write(buildFullPing(gamePort)); } catch (_) {}
+      _lastActivity = Date.now();
     });
     s.setNoDelay(true);
     s.setKeepAlive(true, 10000);
