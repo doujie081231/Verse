@@ -497,6 +497,17 @@ async function performInstallation(sessionId, versionDetails) {
 
     await utils.sleep(300);
 
+    if (session.loaderInfo && session.loaderInfo.type && !session.loaderInfo.version) {
+      session.status = 'failed';
+      session.stage = 'failed';
+      const loaderName = session.loaderInfo.type === 'neoforge' ? 'NeoForge' :
+                        session.loaderInfo.type.charAt(0).toUpperCase() + session.loaderInfo.type.slice(1);
+      session.message = `${loaderName}版本号缺失，请重新选择${loaderName}版本`;
+      session.errors.push(session.message);
+      console.error(`[API-install] ${session.message}`);
+      return;
+    }
+
     if (session.loaderInfo && session.loaderInfo.type && session.loaderInfo.version) {
       if (session.status === 'cancelled') return;
 

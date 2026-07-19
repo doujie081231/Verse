@@ -612,11 +612,14 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
         forgeSearchDirs.push(ctx.dirs.LIBRARIES_DIR);
         const homeLib = path.join(os.homedir(), 'AppData', 'Roaming', '.minecraft', 'libraries');
         if (fs.existsSync(homeLib) && !forgeSearchDirs.includes(homeLib)) forgeSearchDirs.push(homeLib);
-        // 扫描其他启动器的库目录
-        const hmclLib = path.join(os.homedir(), 'AppData', 'Roaming', '.hmcl', 'libraries');
-        if (fs.existsSync(hmclLib) && !forgeSearchDirs.includes(hmclLib)) forgeSearchDirs.push(hmclLib);
-        const bakaLib = path.join(os.homedir(), 'AppData', 'Roaming', '.bakalx', 'libraries');
-        if (fs.existsSync(bakaLib) && !forgeSearchDirs.includes(bakaLib)) forgeSearchDirs.push(bakaLib);
+        // 扫描其他启动器的库目录（复用已下载的 Forge 核心库等，避免重复下载）
+        const altLauncherLibDirs = [
+          path.join(os.homedir(), 'AppData', 'Roaming', '.hmcl', 'libraries'),
+          path.join(os.homedir(), 'AppData', 'Roaming', '.bakalx', 'libraries')
+        ];
+        for (const altLib of altLauncherLibDirs) {
+          if (fs.existsSync(altLib) && !forgeSearchDirs.includes(altLib)) forgeSearchDirs.push(altLib);
+        }
         // 也扫描常见的自定义游戏目录
         const customDirs = [path.join(os.homedir(), '.pcl'), path.join(os.homedir(), 'Documents', 'PCL'), path.join(os.homedir(), 'PCL')];
         for (const cd of customDirs) {

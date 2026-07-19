@@ -160,7 +160,7 @@ async function checkDependencies(versionId, settings, externalVersionDir = null)
         确认前置版本（parent version）存在且有 JAR 文件。这是为了防止用户
         删除了基础版本后启动整合包导致崩溃。
 
-        但外部导入的 Forge/NeoForge 版本（来自 HMCL 等启动器）情况特殊：
+        但外部导入的 Forge/NeoForge 版本（来自其他启动器）情况特殊：
         它们的版本 JSON 可能有 inheritsFrom 指向一个在 VersePC 中不存在的版本，
         但实际上这些 JSON 已经包含了完整的 mainClass 和所有库文件（合并式JSON），
         即使没有前置版本也能正常启动。

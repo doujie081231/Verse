@@ -667,10 +667,38 @@ function buildLaunchArguments(versionJson, settings, account, versionId, customG
   if (settings.fullscreen) {
     gameArgs.push('--fullscreen');
   } else {
-    const resW = settings.resolution?.split('x')[0] || '854';
-    const resH = settings.resolution?.split('x')[1] || '480';
-    if (!gameArgs.some((a) => a === '--width')) gameArgs.push('--width', resW);
-    if (!gameArgs.some((a) => a === '--height')) gameArgs.push('--height', resH);
+    const resW = parseInt(settings.resolution?.split('x')[0], 10) || 854;
+    const resH = parseInt(settings.resolution?.split('x')[1], 10) || 480;
+
+    // 原版窗口修正：模组加载器（Forge/Fabric/NeoForge 等）有自己的 fmlearlywindow
+    // 模块接管窗口创建，不会出现标题栏被顶出屏幕的问题。但原版 Minecraft 用
+    // LWJGL/GLFW 原生窗口，会把 --width/--height 当作"客户区"大小，加上标题栏
+    // 和边框后实际窗口会比屏幕大，导致标题栏被顶到屏幕外（Y 坐标变成负数）。
+    // 这里只在原版（没有 --launchTarget 等模组参数）时减去标题栏+边框高度。
+    const isVanilla = !gameArgs.some((a) => typeof a === 'string' && a.startsWith('--launchTarget'));
+    let finalW = resW;
+    let finalH = resH;
+    if (isVanilla) {
+      try {
+        const screen = require('electron').screen || null;
+        const display = screen?.getPrimaryDisplay?.();
+        const screenW = display?.size?.width || 0;
+        const screenH = display?.size?.height || 0;
+        const workH = display?.workAreaSize?.height || screenH;
+        // 当用户填的分辨率接近屏幕分辨率（差距 < 40px）时，认为用户想要"铺满屏幕"
+        // 此时把高度减去标题栏+边框（约 39px），宽度减去左右边框（约 16px），
+        // 让实际窗口刚好等于屏幕工作区，标题栏就能正常显示。
+        if (screenW > 0 && screenH > 0) {
+          if (Math.abs(resW - screenW) < 40) finalW = Math.max(resW - 16, 800);
+          if (Math.abs(resH - screenH) < 40 || Math.abs(resH - workH) < 40) finalH = Math.max(resH - 39, 600);
+        }
+      } catch (_) {
+        // 主进程外调用时 require electron 可能失败，忽略即可
+      }
+    }
+
+    if (!gameArgs.some((a) => a === '--width')) gameArgs.push('--width', String(finalW));
+    if (!gameArgs.some((a) => a === '--height')) gameArgs.push('--height', String(finalH));
   }
 
   // 设置版本类型显示（也可作为窗口标题来源）

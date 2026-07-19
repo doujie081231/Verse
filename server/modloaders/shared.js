@@ -212,14 +212,20 @@ async function ensureBaseVersionInstalled(gameVersion, onProgress = null) {
                                 if (fs.existsSync(task.libPath)) fs.unlinkSync(task.libPath);
                                 await http.downloadFileWithMirror(task.lib.downloads.artifact.url, task.libPath, null, 3, null, 60000);
                             } catch (e) {
-                                const _bmcl = task.lib.downloads.artifact.url.replace('https://libraries.minecraft.net/', 'https://bmclapi2.bangbang93.com/maven/');
-                                const _fm = task.lib.downloads.artifact.url.replace('https://libraries.minecraft.net/', 'https://maven.minecraftforge.net/');
-                                try { utils.ensureDirForFile(task.libPath); await _curlDownload(_bmcl, task.libPath); } catch (_) {}
-                                if (!fs.existsSync(task.libPath) || fs.statSync(task.libPath).size < 100) {
-                                    try { await _curlDownload(_fm, task.libPath); } catch (_) {}
-                                }
-                                if (!fs.existsSync(task.libPath) || fs.statSync(task.libPath).size < 100) {
-                                    try { await _curlDownload(task.lib.downloads.artifact.url, task.libPath); } catch (_) {}
+                                // downloadFileWithMirror 内部已尝试所有镜像（含熔断保护），
+                                // 这里作为最后防线，用 _curlDownload 直接尝试多个镜像源。
+                                // 注意：libraries.minecraft.net 的 BMCLAPI 规范路径是 /libraries/（见 context.js），
+                                // 不是 /maven/（那是 maven.minecraftforge.net 的镜像路径）。
+                                const _orig = task.lib.downloads.artifact.url;
+                                const _bmcl = _orig.replace('https://libraries.minecraft.net/', 'https://bmclapi2.bangbang93.com/libraries/');
+                                const _aliyun = _orig.replace('https://libraries.minecraft.net/', 'https://maven.aliyun.com/repository/public/');
+                                const _tencent = _orig.replace('https://libraries.minecraft.net/', 'https://mirrors.cloud.tencent.com/nexus/repository/maven-public/');
+                                const _fm = _orig.replace('https://libraries.minecraft.net/', 'https://maven.minecraftforge.net/');
+                                const _mavenCentral = _orig.replace('https://libraries.minecraft.net/', 'https://repo1.maven.org/maven2/');
+                                const fallbacks = [_bmcl, _aliyun, _tencent, _fm, _mavenCentral, _orig];
+                                for (const fb of fallbacks) {
+                                    if (fs.existsSync(task.libPath) && fs.statSync(task.libPath).size > 100) break;
+                                    try { utils.ensureDirForFile(task.libPath); await _curlDownload(fb, task.libPath); } catch (_) {}
                                 }
                             }
                         } else if (task.type === 'name') {
@@ -228,14 +234,16 @@ async function ensureBaseVersionInstalled(gameVersion, onProgress = null) {
                             try {
                                 await http.downloadFileWithMirror(downloadUrl, task.libFile);
                             } catch (e) {
-                                const _bmcl2 = downloadUrl.replace('https://libraries.minecraft.net/', 'https://bmclapi2.bangbang93.com/maven/');
+                                // 同 artifact 分支：多镜像 fallback，BMCLAPI 用规范路径 /libraries/
+                                const _bmcl2 = downloadUrl.replace('https://libraries.minecraft.net/', 'https://bmclapi2.bangbang93.com/libraries/');
+                                const _aliyun2 = downloadUrl.replace('https://libraries.minecraft.net/', 'https://maven.aliyun.com/repository/public/');
+                                const _tencent2 = downloadUrl.replace('https://libraries.minecraft.net/', 'https://mirrors.cloud.tencent.com/nexus/repository/maven-public/');
                                 const _fm2 = downloadUrl.replace('https://libraries.minecraft.net/', 'https://maven.minecraftforge.net/');
-                                try { utils.ensureDirForFile(task.libFile); await _curlDownload(_bmcl2, task.libFile); } catch (_) {}
-                                if (!fs.existsSync(task.libFile) || fs.statSync(task.libFile).size < 100) {
-                                    try { await _curlDownload(_fm2, task.libFile); } catch (_) {}
-                                }
-                                if (!fs.existsSync(task.libFile) || fs.statSync(task.libFile).size < 100) {
-                                    try { await _curlDownload(downloadUrl, task.libFile); } catch (_) {}
+                                const _mavenCentral2 = downloadUrl.replace('https://libraries.minecraft.net/', 'https://repo1.maven.org/maven2/');
+                                const fallbacks2 = [_bmcl2, _aliyun2, _tencent2, _fm2, _mavenCentral2, downloadUrl];
+                                for (const fb of fallbacks2) {
+                                    if (fs.existsSync(task.libFile) && fs.statSync(task.libFile).size > 100) break;
+                                    try { utils.ensureDirForFile(task.libFile); await _curlDownload(fb, task.libFile); } catch (_) {}
                                 }
                             }
                         } else if (task.type === 'native') {
@@ -648,6 +656,11 @@ async function verifyImportLibs(versionId, progress, abortSignal) {
     }
     if (coreLibMissing > 0) {
         if (progress) progress('verify', `正在补全 ${coreLibMissing} 个核心缺失库文件...`, 91, [], '');
+        // 详细记录每个缺失的核心库文件，便于排查下载失败问题
+        utils._writeImportLog(`[verify] 发现 ${coreLibMissing} 个核心库缺失，明细如下：`);
+        for (const f of coreMissingLibFiles) {
+            utils._writeImportLog(`[verify]  - name=${f.name || '(无)'} path=${f.path} url=${f.url || '(无URL)'} sha1=${f.sha1 || '(无)'}`);
+        }
         const dlResult = await dependencies.downloadMissingDependencies(coreMissingLibFiles, (p) => {
             if (progress && p.progress !== undefined) {
                 const pct = 91 + Math.round((p.progress / 100) * 6);
@@ -655,6 +668,11 @@ async function verifyImportLibs(versionId, progress, abortSignal) {
             }
         }, mergedJson);
         if (dlResult.failed > 0) {
+            // 详细记录每个失败文件，便于定位（URL/路径/错误信息）
+            utils._writeImportLog(`[verify] 核心库补全失败 ${dlResult.failed} 个，失败文件明细：`);
+            for (const ff of (dlResult.failedFiles || [])) {
+                utils._writeImportLog(`[verify]  - name=${ff.name || '(无)'} url=${ff.url || '(无)'} path=${ff.path || '(无)'} error=${ff.error || '(无)'}`);
+            }
             return { ok: false, checked: libChecked, missing: dlResult.failed };
         }
     }

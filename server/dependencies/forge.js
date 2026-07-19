@@ -175,34 +175,36 @@ function checkForgeCore(versionJson, versionId, externalVersionDir, result) {
         // 时，上面的正则匹配会失败，导致漏检 fmlcore/javafmllanguage/mclanguage/lowcodelanguage 等核心库，
         // 游戏启动时 MinecraftLocator.scanMods 找不到 JAR 而崩溃。
         // 此时从 --fml.forgeVersion/--fml.mcVersion game args 或 fmlloader 库名中提取版本号作为兜底。
+        // 用户自定义版本名（如 "1.20.1-Forge-Test2"）会导致正则把 "Test2" 误识别为 Forge 版本号，
+        // 因此必须优先使用 --fml.forgeVersion 参数和 fmlloader 库名中的真实版本号。
         let fallbackMcVer = null;
         let fallbackFVer = null;
-        if (!forgeVerMatch) {
-          const fmlGameArgs = versionJson.arguments?.game || [];
-          const fvIdx = fmlGameArgs.findIndex((a) => typeof a === 'string' && a === '--fml.forgeVersion');
-          const mvIdx = fmlGameArgs.findIndex((a) => typeof a === 'string' && a === '--fml.mcVersion');
-          if (fvIdx >= 0 && fvIdx + 1 < fmlGameArgs.length) fallbackFVer = fmlGameArgs[fvIdx + 1];
-          if (mvIdx >= 0 && mvIdx + 1 < fmlGameArgs.length) fallbackMcVer = fmlGameArgs[mvIdx + 1];
-          if (!fallbackMcVer && versionJson.clientVersion) fallbackMcVer = versionJson.clientVersion;
-          if (!fallbackFVer || !fallbackMcVer) {
-            const fmlLib = forgeLibraries.find((l) =>
-              l.name && (l.name.startsWith('net.minecraftforge:fmlloader:') || l.name.startsWith('net.minecraftforge:forge:')));
-            if (fmlLib) {
-              const parts = fmlLib.name.split(':');
-              if (parts.length >= 3) {
-                const verPart = parts[2];
-                const dashIdx = verPart.lastIndexOf('-');
-                if (dashIdx > 0) {
-                  if (!fallbackMcVer) fallbackMcVer = verPart.substring(0, dashIdx);
-                  if (!fallbackFVer) fallbackFVer = verPart.substring(dashIdx + 1);
-                }
+        const fmlGameArgs = versionJson.arguments?.game || [];
+        const fvIdx = fmlGameArgs.findIndex((a) => typeof a === 'string' && a === '--fml.forgeVersion');
+        const mvIdx = fmlGameArgs.findIndex((a) => typeof a === 'string' && a === '--fml.mcVersion');
+        if (fvIdx >= 0 && fvIdx + 1 < fmlGameArgs.length) fallbackFVer = fmlGameArgs[fvIdx + 1];
+        if (mvIdx >= 0 && mvIdx + 1 < fmlGameArgs.length) fallbackMcVer = fmlGameArgs[mvIdx + 1];
+        if (!fallbackMcVer && versionJson.clientVersion) fallbackMcVer = versionJson.clientVersion;
+        if (!fallbackFVer || !fallbackMcVer) {
+          const fmlLib = forgeLibraries.find((l) =>
+            l.name && (l.name.startsWith('net.minecraftforge:fmlloader:') || l.name.startsWith('net.minecraftforge:forge:')));
+          if (fmlLib) {
+            const parts = fmlLib.name.split(':');
+            if (parts.length >= 3) {
+              const verPart = parts[2];
+              const dashIdx = verPart.lastIndexOf('-');
+              if (dashIdx > 0) {
+                if (!fallbackMcVer) fallbackMcVer = verPart.substring(0, dashIdx);
+                if (!fallbackFVer) fallbackFVer = verPart.substring(dashIdx + 1);
               }
             }
           }
         }
         if (forgeVerMatch || (fallbackMcVer && fallbackFVer)) {
-          const mcVer = forgeVerMatch ? forgeVerMatch[1] : fallbackMcVer;
-          const fVer = forgeVerMatch ? forgeVerMatch[2] : fallbackFVer;
+          // 优先使用从 game args / libraries 提取的真实版本号（fallbackFVer），
+          // 因为 forgeVerMatch[2] 可能来自用户自定义版本名（如 Test2），并非真实 Forge 版本号
+          const mcVer = fallbackMcVer || (forgeVerMatch ? forgeVerMatch[1] : mcVer);
+          const fVer = fallbackFVer || (forgeVerMatch ? forgeVerMatch[2] : '');
           const forgeSearchBases = [ctx.dirs.LIBRARIES_DIR];
           if (externalRootForForge) forgeSearchBases.unshift(path.join(externalRootForForge, 'libraries'));
           let forgeDirFound = false;
@@ -249,37 +251,46 @@ function checkForgeCore(versionJson, versionId, externalVersionDir, result) {
               break;
             }
           }
-          // 4) 新式Forge (1.13+, bootstraplauncher): 检查模块化核心库
+          // 4) 新式Forge 模块化核心库检查：仅当 versionJson.libraries 显式声明该模块时才校验
+          // 1.20.1 Forge 47.x 没有引入 fmlcore/javafmllanguage/mclanguage/lowcodelanguage，
+          // 这些是 1.20.6+ 才加入的模块化设计。按 libraries 实际声明校验，避免误报。
           if ((versionJson.mainClass || '').includes('bootstraplauncher') || (versionJson.mainClass || '').includes('ForgeBootstrap')) {
             const fmlVersion = `${mcVer}-${fVer}`;
             const moduleNames = ['fmlcore', 'javafmllanguage', 'mclanguage', 'lowcodelanguage'];
             for (const modName of moduleNames) {
-              const modPath = path.join(ctx.dirs.LIBRARIES_DIR, 'net', 'minecraftforge', modName, fmlVersion, `${modName}-${fmlVersion}.jar`);
-              if (!forgeCoreLibs.some((f) => f.path === modPath)) forgeCoreLibs.push({ name: `net.minecraftforge:${modName}:${fmlVersion}`, path: modPath, desc: `Forge模块:${modName}` });
+              const isDeclared = forgeLibraries.some((l) => l.name && l.name.startsWith(`net.minecraftforge:${modName}:${fmlVersion}`));
+              if (isDeclared) {
+                const modPath = path.join(ctx.dirs.LIBRARIES_DIR, 'net', 'minecraftforge', modName, fmlVersion, `${modName}-${fmlVersion}.jar`);
+                if (!forgeCoreLibs.some((f) => f.path === modPath)) forgeCoreLibs.push({ name: `net.minecraftforge:${modName}:${fmlVersion}`, path: modPath, desc: `Forge模块:${modName}` });
+              }
             }
           }
-          // 5) NeoForge 不需要 patching JARs；Forge 需要补 client-srg/client-extra/forge-client
+          // 5) NeoForge 不需要 patching JARs；Forge 核心库检查按 mainClass 格式分流
           if (!_depIsNeo) {
-            forgeCoreLibs.push({ name: `net.minecraftforge:forge:${mcVer}-${fVer}:client`, path: path.join(ctx.dirs.LIBRARIES_DIR, 'net', 'minecraftforge', 'forge', `${mcVer}-${fVer}`, `forge-${mcVer}-${fVer}-client.jar`), desc: 'Forge客户端核心' });
-            // bootstraplauncher 模式下，FML MinecraftLocator.scanMods 硬编码查找 forge-{ver}-universal.jar
-            // 缺失会导致 "Invalid paths argument, contained no existing paths" 崩溃
-            if ((versionJson.mainClass || '').includes('bootstraplauncher') || (versionJson.mainClass || '').includes('ForgeBootstrap')) {
+            const isBootstrapMain = (versionJson.mainClass || '').includes('bootstraplauncher') || (versionJson.mainClass || '').includes('ForgeBootstrap');
+            // bootstraplauncher 模式（Forge 1.20.1+ / 47.x 新格式）只依赖 universal.jar，
+            // 不再产生 forge-client.jar、client-srg.jar、client-extra.jar（这些是旧版 binary patcher 产物）。
+            // FML MinecraftLocator.scanMods 硬编码查找 forge-{ver}-universal.jar，缺失会崩溃。
+            if (isBootstrapMain) {
               forgeCoreLibs.push({ name: `net.minecraftforge:forge:${mcVer}-${fVer}:universal`, path: path.join(ctx.dirs.LIBRARIES_DIR, 'net', 'minecraftforge', 'forge', `${mcVer}-${fVer}`, `forge-${mcVer}-${fVer}-universal.jar`), desc: 'Forge通用核心(FML MinecraftLocator)' });
-            }
-            const clientBaseDir = path.join(ctx.dirs.LIBRARIES_DIR, 'net', 'minecraft', 'client');
-            let mcpDirName = null;
-            try {
-              if (fs.existsSync(clientBaseDir)) {
-                const subdirs = fs.readdirSync(clientBaseDir).filter((d) => d.startsWith(`${mcVer}-`) && fs.statSync(path.join(clientBaseDir, d)).isDirectory());
-                if (subdirs.length > 0) mcpDirName = subdirs[0];
+            } else {
+              // 旧版 Forge（1.17 及以下，binary patcher 模式）：需要 client/srg/extra 三件套
+              forgeCoreLibs.push({ name: `net.minecraftforge:forge:${mcVer}-${fVer}:client`, path: path.join(ctx.dirs.LIBRARIES_DIR, 'net', 'minecraftforge', 'forge', `${mcVer}-${fVer}`, `forge-${mcVer}-${fVer}-client.jar`), desc: 'Forge客户端核心' });
+              const clientBaseDir = path.join(ctx.dirs.LIBRARIES_DIR, 'net', 'minecraft', 'client');
+              let mcpDirName = null;
+              try {
+                if (fs.existsSync(clientBaseDir)) {
+                  const subdirs = fs.readdirSync(clientBaseDir).filter((d) => d.startsWith(`${mcVer}-`) && fs.statSync(path.join(clientBaseDir, d)).isDirectory());
+                  if (subdirs.length > 0) mcpDirName = subdirs[0];
+                }
+              } catch (_) {}
+              if (mcpDirName) {
+                forgeCoreLibs.push({ name: `net.minecraft:client:${mcpDirName}:srg`, path: path.join(clientBaseDir, mcpDirName, `client-${mcpDirName}-srg.jar`), desc: 'Minecraft SRG映射客户端' });
+                forgeCoreLibs.push({ name: `net.minecraft:client:${mcpDirName}:extra`, path: path.join(clientBaseDir, mcpDirName, `client-${mcpDirName}-extra.jar`), desc: 'Minecraft额外客户端' });
+              } else {
+                forgeCoreLibs.push({ name: `net.minecraft:client:${mcVer}:srg`, path: path.join(clientBaseDir, `${mcVer}-mcp`, `client-${mcVer}-mcp-srg.jar`), desc: 'Minecraft SRG映射客户端' });
+                forgeCoreLibs.push({ name: `net.minecraft:client:${mcVer}:extra`, path: path.join(clientBaseDir, `${mcVer}-mcp`, `client-${mcVer}-mcp-extra.jar`), desc: 'Minecraft额外客户端' });
               }
-            } catch (_) {}
-            if (mcpDirName) {
-              forgeCoreLibs.push({ name: `net.minecraft:client:${mcpDirName}:srg`, path: path.join(clientBaseDir, mcpDirName, `client-${mcpDirName}-srg.jar`), desc: 'Minecraft SRG映射客户端' });
-              forgeCoreLibs.push({ name: `net.minecraft:client:${mcpDirName}:extra`, path: path.join(clientBaseDir, mcpDirName, `client-${mcpDirName}-extra.jar`), desc: 'Minecraft额外客户端' });
-            } else if (!((versionJson.mainClass || '').includes('bootstraplauncher') || (versionJson.mainClass || '').includes('ForgeBootstrap'))) {
-              forgeCoreLibs.push({ name: `net.minecraft:client:${mcVer}:srg`, path: path.join(clientBaseDir, `${mcVer}-mcp`, `client-${mcVer}-mcp-srg.jar`), desc: 'Minecraft SRG映射客户端' });
-              forgeCoreLibs.push({ name: `net.minecraft:client:${mcVer}:extra`, path: path.join(clientBaseDir, `${mcVer}-mcp`, `client-${mcVer}-mcp-extra.jar`), desc: 'Minecraft额外客户端' });
             }
           }
         }

@@ -705,12 +705,18 @@ function selectLoaderVersion(version) {
 
 function confirmInstallVersion() {
   if (!currentVersionDetail) return;
-  
+
   const downloadSource = document.querySelector('input[name="download-source"]:checked');
   const source = downloadSource ? downloadSource.value : 'mojang';
-  
+
   let loaderInfo = null;
   if (selectedLoaderType) {
+    if (!selectedLoaderVersion) {
+      const loaderNames = { forge: 'Forge', neoforge: 'NeoForge', fabric: 'Fabric', optifine: 'OptiFine' };
+      const loaderName = loaderNames[selectedLoaderType] || selectedLoaderType;
+      showToast(`获取${loaderName}版本失败，请重新点击${loaderName}卡片再试`, 'error');
+      return;
+    }
     loaderInfo = {
       type: selectedLoaderType,
       version: selectedLoaderVersion
