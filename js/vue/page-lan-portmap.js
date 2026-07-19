@@ -1,99 +1,105 @@
 /* page-lan-portmap.js - 红石联机页 Vue 组件
- * 改造自原端口映射页，对接红石联机（RedstoneOnline）服务端 API：
- *   - HTTP API (端口 3000)：注册 API Key / 创建隧道 / 关闭隧道
- *   - TCP 控制连接 (端口 7000)：进入连接池 + 隧道数据通道
- *   - 本地中继：游戏端口 ↔ 控制 socket 双向转发
+ * 改造自原端口映射页，对接红石联机（RedstoneOnline）服务端 API。
  *
- * UI 风格对齐红石联机模组游戏内 GUI（服务器选择 + 最大人数 + 开/关隧道），
- * 额外补充启动器特有的 API Key 管理和连接日志。
+ * UI 布局对齐红石联机模组游戏内 GUI（RedstoneScreen.java）：
+ *   三级标签页：联机（主操作）/ 日志 / 服务器
+ *   联机标签页居中紧凑布局：服务器循环选择 → 最大人数 → 开启/关闭隧道
+ *   日志标签页：滚动日志窗口
+ *   服务器标签页：API Key 管理 + 节点列表
  *
- * 所有网络操作通过主进程 IPC 完成（electronAPI.redstoneOnline.*），
- * 渲染进程只负责 UI 和状态展示。
+ * 所有网络操作通过主进程 IPC 完成（electronAPI.redstoneOnline.*）。
  */
 const PageLanPortmap = {
   template: `
-          <div class="page-header">
-            <h2>红石联机</h2>
-            <p class="page-subtitle">基于 frp 的内网穿透，一键开启外网联机</p>
+    <div class="page-header">
+      <h2>红石联机</h2>
+      <p class="page-subtitle">基于 frp 的内网穿透，一键开启外网联机</p>
+    </div>
+
+    <!-- 三级标签页 -->
+    <div class="lan-tabs redstone-tabs" style="max-width:360px;margin:0 auto 16px">
+      <button class="lan-tab active" data-redstone-tab="connect" onclick="redstoneSwitchTab('connect')">联机</button>
+      <button class="lan-tab" data-redstone-tab="log" onclick="redstoneSwitchTab('log')">日志</button>
+      <button class="lan-tab" data-redstone-tab="server" onclick="redstoneSwitchTab('server')">服务器</button>
+    </div>
+
+    <!-- ===== 联机标签页（对齐 RedstoneScreen.java 布局） ===== -->
+    <div id="redstone-tab-connect" class="redstone-tab-content" style="display:block">
+      <div id="redstone-connect-status" style="text-align:center;margin:8px 0 16px">
+        <span id="redstone-status-dot" class="lan-status-dot disconnected"></span>
+        <span id="redstone-status-text" style="margin-left:6px;font-size:13px;color:var(--text-secondary)">未连接</span>
+      </div>
+      <div style="max-width:280px;margin:0 auto;display:flex;flex-direction:column;align-items:center;gap:6px">
+        <!-- 服务器循环按钮（对齐模组：点击切换下一个服务器） -->
+        <button id="redstone-server-btn" onclick="redstoneCycleServer()" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-secondary);color:var(--text-primary);font-size:13px;text-align:center;cursor:default">
+          服务器: 加载中...
+        </button>
+
+        <!-- 最大人数（对齐模组：label + input 同行） -->
+        <div style="width:100%;display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-secondary)">
+          <span style="font-size:13px;color:var(--text-secondary);min-width:60px">最大人数</span>
+          <input type="number" id="redstone-max-players" value="5" min="1" max="99" style="flex:1;padding:0;border:none;background:transparent;color:var(--text-primary);font-size:13px;text-align:right">
+        </div>
+
+        <!-- 开启/关闭隧道按钮（对齐模组：主操作按钮） -->
+        <button id="redstone-action-btn" onclick="redstoneToggle()" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:10px;padding:10px 0;font-size:15px">开启隧道</button>
+
+        <!-- 隧道已连接状态的地址信息 -->
+        <div id="redstone-connected-info" style="display:none;width:100%;text-align:center">
+          <div style="padding:14px;background:rgba(16,185,129,0.1);border-radius:10px;margin-top:4px">
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px">联机地址</div>
+            <div id="redstone-room-addr" style="font-family:monospace;font-size:20px;font-weight:700;color:var(--green);margin:4px 0">--</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">已复制到剪贴板</div>
+            <button class="btn btn-secondary btn-sm" onclick="redstoneCopyAddr()" style="margin:0 auto">重新复制</button>
           </div>
-          <div class="lan-container">
-            <div class="lan-status-card" id="redstone-status-card">
-              <div class="lan-status-dot" id="redstone-status-dot"></div>
-              <div class="lan-status-info">
-                <div class="lan-status-title" id="redstone-status-title">未连接</div>
-                <div class="lan-status-desc" id="redstone-status-desc">选择服务器并开启隧道</div>
-              </div>
-            </div>
+        </div>
+      </div>
 
-            <div class="lan-room-panel" id="redstone-config-panel">
-              <div class="lan-create-form">
-                <div class="lan-create-field">
-                  <label>服务器</label>
-                  <div style="display:flex;gap:8px;align-items:center">
-                    <select id="redstone-server-select" class="lan-join-input" style="flex:1"></select>
-                    <button class="btn btn-secondary btn-sm" onclick="redstoneRefreshServers()">刷新</button>
-                  </div>
-                  <div style="font-size:11px;color:var(--text-muted);margin-top:4px" id="redstone-server-info">正在加载节点列表...</div>
-                </div>
+      <!-- 使用步骤提示 -->
+      <div class="lan-tip-box" style="max-width:360px;margin:20px auto 0">
+        <div class="lan-tip-title">使用步骤</div>
+        <ol class="lan-tip-list">
+          <li>启动 Minecraft 并进入存档</li>
+          <li>按 ESC → 对局域网开放（端口保持 25565）</li>
+          <li>切回启动器，点击"开启隧道"</li>
+          <li>地址自动复制，发给朋友即可加入</li>
+        </ol>
+      </div>
+    </div>
 
-                <div class="lan-create-field">
-                  <label>API Key</label>
-                  <div style="display:flex;gap:8px;align-items:center">
-                    <input type="text" id="redstone-apikey" class="lan-join-input" readonly style="flex:1;font-family:monospace">
-                    <button class="btn btn-secondary btn-sm" onclick="redstoneCopyApikey()">复制</button>
-                    <button class="btn btn-secondary btn-sm" onclick="redstoneResetApikey()">重置</button>
-                  </div>
-                  <div style="font-size:11px;color:var(--text-muted);margin-top:4px">首次使用自动生成，重启不丢失</div>
-                </div>
+    <!-- ===== 日志标签页 ===== -->
+    <div id="redstone-tab-log" class="redstone-tab-content" style="display:none">
+      <div style="max-width:600px;margin:0 auto;padding:0 16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div style="font-size:13px;font-weight:600;color:var(--text-primary)">连接日志</div>
+          <button class="btn btn-secondary btn-sm" onclick="document.getElementById('redstone-room-log').textContent='';addRedstoneLog('日志已清空')">清空</button>
+        </div>
+        <div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:12px;max-height:320px;min-height:120px;overflow-y:auto;font-family:monospace;font-size:12px;line-height:1.7;white-space:pre-wrap;color:var(--text-primary)" id="redstone-room-log"></div>
+      </div>
+    </div>
 
-                <div class="lan-create-field">
-                  <label>最大人数</label>
-                  <input type="number" id="redstone-max-players" value="5" min="1" max="99" class="lan-join-input" style="width:80px">
-                  <div style="font-size:11px;color:var(--text-muted);margin-top:4px">0 表示不限制</div>
-                </div>
-
-                <div class="lan-create-field">
-                  <label>游戏端口</label>
-                  <input type="number" id="redstone-game-port" value="25565" min="1" max="65535" class="lan-join-input" style="width:120px">
-                  <div style="font-size:11px;color:var(--text-muted);margin-top:4px">需先在游戏内"对局域网开放"且端口固定为此值</div>
-                </div>
-
-                <div class="lan-tip-box">
-                  <div class="lan-tip-title">使用步骤</div>
-                  <ol class="lan-tip-list">
-                    <li>启动 Minecraft 并进入存档</li>
-                    <li>按 ESC → 对局域网开放（需用其他模组固定端口为 25565）</li>
-                    <li>切回启动器，点击下方"开启隧道"按钮</li>
-                    <li>隧道就绪后地址会自动复制到剪贴板，发给朋友即可</li>
-                  </ol>
-                </div>
-
-                <button class="btn btn-primary btn-lg" id="redstone-action-btn" onclick="redstoneToggle()" style="width:100%;justify-content:center">开启隧道</button>
-              </div>
-            </div>
-
-            <div class="lan-room-panel" id="redstone-connected" style="display:none">
-              <div class="lan-room-header">
-                <h3 id="redstone-connected-title">隧道信息</h3>
-                <button class="btn btn-danger btn-sm" onclick="redstoneToggle()">关闭隧道</button>
-              </div>
-              <div class="lan-room-info" style="grid-template-columns:1fr">
-                <div class="lan-room-field">
-                  <label>联机地址</label>
-                  <div class="lan-room-value" id="redstone-room-addr" style="font-family:monospace;font-size:16px;color:var(--accent)">--</div>
-                  <button class="btn btn-secondary btn-sm" onclick="redstoneCopyAddr()">复制地址</button>
-                </div>
-                <div class="lan-room-field">
-                  <label>隧道端口</label>
-                  <div class="lan-room-value" id="redstone-room-port">--</div>
-                </div>
-              </div>
-              <div class="lan-room-log-section" style="margin-top:12px">
-                <div class="lan-room-log-title">连接日志</div>
-                <div class="lan-room-log" id="redstone-room-log"></div>
-              </div>
-            </div>
+    <!-- ===== 服务器标签页 ===== -->
+    <div id="redstone-tab-server" class="redstone-tab-content" style="display:none">
+      <div style="max-width:400px;margin:0 auto;padding:0 16px">
+        <!-- API Key -->
+        <div style="margin-bottom:20px">
+          <div style="font-size:13px;font-weight:600;color:var(--text-primary);margin-bottom:8px">API Key</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="text" id="redstone-apikey" readonly style="flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-secondary);color:var(--text-primary);font-family:monospace;font-size:12px">
+            <button class="btn btn-secondary btn-sm" onclick="redstoneCopyApikey()">复制</button>
+            <button class="btn btn-secondary btn-sm" onclick="redstoneResetApikey()">重置</button>
           </div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:4px">首次使用自动生成，重启不丢失</div>
+        </div>
+
+        <!-- 服务器节点列表 -->
+        <div>
+          <div style="font-size:13px;font-weight:600;color:var(--text-primary);margin-bottom:8px">服务器节点</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px" id="redstone-server-info">正在加载节点列表...</div>
+          <button class="btn btn-secondary btn-sm" onclick="redstoneRefreshServers()" style="width:100%;justify-content:center;margin-bottom:8px">刷新节点列表</button>
+        </div>
+      </div>
+    </div>
   `
 };
 

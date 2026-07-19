@@ -361,12 +361,11 @@ function terracottaStartPolling() {
     }, 30000);
 }
 
-function updatePortmapStatus(title, desc, state) {
-    const t = document.getElementById('redstone-status-title');
-    const d = document.getElementById('redstone-status-desc');
+/** 更新红石联机状态指示（对齐模组：简洁文本状态） */
+function updateRedstoneStatus(text, state) {
     const dot = document.getElementById('redstone-status-dot');
-    if (t) t.textContent = title;
-    if (d) d.textContent = desc;
+    const textEl = document.getElementById('redstone-status-text');
+    if (textEl) textEl.textContent = text;
     if (dot) {
         dot.className = 'lan-status-dot';
         if (state === 'connected') dot.classList.add('connected');
@@ -375,39 +374,62 @@ function updatePortmapStatus(title, desc, state) {
     }
 }
 
-// ===== 红石联机：服务器列表 / API Key / 隧道开闭 =====
+// ===== 红石联机：标签页 / 服务器 / API Key / 隧道开闭 =====
 
 let _redstoneServers = [];
 let _redstoneRunning = false;
+let _redstoneServerIdx = 0;
 
-/** 拉取服务器节点列表并填充下拉框 */
+/** 三级标签页切换 */
+function redstoneSwitchTab(tab) {
+    // 切换 tab 按钮高亮
+    document.querySelectorAll('.redstone-tabs .lan-tab').forEach(b => {
+        b.classList.toggle('active', b.dataset.redstoneTab === tab);
+    });
+    // 切换 tab 内容显示
+    document.querySelectorAll('.redstone-tab-content').forEach(el => {
+        el.style.display = el.id === 'redstone-tab-' + tab ? 'block' : 'none';
+    });
+}
+
+/** 拉取服务器节点列表，填充按钮文本 */
 async function redstoneRefreshServers() {
-    const select = document.getElementById('redstone-server-select');
+    const btn = document.getElementById('redstone-server-btn');
     const info = document.getElementById('redstone-server-info');
-    if (!select) return;
+    if (!btn) return;
+    if (btn) btn.textContent = '服务器: 加载中...';
     if (info) info.textContent = '正在加载节点列表...';
     try {
         const r = await window.electronAPI.redstoneOnline.getServers();
         if (r && r.ok && r.servers && r.servers.length > 0) {
             _redstoneServers = r.servers;
-            select.innerHTML = '';
-            r.servers.forEach((s, i) => {
-                const opt = document.createElement('option');
-                opt.value = i;
-                opt.textContent = s.name + ' (' + s.address + ')';
-                select.appendChild(opt);
-            });
             if (info) info.textContent = '共 ' + r.servers.length + ' 个节点';
         } else {
             if (info) info.textContent = '节点列表为空（使用默认节点）';
-            select.innerHTML = '<option value="0">上海 (122.51.108.96)</option>';
             _redstoneServers = [{ name: '上海', address: '122.51.108.96' }];
         }
     } catch (e) {
         if (info) info.textContent = '加载失败: ' + e.message;
-        select.innerHTML = '<option value="0">上海 (122.51.108.96)</option>';
         _redstoneServers = [{ name: '上海', address: '122.51.108.96' }];
     }
+    _redstoneServerIdx = 0;
+    updateServerBtn();
+}
+
+/** 更新服务器循环按钮文本 */
+function updateServerBtn() {
+    const btn = document.getElementById('redstone-server-btn');
+    if (!btn || _redstoneServers.length === 0) return;
+    const s = _redstoneServers[_redstoneServerIdx % _redstoneServers.length];
+    btn.textContent = '服务器: ' + s.name + ' (' + s.address + ')';
+}
+
+/** 循环选择下一个服务器（对齐模组 RedstoneScreen.java：点击切换） */
+function redstoneCycleServer() {
+    if (_redstoneServers.length === 0) return;
+    _redstoneServerIdx = (_redstoneServerIdx + 1) % _redstoneServers.length;
+    updateServerBtn();
+    addRedstoneLog('切换到服务器: ' + _redstoneServers[_redstoneServerIdx].name);
 }
 
 /** 加载本地 API Key 到输入框 */
@@ -439,7 +461,7 @@ async function redstoneResetApikey() {
         const r = await window.electronAPI.redstoneOnline.resetApikey();
         if (r && r.ok && r.apikey) {
             document.getElementById('redstone-apikey').value = r.apikey;
-            addRedstoneLog('API Key 已重置: ' + r.apikey);
+            addRedstoneLog('API Key 已重置');
         } else {
             alert('重置失败: ' + (r && r.error ? r.error : '未知错误'));
         }
@@ -450,50 +472,35 @@ async function redstoneResetApikey() {
 
 /** 开/关隧道 */
 async function redstoneToggle() {
-    if (_redstoneRunning) {
-        await redstoneStop();
-    } else {
-        await redstoneStart();
-    }
+    if (_redstoneRunning) await redstoneStop();
+    else await redstoneStart();
 }
 
 /** 开启隧道 */
 async function redstoneStart() {
-    const select = document.getElementById('redstone-server-select');
-    const maxInput = document.getElementById('redstone-max-players');
-    const portInput = document.getElementById('redstone-game-port');
     const btn = document.getElementById('redstone-action-btn');
-
-    if (!select || _redstoneServers.length === 0) {
-        alert('请先等待节点列表加载');
-        return;
-    }
-    const idx = parseInt(select.value) || 0;
-    const server = _redstoneServers[idx];
+    if (_redstoneServers.length === 0) { alert('请先等待节点列表加载'); return; }
+    const server = _redstoneServers[_redstoneServerIdx % _redstoneServers.length];
     if (!server) { alert('请选择服务器'); return; }
 
-    const maxPlayers = parseInt(maxInput.value) || 1;
-    const gamePort = parseInt(portInput.value) || 25565;
+    const maxPlayers = parseInt(document.getElementById('redstone-max-players').value) || 1;
+    const gamePort = 25565;
 
     _redstoneRunning = true;
     if (btn) { btn.textContent = '正在开启...'; btn.disabled = true; }
-    updatePortmapStatus('正在连接', '正在建立隧道...', 'connecting');
+    updateRedstoneStatus('正在连接...', 'connecting');
     addRedstoneLog('选择服务器: ' + server.name + ' (' + server.address + ')');
+    addRedstoneLog('最大人数: ' + maxPlayers);
 
     try {
         const r = await window.electronAPI.redstoneOnline.start({
-            serverAddress: server.address,
-            maxPlayers: maxPlayers,
-            gamePort: gamePort,
+            serverAddress: server.address, maxPlayers: maxPlayers, gamePort: gamePort,
         });
         if (r && r.ok) {
-            document.getElementById('redstone-config-panel').style.display = 'none';
-            document.getElementById('redstone-connected').style.display = 'block';
+            document.getElementById('redstone-connected-info').style.display = '';
             document.getElementById('redstone-room-addr').textContent = r.address;
-            document.getElementById('redstone-room-port').textContent = r.listenPort;
-            updatePortmapStatus('隧道已开启', r.address, 'connected');
+            updateRedstoneStatus('隧道已开启 | ' + r.address, 'connected');
             if (btn) { btn.textContent = '关闭隧道'; btn.disabled = false; }
-            // 自动复制到剪贴板
             try {
                 await navigator.clipboard.writeText(r.address);
                 addRedstoneLog('联机地址已复制到剪贴板: ' + r.address);
@@ -501,14 +508,14 @@ async function redstoneStart() {
         } else {
             _redstoneRunning = false;
             if (btn) { btn.textContent = '开启隧道'; btn.disabled = false; }
-            updatePortmapStatus('未连接', '开启失败', 'disconnected');
-            alert('开启失败: ' + (r && r.error ? r.error : '未知错误'));
+            updateRedstoneStatus('开启失败', 'disconnected');
+            addRedstoneLog('开启失败: ' + (r && r.error ? r.error : '未知错误'));
         }
     } catch (e) {
         _redstoneRunning = false;
         if (btn) { btn.textContent = '开启隧道'; btn.disabled = false; }
-        updatePortmapStatus('未连接', '开启失败', 'disconnected');
-        alert('开启失败: ' + e.message);
+        updateRedstoneStatus('开启失败', 'disconnected');
+        addRedstoneLog('开启失败: ' + e.message);
     }
 }
 
@@ -516,16 +523,13 @@ async function redstoneStart() {
 async function redstoneStop() {
     const btn = document.getElementById('redstone-action-btn');
     if (btn) { btn.disabled = true; btn.textContent = '正在关闭...'; }
-    try {
-        await window.electronAPI.redstoneOnline.stop();
-    } catch (e) {
-        addRedstoneLog('关闭失败: ' + e.message);
-    }
+    try { await window.electronAPI.redstoneOnline.stop(); }
+    catch (e) { addRedstoneLog('关闭失败: ' + e.message); }
     _redstoneRunning = false;
-    document.getElementById('redstone-config-panel').style.display = '';
-    document.getElementById('redstone-connected').style.display = 'none';
+    document.getElementById('redstone-connected-info').style.display = 'none';
     if (btn) { btn.textContent = '开启隧道'; btn.disabled = false; }
-    updatePortmapStatus('未连接', '选择服务器并开启隧道', 'disconnected');
+    updateRedstoneStatus('未连接', 'disconnected');
+    addRedstoneLog('隧道已关闭');
 }
 
 /** 复制联机地址 */
@@ -533,8 +537,7 @@ function redstoneCopyAddr() {
     const addr = document.getElementById('redstone-room-addr').textContent;
     if (!addr || addr === '--') return;
     navigator.clipboard.writeText(addr).then(() => {
-        const btn = event.target;
-        if (btn) { const old = btn.textContent; btn.textContent = '已复制!'; setTimeout(() => { btn.textContent = old; }, 1500); }
+        addRedstoneLog('地址已复制: ' + addr);
     }).catch(() => {});
 }
 
@@ -549,13 +552,12 @@ function addRedstoneLog(msg) {
 
 /** 红石联机页面初始化（由导航跳转触发） */
 function redstoneInitPage() {
+    redstoneSwitchTab('connect');
     redstoneRefreshServers();
     redstoneLoadApikey();
     // 监听主进程日志
     if (!window._redstoneLogListener) {
         window._redstoneLogListener = true;
-        try {
-            window.electronAPI.redstoneOnline.onLog((msg) => addRedstoneLog(msg));
-        } catch (_) {}
+        try { window.electronAPI.redstoneOnline.onLog((msg) => addRedstoneLog(msg)); } catch (_) {}
     }
 }
