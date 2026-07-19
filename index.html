@@ -310,159 +310,8 @@
         </div>
 
         <div id="page-versions" class="page">
-          <div class="page-header">
-            <h2>版本管理</h2>
-            <div class="page-actions">
-              <div class="tab-group">
-                <button class="tab-btn active" data-tab="release">正式版</button>
-                <button class="tab-btn" data-tab="snapshot">快照</button>
-                <button class="tab-btn" data-tab="special">愚人节版</button>
-                <button class="tab-btn" data-tab="old">远古版</button>
-              </div>
-              <button id="add-external-folder-btn" class="btn btn-secondary" onclick="addExternalFolder()">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
-                添加已有文件夹
-              </button>
-              <button id="refresh-versions-btn" class="btn btn-secondary">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
-                刷新
-              </button>
-            </div>
-          </div>
-          <div id="versions-list" class="version-list">
-            <div class="loading-spinner">
-              <div class="spinner"></div>
-              <p>加载版本列表...</p>
-            </div>
-          </div>
-          <div id="install-modal" class="modal" style="display:none">
-            <div class="modal-content" style="max-width:560px">
-              <div class="modal-header">
-                <h3 id="install-modal-title">安装版本</h3>
-                <button class="modal-close" onclick="closeInstallModal()">&times;</button>
-              </div>
-              <div class="modal-body">
-                <div class="install-progress-container">
-                  <div class="install-info">
-                    <span id="install-stage" style="font-weight:600">准备中...</span>
-                    <span id="install-percent" style="font-weight:600;color:var(--accent)">0%</span>
-                  </div>
-                  <div class="progress-bar" style="margin-bottom:12px">
-                    <div class="progress-fill" id="install-progress-fill"></div>
-                  </div>
-                  <div id="install-message" class="install-message" style="margin-bottom:4px"></div>
-                  <div id="install-speed" class="install-speed"></div>
-                </div>
-                <div id="install-file-list" style="display:none;margin-top:12px;max-height:200px;overflow-y:auto;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-secondary)">
-                  <div id="install-file-list-content"></div>
-                </div>
-              </div>
-              <div class="modal-footer">
-                <button id="install-cancel-btn" class="btn btn-danger" onclick="cancelInstall()">取消安装</button>
-              </div>
-            </div>
-          </div>
-          <div id="repair-modal" class="modal" style="display:none">
-            <div class="modal-content" style="max-width:560px">
-              <div class="modal-header">
-                <h3 id="repair-modal-title">文件修复</h3>
-                <button class="modal-close" onclick="closeRepairModal()">&times;</button>
-              </div>
-              <div class="modal-body">
-                <div class="install-progress-container">
-                  <div class="install-info">
-                    <span id="repair-stage" style="font-weight:600">准备中...</span>
-                    <span id="repair-percent" style="font-weight:600;color:var(--accent)">0%</span>
-                  </div>
-                  <div class="progress-bar" style="margin-bottom:12px">
-                    <div class="progress-fill" id="repair-progress-fill"></div>
-                  </div>
-                  <div id="repair-message" class="install-message" style="margin-bottom:4px"></div>
-                  <div id="repair-file-count" class="install-speed"></div>
-                </div>
-              </div>
-              <div class="modal-footer">
-                <button id="repair-cancel-btn" class="btn btn-danger" onclick="cancelRepair()">取消修复</button>
-              </div>
-            </div>
-          </div>
-          <div id="external-folder-modal" class="modal" style="display:none">
-            <div class="modal-content" style="max-width:520px">
-              <div class="modal-header">
-                <h3>添加已有文件夹</h3>
-                <button class="modal-close" onclick="closeExternalFolderModal()">&times;</button>
-              </div>
-              <div class="modal-body">
-                <p style="color:var(--text-muted);margin-bottom:16px;font-size:13px">选择一个已有的 Minecraft 文件夹（如 .minecraft），将其中的版本添加到版本列表。添加后将自动启用版本隔离，游戏运行目录将指向该文件夹。</p>
-                <div class="vset-form-row" style="margin-bottom:12px">
-                  <label class="vset-label">文件夹路径</label>
-                  <div style="display:flex;gap:8px">
-                    <input type="text" class="vset-input" id="external-folder-path" placeholder="点击选择或输入路径..." style="flex:1" readonly>
-                    <button class="btn btn-secondary btn-sm" onclick="selectExternalFolderPath()">浏览</button>
-                  </div>
-                </div>
-                <div class="vset-form-row" style="margin-bottom:12px">
-                  <label class="vset-label">显示名称（可选）</label>
-                  <input type="text" class="vset-input" id="external-folder-name" placeholder="留空则使用文件夹名称">
-                </div>
-                <div id="external-folder-preview" style="display:none;margin-top:12px;padding:12px;border-radius:8px;background:var(--bg-secondary);border:1px solid var(--border-color)">
-                  <div style="font-size:13px;color:var(--text-muted);margin-bottom:8px">扫描结果</div>
-                  <div id="external-folder-versions-list" style="font-size:13px"></div>
-                </div>
-                <div id="external-folder-error" style="display:none;margin-top:12px;padding:8px 12px;border-radius:6px;background:rgba(255,77,77,0.1);color:#ff4d4d;font-size:13px"></div>
-              </div>
-              <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeExternalFolderModal()">取消</button>
-                <button class="btn btn-primary" id="external-folder-confirm-btn" onclick="confirmAddExternalFolder()" disabled>添加</button>
-              </div>
-            </div>
-          </div>
-          <div id="modloader-modal" class="modal" style="display:none">
-            <div class="modal-content">
-              <div class="modal-header">
-                <h3 id="modloader-modal-title">安装模组加载器</h3>
-                <button class="modal-close" onclick="closeModLoaderModal()">&times;</button>
-              </div>
-              <div class="modal-body">
-                <div class="form-group">
-                  <label>游戏版本</label>
-                  <div class="custom-select" id="modloader-game-version-wrapper">
-                    <div class="custom-select-trigger" id="modloader-game-version-trigger">
-                      <span class="custom-select-value placeholder" id="modloader-game-version-value">选择版本...</span>
-                      <svg class="custom-select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                    </div>
-                    <div class="custom-select-dropdown" id="modloader-game-version-dropdown">
-                      <div class="custom-select-options" id="modloader-game-version-options"></div>
-                    </div>
-                  </div>
-                </div>
-                <div class="form-group">
-                  <label>加载器类型</label>
-                  <div class="loader-type-group">
-                    <button class="loader-type-btn active" data-loader="fabric">Fabric</button>
-                    <button class="loader-type-btn" data-loader="forge">Forge</button>
-                  </div>
-                </div>
-                <div class="form-group">
-                  <label>加载器版本</label>
-                  <div class="custom-select" id="modloader-version-wrapper">
-                    <div class="custom-select-trigger" id="modloader-version-trigger">
-                      <span class="custom-select-value placeholder" id="modloader-version-value">选择版本...</span>
-                      <svg class="custom-select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                    </div>
-                    <div class="custom-select-dropdown" id="modloader-version-dropdown">
-                      <div class="custom-select-options" id="modloader-version-options"></div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeModLoaderModal()">取消</button>
-                <button id="modloader-install-btn" class="btn btn-primary">安装</button>
-              </div>
-            </div>
-          </div>
-      </div>
+          <!-- Vue 渐进式改造：内容由 PageVersions 组件渲染 -->
+        </div>
 
       <div id="page-installed-versions" class="page">
         <div class="page-header" style="gap:12px;padding:16px 24px;flex-wrap:wrap">
@@ -3014,11 +2863,13 @@
   <!-- Vue 3 渐进式改造：引入 Vue + 首页组件 -->
   <script src="node_modules/vue/dist/vue.global.prod.js"></script>
   <script src="js/vue/page-home.js"></script>
+  <script src="js/vue/page-versions.js"></script>
   <script>
-    // 挂载 Vue 到首页容器
+    // 挂载 Vue 到首页和版本页容器
     window.addEventListener('DOMContentLoaded', function() {
-      if (window.Vue && window.VersePC && window.VersePC.PageHome) {
-        Vue.createApp(PageHome).mount('#page-home');
+      if (window.Vue && window.VersePC) {
+        if (window.VersePC.PageHome) Vue.createApp(PageHome).mount('#page-home');
+        if (window.VersePC.PageVersions) Vue.createApp(PageVersions).mount('#page-versions');
       }
     });
   </script>
