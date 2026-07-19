@@ -362,27 +362,7 @@
         </div>
 
         <div id="page-explore" class="page">
-          <div class="page-header">
-            <h2>实验性</h2>
-            <p class="page-subtitle">V 岛 · 顶部灵动岛助手</p>
-          </div>
-          <div class="settings-container">
-            <div class="card">
-              <h3>V 岛</h3>
-              <div class="form-group">
-                <label class="checkbox-label">
-                  <input type="checkbox" id="vIsland">
-                  <span>启用 V 岛</span>
-                </label>
-                <span class="form-hint">开启后下载任务以顶部灵动岛形式展示</span>
-              </div>
-            </div>
-            <div class="card">
-              <h3>引导</h3>
-              <p class="form-hint" style="margin-bottom:12px">首次开启 V 岛时显示引导页，也可手动重新播放</p>
-              <button class="btn btn-ghost btn-sm" id="v-island-replay-onboarding">重新播放引导</button>
-            </div>
-          </div>
+          <!-- Vue 渐进式改造：内容由 PageExplore 组件渲染 -->
         </div>
 
         <div id="page-toolbox" class="page">
@@ -1909,6 +1889,7 @@
   <script src="js/vue/page-shaders.js"></script>
   <script src="js/vue/page-lan-terracotta.js"></script>
   <script src="js/vue/page-lan-portmap.js"></script>
+  <script src="js/vue/page-explore.js"></script>
   <script>
     // 挂载 Vue 到首页、版本页、已安装版本页容器
     window.addEventListener('DOMContentLoaded', function() {
@@ -1927,6 +1908,7 @@
         if (window.VersePC.PageShaders) Vue.createApp(PageShaders).mount('#page-shaders');
         if (window.VersePC.PageLanTerracotta) Vue.createApp(PageLanTerracotta).mount('#page-lan-terracotta');
         if (window.VersePC.PageLanPortmap) Vue.createApp(PageLanPortmap).mount('#page-lan-portmap');
+        if (window.VersePC.PageExplore) Vue.createApp(PageExplore).mount('#page-explore');
       }
     });
   </script>
