@@ -2,7 +2,7 @@ function switchLanTab(page, tab, btnEl) {
     const tabsContainer = btnEl.closest('.lan-tabs');
     tabsContainer.querySelectorAll('.lan-tab').forEach(t => t.classList.remove('active'));
     btnEl.classList.add('active');
-    
+
     if (page === 'terracotta') {
         const hostPanel = document.getElementById('terracotta-host-panel');
         const joinPanel = document.getElementById('terracotta-join-panel');
@@ -15,13 +15,6 @@ function switchLanTab(page, tab, btnEl) {
         } else {
             updateTerracottaStatus('陶瓦联机 - 加入房间', '输入房间码加入', 'disconnected');
         }
-    } else if (page === 'portmap') {
-        const createPanel = document.getElementById('portmap-create-panel');
-        const joinPanel = document.getElementById('portmap-join-panel');
-        const connected = document.getElementById('portmap-connected');
-        if (connected.style.display !== 'none') return;
-        createPanel.style.display = tab === 'create' ? '' : 'none';
-        joinPanel.style.display = tab === 'join' ? '' : 'none';
     }
 }
 
@@ -369,163 +362,200 @@ function terracottaStartPolling() {
 }
 
 function updatePortmapStatus(title, desc, state) {
-    document.getElementById('portmap-status-title').textContent = title;
-    document.getElementById('portmap-status-desc').textContent = desc;
-    const dot = document.getElementById('portmap-status-dot');
-    dot.className = 'lan-status-dot';
-    if (state === 'connected') dot.classList.add('connected');
-    else if (state === 'connecting') dot.classList.add('connecting');
-    else dot.classList.add('disconnected');
-}
-
-function portmapCreateRoom() {
-    document.getElementById('portmap-create-panel').style.display = '';
-    document.getElementById('portmap-join-panel').style.display = 'none';
-    document.getElementById('portmap-connected').style.display = 'none';
-    document.getElementById('portmap-tabs').style.display = '';
-}
-
-function portmapJoinRoom() {
-    document.getElementById('portmap-join-panel').style.display = '';
-    document.getElementById('portmap-create-panel').style.display = 'none';
-    document.getElementById('portmap-connected').style.display = 'none';
-    document.getElementById('portmap-tabs').style.display = '';
-}
-
-function portmapBackToActions() {
-    document.getElementById('portmap-create-panel').style.display = '';
-    document.getElementById('portmap-join-panel').style.display = 'none';
-    document.getElementById('portmap-connected').style.display = 'none';
-    document.getElementById('portmap-tabs').style.display = '';
-    const tabs = document.getElementById('portmap-tabs');
-    tabs.querySelectorAll('.lan-tab').forEach((t, i) => t.classList.toggle('active', i === 0));
-    updatePortmapStatus('未连接', '创建房间或加入朋友的房间', 'disconnected');
-}
-
-async function portmapDoCreate() {
-    const name = document.getElementById('portmap-create-name').value || 'VersePC';
-    const port = document.getElementById('portmap-create-port').value || '25565';
-    const playerName = document.getElementById('portmap-create-player-name').value || '';
-    const useUPnP = document.getElementById('portmap-create-upnp').checked;
-    try {
-        const res = await fetch('/api/lan/remote-create', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, port: parseInt(port), playerName, useUPnP })
-        });
-        const result = await res.json();
-        if (result.success) {
-            document.getElementById('portmap-create-panel').style.display = 'none';
-            document.getElementById('portmap-connected').style.display = 'block';
-            document.getElementById('portmap-connected-title').textContent = name;
-            document.getElementById('portmap-room-addr').textContent = result.connectInfo || (result.publicIP ? result.publicIP + ':' + port : (result.localIPs && result.localIPs[0] ? result.localIPs[0] + ':' + port : '检测失败'));
-            document.getElementById('portmap-room-port').textContent = port;
-            // 记录当前映射的外部端口，离开房间时用于清理 UPnP 规则
-            window._portmapCurrentUpnpPort = (result.upnp && result.upnp.success) ? parseInt(port, 10) : null;
-            if (result.upnp && result.upnp.success) {
-                addPortmapLog('UPnP 端口映射成功');
-            } else if (result.upnp) {
-                addPortmapLog('端口映射失败: ' + (result.upnp.error || '未知'));
-                addPortmapLog('提示: UPnP不可用不影响局域网联机，但远程联机需要路由器开启UPnP或手动设置端口转发');
-                addPortmapLog('建议: 若反复失败，可在路由器后台手动添加端口转发规则（外部端口 ' + port + ' → 内部 IP:' + port + '）');
-            }
-            addPortmapLog('公网IP: ' + (result.publicIP || '未检测到'));
-            addPortmapLog('连接地址: ' + (result.connectInfo || '未获取'));
-            updatePortmapStatus('已创建房间', '等待朋友加入...', 'connected');
-        } else {
-            alert('创建失败: ' + (result.error || '未知错误'));
-        }
-    } catch(e) {
-        alert('创建失败: ' + e.message);
+    const t = document.getElementById('redstone-status-title');
+    const d = document.getElementById('redstone-status-desc');
+    const dot = document.getElementById('redstone-status-dot');
+    if (t) t.textContent = title;
+    if (d) d.textContent = desc;
+    if (dot) {
+        dot.className = 'lan-status-dot';
+        if (state === 'connected') dot.classList.add('connected');
+        else if (state === 'connecting') dot.classList.add('connecting');
+        else dot.classList.add('disconnected');
     }
 }
 
-function portmapDoJoin() {
-    const addr = document.getElementById('portmap-join-addr').value.trim();
-    const name = document.getElementById('portmap-join-name').value.trim();
-    if (!addr) { alert('请输入服务器地址'); return; }
-    const guide = '已复制地址: ' + addr + '\n\n接下来在 Minecraft 中加入：\n1. 打开 Minecraft 多人游戏\n2. 点击"添加服务器"\n3. 服务器地址填入: ' + addr + (name ? '\n4. 服务器名称建议填: ' + name : '');
-    navigator.clipboard.writeText(addr).then(() => {
-        alert(guide);
-    }).catch(() => {
-        const ta = document.createElement('textarea');
-        ta.value = addr;
-        document.body.appendChild(ta); ta.select();
-        try { document.execCommand('copy'); } catch (_) {}
-        document.body.removeChild(ta);
-        alert(guide);
-    });
-}
+// ===== 红石联机：服务器列表 / API Key / 隧道开闭 =====
 
-async function portmapLeave() {
-    // 离开房间前先清理路由器上的 UPnP 映射，避免残留规则累积
-    const upnpPort = window._portmapCurrentUpnpPort;
-    if (upnpPort) {
-        try {
-            await fetch('/api/lan/upnp-unmap', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ externalPort: upnpPort })
+let _redstoneServers = [];
+let _redstoneRunning = false;
+
+/** 拉取服务器节点列表并填充下拉框 */
+async function redstoneRefreshServers() {
+    const select = document.getElementById('redstone-server-select');
+    const info = document.getElementById('redstone-server-info');
+    if (!select) return;
+    if (info) info.textContent = '正在加载节点列表...';
+    try {
+        const r = await window.electronAPI.redstoneOnline.getServers();
+        if (r && r.ok && r.servers && r.servers.length > 0) {
+            _redstoneServers = r.servers;
+            select.innerHTML = '';
+            r.servers.forEach((s, i) => {
+                const opt = document.createElement('option');
+                opt.value = i;
+                opt.textContent = s.name + ' (' + s.address + ')';
+                select.appendChild(opt);
             });
-            addPortmapLog('已清理路由器上的 UPnP 端口映射 (' + upnpPort + ')');
-        } catch (e) {
-            console.warn('[Portmap] Failed to cleanup UPnP mapping:', e.message);
-        }
-        window._portmapCurrentUpnpPort = null;
-    }
-    document.getElementById('portmap-connected').style.display = 'none';
-    document.getElementById('portmap-tabs').style.display = '';
-    document.getElementById('portmap-create-panel').style.display = '';
-    document.getElementById('portmap-join-panel').style.display = 'none';
-    const tabs = document.getElementById('portmap-tabs');
-    tabs.querySelectorAll('.lan-tab').forEach((t, i) => t.classList.toggle('active', i === 0));
-    const logEl = document.getElementById('portmap-room-log');
-    if (logEl) logEl.textContent = '';
-    updatePortmapStatus('未连接', '创建房间或加入朋友的房间', 'disconnected');
-}
-
-async function portmapUPnPDiagnose() {
-    try {
-        const res = await fetch('/api/lan/upnp-diagnose');
-        const result = await res.json();
-        if (result.success) {
-            let msg = '=== UPnP 诊断 ===\n\n';
-            msg += '平台: ' + result.platform + '\n';
-            msg += 'UPnP可用: ' + (result.canUseUPnP ? '是' : '否') + '\n\n';
-            msg += '检查项目:\n';
-            if (result.checks) {
-                result.checks.forEach((c, i) => {
-                    msg += `  ${i+1}. [${c.status}] ${c.name}: ${typeof c.result === 'object' ? JSON.stringify(c.result) : c.result}\n`;
-                });
-            }
-            if (result.recommendations && result.recommendations.length > 0) {
-                msg += '\n建议:\n';
-                result.recommendations.forEach((r, i) => {
-                    msg += `  ${i+1}. ${r}\n`;
-                });
-            }
-            alert(msg);
+            if (info) info.textContent = '共 ' + r.servers.length + ' 个节点';
         } else {
-            alert('UPnP 诊断失败: ' + (result.error || '未知错误'));
+            if (info) info.textContent = '节点列表为空（使用默认节点）';
+            select.innerHTML = '<option value="0">上海 (122.51.108.96)</option>';
+            _redstoneServers = [{ name: '上海', address: '122.51.108.96' }];
         }
-    } catch(e) {
-        alert('UPnP 诊断失败: ' + e.message);
+    } catch (e) {
+        if (info) info.textContent = '加载失败: ' + e.message;
+        select.innerHTML = '<option value="0">上海 (122.51.108.96)</option>';
+        _redstoneServers = [{ name: '上海', address: '122.51.108.96' }];
     }
 }
 
-function addPortmapLog(msg) {
-    const logEl = document.getElementById('portmap-room-log');
+/** 加载本地 API Key 到输入框 */
+async function redstoneLoadApikey() {
+    const input = document.getElementById('redstone-apikey');
+    if (!input) return;
+    try {
+        const r = await window.electronAPI.redstoneOnline.getApikey();
+        if (r && r.ok && r.apikey) input.value = r.apikey;
+    } catch (e) {
+        console.warn('[Redstone] loadApikey failed:', e.message);
+    }
+}
+
+/** 复制 API Key */
+function redstoneCopyApikey() {
+    const input = document.getElementById('redstone-apikey');
+    if (!input || !input.value) return;
+    navigator.clipboard.writeText(input.value).then(() => {
+        const btn = event.target;
+        if (btn) { const old = btn.textContent; btn.textContent = '已复制!'; setTimeout(() => { btn.textContent = old; }, 1500); }
+    }).catch(() => {});
+}
+
+/** 重置 API Key */
+async function redstoneResetApikey() {
+    if (!confirm('重置 API Key 后旧密钥将失效，确定继续吗？')) return;
+    try {
+        const r = await window.electronAPI.redstoneOnline.resetApikey();
+        if (r && r.ok && r.apikey) {
+            document.getElementById('redstone-apikey').value = r.apikey;
+            addRedstoneLog('API Key 已重置: ' + r.apikey);
+        } else {
+            alert('重置失败: ' + (r && r.error ? r.error : '未知错误'));
+        }
+    } catch (e) {
+        alert('重置失败: ' + e.message);
+    }
+}
+
+/** 开/关隧道 */
+async function redstoneToggle() {
+    if (_redstoneRunning) {
+        await redstoneStop();
+    } else {
+        await redstoneStart();
+    }
+}
+
+/** 开启隧道 */
+async function redstoneStart() {
+    const select = document.getElementById('redstone-server-select');
+    const maxInput = document.getElementById('redstone-max-players');
+    const portInput = document.getElementById('redstone-game-port');
+    const btn = document.getElementById('redstone-action-btn');
+
+    if (!select || _redstoneServers.length === 0) {
+        alert('请先等待节点列表加载');
+        return;
+    }
+    const idx = parseInt(select.value) || 0;
+    const server = _redstoneServers[idx];
+    if (!server) { alert('请选择服务器'); return; }
+
+    const maxPlayers = parseInt(maxInput.value) || 1;
+    const gamePort = parseInt(portInput.value) || 25565;
+
+    _redstoneRunning = true;
+    if (btn) { btn.textContent = '正在开启...'; btn.disabled = true; }
+    updatePortmapStatus('正在连接', '正在建立隧道...', 'connecting');
+    addRedstoneLog('选择服务器: ' + server.name + ' (' + server.address + ')');
+
+    try {
+        const r = await window.electronAPI.redstoneOnline.start({
+            serverAddress: server.address,
+            maxPlayers: maxPlayers,
+            gamePort: gamePort,
+        });
+        if (r && r.ok) {
+            document.getElementById('redstone-config-panel').style.display = 'none';
+            document.getElementById('redstone-connected').style.display = 'block';
+            document.getElementById('redstone-room-addr').textContent = r.address;
+            document.getElementById('redstone-room-port').textContent = r.listenPort;
+            updatePortmapStatus('隧道已开启', r.address, 'connected');
+            if (btn) { btn.textContent = '关闭隧道'; btn.disabled = false; }
+            // 自动复制到剪贴板
+            try {
+                await navigator.clipboard.writeText(r.address);
+                addRedstoneLog('联机地址已复制到剪贴板: ' + r.address);
+            } catch (_) {}
+        } else {
+            _redstoneRunning = false;
+            if (btn) { btn.textContent = '开启隧道'; btn.disabled = false; }
+            updatePortmapStatus('未连接', '开启失败', 'disconnected');
+            alert('开启失败: ' + (r && r.error ? r.error : '未知错误'));
+        }
+    } catch (e) {
+        _redstoneRunning = false;
+        if (btn) { btn.textContent = '开启隧道'; btn.disabled = false; }
+        updatePortmapStatus('未连接', '开启失败', 'disconnected');
+        alert('开启失败: ' + e.message);
+    }
+}
+
+/** 关闭隧道 */
+async function redstoneStop() {
+    const btn = document.getElementById('redstone-action-btn');
+    if (btn) { btn.disabled = true; btn.textContent = '正在关闭...'; }
+    try {
+        await window.electronAPI.redstoneOnline.stop();
+    } catch (e) {
+        addRedstoneLog('关闭失败: ' + e.message);
+    }
+    _redstoneRunning = false;
+    document.getElementById('redstone-config-panel').style.display = '';
+    document.getElementById('redstone-connected').style.display = 'none';
+    if (btn) { btn.textContent = '开启隧道'; btn.disabled = false; }
+    updatePortmapStatus('未连接', '选择服务器并开启隧道', 'disconnected');
+}
+
+/** 复制联机地址 */
+function redstoneCopyAddr() {
+    const addr = document.getElementById('redstone-room-addr').textContent;
+    if (!addr || addr === '--') return;
+    navigator.clipboard.writeText(addr).then(() => {
+        const btn = event.target;
+        if (btn) { const old = btn.textContent; btn.textContent = '已复制!'; setTimeout(() => { btn.textContent = old; }, 1500); }
+    }).catch(() => {});
+}
+
+/** 追加日志 */
+function addRedstoneLog(msg) {
+    const logEl = document.getElementById('redstone-room-log');
     if (!logEl) return;
     const time = new Date().toLocaleTimeString();
-    logEl.textContent += `[${time}] ${msg}\n`;
+    logEl.textContent += '[' + time + '] ' + msg + '\n';
     logEl.scrollTop = logEl.scrollHeight;
 }
 
-function portmapCopyAddr() {
-    const addr = document.getElementById('portmap-room-addr').textContent;
-    if (!addr || addr === '--') return;
-    navigator.clipboard.writeText(addr).then(() => {
-        const btn = document.querySelector('#portmap-connected .lan-room-field:first-child button');
-        if (btn) { btn.textContent = '已复制!'; setTimeout(() => { btn.textContent = '复制'; }, 2000); }
-    }).catch(() => {});
+/** 红石联机页面初始化（由导航跳转触发） */
+function redstoneInitPage() {
+    redstoneRefreshServers();
+    redstoneLoadApikey();
+    // 监听主进程日志
+    if (!window._redstoneLogListener) {
+        window._redstoneLogListener = true;
+        try {
+            window.electronAPI.redstoneOnline.onLog((msg) => addRedstoneLog(msg));
+        } catch (_) {}
+    }
 }

@@ -575,6 +575,50 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onExit: (callback) => ipcRenderer.on('terminal:exit', (event, id, code) => callback(id, code)),
   },
 
+  /**
+   * 红石联机内网穿透（主进程 TCP 隧道 + 本地中继）
+   * @namespace redstoneOnline
+   */
+  redstoneOnline: {
+    /**
+     * 拉取服务器节点列表
+     * @returns {Promise<{ok:boolean, servers?:Array<{name,address}>, error?:string}>}
+     */
+    getServers: () => ipcRenderer.invoke('redstone:servers'),
+    /**
+     * 获取本地 API Key（不存在则生成）
+     * @returns {Promise<{ok:boolean, apikey?:string, error?:string}>}
+     */
+    getApikey: () => ipcRenderer.invoke('redstone:apikey'),
+    /**
+     * 重置 API Key（生成新 Key 并保存）
+     * @returns {Promise<{ok:boolean, apikey?:string, error?:string}>}
+     */
+    resetApikey: () => ipcRenderer.invoke('redstone:apikey-reset'),
+    /**
+     * 启动隧道
+     * @param {Object} params - { serverAddress, maxPlayers, gamePort }
+     * @returns {Promise<{ok:boolean, address?:string, listenPort?:number, error?:string}>}
+     */
+    start: (params) => ipcRenderer.invoke('redstone:start', params),
+    /**
+     * 关闭隧道
+     * @returns {Promise<{ok:boolean}>}
+     */
+    stop: () => ipcRenderer.invoke('redstone:stop'),
+    /**
+     * 查询当前状态
+     * @returns {Promise<{ok:boolean, running:boolean, address?:string, listenPort?:number, apikey?:string}>}
+     */
+    getStatus: () => ipcRenderer.invoke('redstone:status'),
+    /**
+     * 监听主进程发出的日志
+     * @param {(msg:string)=>void} callback - 日志回调
+     * @returns {void}
+     */
+    onLog: (callback) => ipcRenderer.on('redstone:log', (event, msg) => callback(msg)),
+  },
+
   /** 当前运行平台（如 'win32' / 'darwin' / 'linux'） */
   platform: process.platform,
 });

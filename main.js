@@ -166,6 +166,9 @@ const { registerTTSIPC } = require('./main/tts');
 // AI 对话代理模块（主进程发起请求，绕过 CORS 限制）
 const { registerAIProxyIPC } = require('./main/ai-proxy');
 
+// 红石联机内网穿透模块（TCP 隧道 + 本地中继）
+const { registerRedstoneOnlineIPC } = require('./main/redstone-online');
+
 // versepc:// 协议处理模块 - 启动时立即需要（协议注册）
 const {
   setupProtocolHandler, handleVersePCProtocol,
@@ -905,6 +908,7 @@ app.whenReady().then(async () => {
       registerStoreIPC({ app, isPathAllowed });
       registerTTSIPC();
       registerAIProxyIPC();
+      registerRedstoneOnlineIPC();
 
       // V 岛语音助手需要麦克风权限，统一授权（避免 SpeechRecognition 静默失效）
       session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {

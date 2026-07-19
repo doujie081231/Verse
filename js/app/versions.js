@@ -557,6 +557,10 @@ async function navigateToPage(pageName) {
         renderInstalledVersionsInto(container);
       }
     }
+  } else if (pageName === 'lan-portmap') {
+    if (typeof redstoneInitPage === 'function') {
+      setTimeout(() => redstoneInitPage(), 100);
+    }
   }
 }
 
