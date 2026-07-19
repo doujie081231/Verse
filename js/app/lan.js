@@ -483,8 +483,25 @@ async function redstoneStart() {
     const server = _redstoneServers[_redstoneServerIdx % _redstoneServers.length];
     if (!server) { alert('请选择服务器'); return; }
 
+    // 检查游戏是否在运行（对齐红石联机模组：必须有 mcServer 才能 openLan）
+    let gameStatus;
+    try {
+        gameStatus = await API.getGameStatus();
+        if (!gameStatus || !gameStatus.running) {
+            addRedstoneLog('错误: 游戏未运行，请先启动 Minecraft 并进入存档');
+            updateRedstoneStatus('游戏未运行', 'disconnected');
+            showToast('请先启动 Minecraft 并进入存档，然后在游戏内开放局域网联机', 'error');
+            return;
+        }
+    } catch (e) {
+        addRedstoneLog('检查游戏状态失败: ' + e.message);
+    }
+    const gamePort = gameStatus && gameStatus.lanPort ? gameStatus.lanPort : 25565;
+    if (gamePort !== 25565) {
+        addRedstoneLog('注意: 检测到局域网端口为 ' + gamePort + '，红石联机建议使用 25565');
+    }
+
     const maxPlayers = parseInt(document.getElementById('redstone-max-players').value) || 1;
-    const gamePort = 25565;
 
     _redstoneRunning = true;
     if (btn) { btn.textContent = '正在开启...'; btn.disabled = true; }

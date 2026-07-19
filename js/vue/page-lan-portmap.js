@@ -12,7 +12,18 @@
 const PageLanPortmap = {
   template: `
     <div class="page-header">
-      <h2>红石联机</h2>
+      <h2>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:22px;height:22px;margin-right:8px;vertical-align:-4px;color:#e74c3c">
+          <rect x="2" y="2" width="20" height="20" rx="4" fill="currentColor" opacity="0.15"/>
+          <path d="M12 4L12 8" stroke="currentColor" stroke-linecap="round"/>
+          <path d="M6 12L10 12" stroke="currentColor" stroke-linecap="round"/>
+          <path d="M14 12L18 12" stroke="currentColor" stroke-linecap="round"/>
+          <path d="M12 16L12 20" stroke="currentColor" stroke-linecap="round"/>
+          <circle cx="12" cy="12" r="3" fill="currentColor" opacity="0.5"/>
+          <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
+        </svg>
+        红石联机
+      </h2>
       <p class="page-subtitle">基于 frp 的内网穿透，一键开启外网联机</p>
     </div>
 
