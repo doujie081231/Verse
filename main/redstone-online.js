@@ -366,6 +366,8 @@ function startLocalRelay(controlSocket, gamePort, log) {
   // 一个本地游戏连接（可能因为断开重建多个）
   let gameSocket = null;
   let stopped = false;
+  let _lastGameActivity = Date.now();   // 上次 gameSocket 收到数据的时间
+  let _l2rTimer = null;                 // L2R 保活定时器
 
   const connectGame = () => {
     if (stopped) return;
@@ -382,6 +384,7 @@ function startLocalRelay(controlSocket, gamePort, log) {
       gameSocket = null;
     });
     s.on('data', (data) => {
+      _lastGameActivity = Date.now();
       // 游戏数据 → 控制 socket（隧道）
       try { controlSocket.write(data); } catch (_) {}
     });
@@ -407,6 +410,8 @@ function startLocalRelay(controlSocket, gamePort, log) {
   });
   controlSocket.on('close', () => {
     log('控制连接已关闭');
+    stopped = true;
+    clearL2RTimer();
     if (gameSocket) { try { gameSocket.end(); } catch (_) {} }
     state.running = false;
     // 如果不是用户主动关闭，通知前端
@@ -421,6 +426,29 @@ function startLocalRelay(controlSocket, gamePort, log) {
       }
     }
   });
+
+  /** 清理 L2R 保活定时器 */
+  const clearL2RTimer = () => {
+    if (_l2rTimer) {
+      clearInterval(_l2rTimer);
+      _l2rTimer = null;
+    }
+  };
+
+  // L2R 保活：gameSocket 空闲超过 25 秒则重建连接
+  // 防止 Minecraft 局域网服务器因连接空闲而断开
+  _l2rTimer = setInterval(() => {
+    if (stopped || !gameSocket || gameSocket.destroyed) return;
+    const idle = Date.now() - _lastGameActivity;
+    if (idle > 25000) {
+      log('L2R 保活：gameSocket 已空闲 ' + Math.round(idle / 1000) + ' 秒，重建连接');
+      const oldSocket = gameSocket;
+      gameSocket = null;
+      try { oldSocket.end(); } catch (_) {}
+      // 重建连接
+      connectGame();
+    }
+  }, 30000);
 }
 
 /**
