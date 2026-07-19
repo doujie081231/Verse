@@ -342,37 +342,7 @@
         </div>
 
         <div id="page-datapacks" class="page">
-          <div class="page-header">
-            <h2>数据包</h2>
-          </div>
-          <div class="mod-filter-bar">
-            <div class="search-bar">
-              <input type="text" id="datapack-search-input" placeholder="搜索数据包..." class="search-input">
-              <button id="datapack-search-btn" class="btn btn-primary">搜索</button>
-            </div>
-            <div class="filter-row">
-              <div class="filter-group">
-                <label class="filter-label">游戏版本</label>
-                <div class="custom-select custom-select-sm" id="datapack-filter-version-wrapper">
-                  <div class="custom-select-trigger" id="datapack-filter-version-trigger">
-                    <span class="custom-select-value" id="datapack-filter-version-value">全部</span>
-                    <svg class="custom-select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                  </div>
-                  <div class="custom-select-dropdown" id="datapack-filter-version-dropdown">
-                    <div class="custom-select-options" id="datapack-filter-version-options"></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div id="datapack-browse-list" class="mod-list">
-            <div class="loading-spinner"><div class="spinner"></div></div>
-          </div>
-          <div class="pagination">
-            <button id="datapack-prev-btn" class="btn btn-secondary btn-sm">上一页</button>
-            <span id="datapack-page-info" class="page-info">1/1</span>
-            <button id="datapack-next-btn" class="btn btn-secondary btn-sm">下一页</button>
-          </div>
+          <!-- Vue 渐进式改造：内容由 PageDatapacks 组件渲染 -->
         </div>
 
         <div id="page-resourcepacks" class="page">
@@ -2165,6 +2135,7 @@
   <script src="js/vue/page-mod-detail.js"></script>
   <script src="js/vue/page-mod-favorites.js"></script>
   <script src="js/vue/page-modpacks.js"></script>
+  <script src="js/vue/page-datapacks.js"></script>
   <script>
     // 挂载 Vue 到首页、版本页、已安装版本页容器
     window.addEventListener('DOMContentLoaded', function() {
@@ -2178,6 +2149,7 @@
         if (window.VersePC.PageModDetail) Vue.createApp(PageModDetail).mount('#page-mod-detail');
         if (window.VersePC.PageModFavorites) Vue.createApp(PageModFavorites).mount('#page-mod-favorites');
         if (window.VersePC.PageModpacks) Vue.createApp(PageModpacks).mount('#page-modpacks');
+        if (window.VersePC.PageDatapacks) Vue.createApp(PageDatapacks).mount('#page-datapacks');
       }
     });
   </script>
