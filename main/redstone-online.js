@@ -404,17 +404,23 @@ function buildMinecraftPing(port) {
 /**
  * 启动本地中继：把控制 socket 的数据双向转发到本地 gamePort
  * 控制连接的 socket 在 OK TUNNEL 后变成数据通道
+ *
+ * 关键设计：
+ *   1. 隧道开启后立即创建 gameSocket 到游戏端口，不等待控制数据
+ *   2. 通过 gameSocket 自身发送 Minecraft Status Ping 保活（需空闲才发）
+ *   3. `gameSocket === s` 判断防止旧 socket close 异步覆盖新引用
  */
 function startLocalRelay(controlSocket, gamePort, log) {
-  // 一个本地游戏连接（可能因为断开重建多个）
   let gameSocket = null;
   let stopped = false;
+  let _lastActivity = Date.now();       // 最近一次 gameSocket 有数据交互的时间
   let _l2rTimer = null;                 // L2R 保活定时器
 
-  const connectGame = () => {
-    if (stopped) return;
+  /** 连接到本地游戏端口 */
+  const connectGame = (quiet) => {
+    if (stopped) return null;
     const s = net.connect(gamePort, '127.0.0.1', () => {
-      log('已连接本地游戏端口 ' + gamePort);
+      if (!quiet) log('已连接本地游戏端口 ' + gamePort);
     });
     s.setNoDelay(true);
     s.setKeepAlive(true, 10000);
@@ -423,14 +429,10 @@ function startLocalRelay(controlSocket, gamePort, log) {
     });
     s.on('close', () => {
       log('本地游戏连接关闭');
-      // 只有当前 gameSocket 还是自己时才置空
-      // 防止旧 socket 的 close 异步覆盖新引用
-      if (gameSocket === s) {
-        gameSocket = null;
-      }
+      if (gameSocket === s) gameSocket = null;
     });
     s.on('data', (data) => {
-      // 游戏数据 → 控制 socket（隧道）
+      _lastActivity = Date.now();
       try { controlSocket.write(data); } catch (_) {}
     });
     gameSocket = s;
@@ -438,10 +440,14 @@ function startLocalRelay(controlSocket, gamePort, log) {
     return s;
   };
 
+  // 隧道建立后立即创建 gameSocket，即使没有控制数据也保持到游戏端口的连接
+  connectGame(true);
+
   // 控制连接 → 游戏
   controlSocket.removeAllListeners('data');
   controlSocket.on('data', (data) => {
-    if (!gameSocket) {
+    _lastActivity = Date.now();
+    if (!gameSocket || gameSocket.destroyed) {
       const s = connectGame();
       if (!s) return;
       try { s.write(data); } catch (_) {}
@@ -459,13 +465,10 @@ function startLocalRelay(controlSocket, gamePort, log) {
     clearL2RTimer();
     if (gameSocket) { try { gameSocket.end(); } catch (_) {} }
     state.running = false;
-    // 如果不是用户主动关闭，通知前端
     if (!state.stopping) {
-      // 先调 API 清理服务端隧道
       if (state.tunnel && state.apikey) {
         closeTunnel(state.tunnel.serverAddress, state.apikey).catch(() => {});
       }
-      // 通知前端
       if (state._sender) {
         try { state._sender.send('redstone:disconnected', {}); } catch (_) {}
       }
@@ -480,22 +483,22 @@ function startLocalRelay(controlSocket, gamePort, log) {
     }
   };
 
-  // L2R 保活：每 25 秒向游戏端口发一次 Minecraft Protocol Ping
-  // 使用独立 TCP 连接，不干扰主 gameSocket 的数据流
-  // Ping 包 = Handshake(Status) + Status Request，让游戏服务器保持活跃
+  // L2R 保活：每 20 秒检测 gameSocket 空闲状态
+  // 如果超过 18 秒没有数据交互 → 通过 gameSocket 自身发送 Minecraft Status Ping
+  // 这会让 MC 游戏服务器保持连接活跃，同时不干扰有玩家时的正常数据流
   _l2rTimer = setInterval(() => {
     if (stopped) return;
-    const ps = net.connect(gamePort, '127.0.0.1', () => {
-      try { ps.write(buildMinecraftPing(gamePort)); } catch (_) {}
-    });
-    ps.setTimeout(5000);
-    ps.on('data', () => {});        // 消费响应，不转发
-    ps.on('timeout', () => { try { ps.destroy(); } catch (_) {} });
-    ps.on('error', () => {});
-    ps.on('close', () => {});
-    // 5 秒后自动关闭
-    setTimeout(() => { try { ps.destroy(); } catch (_) {} }, 5000);
-  }, 25000);
+    if (!gameSocket || gameSocket.destroyed) {
+      // gameSocket 已断开 → 尝试重建
+      connectGame(true);
+      return;
+    }
+    const idle = Date.now() - _lastActivity;
+    if (idle > 18000) {
+      // 空闲超过 18 秒，通过 gameSocket 发 MC 协议心跳
+      try { gameSocket.write(buildMinecraftPing(gamePort)); } catch (_) {}
+    }
+  }, 20000);
 }
 
 /**
