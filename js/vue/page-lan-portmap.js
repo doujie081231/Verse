@@ -62,12 +62,12 @@ const PageLanPortmap = {
             <button id="redstone-action-btn" onclick="redstoneToggle()" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:16px;padding:12px 0;font-size:15px;font-weight:600;border-radius:10px">开启隧道</button>
           </div>
 
-          <!-- 使用步骤（来自红石联机仓库 README） -->
+          <!-- 使用说明 -->
           <div style="margin-top:16px;padding:14px 16px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;">
             <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.05em">使用说明</div>
             <ol style="margin:0;padding-left:18px;font-size:13px;color:var(--text-secondary);line-height:1.8">
-              <li>安装红石联机模组（Fabric/NeoForge），启动游戏并进入存档</li>
-              <li>按 ESC → 对局域网开放（建议用其他模组固定端口 25565）</li>
+              <li>启动 Minecraft 并进入存档</li>
+              <li>按 ESC → 对局域网开放（建议固定端口 25565）</li>
               <li>在本页选择服务器，点击<strong>"开启隧道"</strong></li>
               <li>联机地址<strong>自动复制到剪贴板</strong>，发给朋友即可加入</li>
             </ol>
