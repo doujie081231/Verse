@@ -502,15 +502,7 @@
 
 
         <div id="page-downloads" class="page">
-          <div class="page-header">
-            <h2>下载管理</h2>
-            <div class="page-actions">
-              <button class="btn btn-secondary btn-sm" onclick="clearCompletedDownloads()">清空已完成</button>
-            </div>
-          </div>
-          <div id="download-queue-list" class="dl-queue-list">
-            <p class="empty-text" id="dl-empty-hint">暂无下载任务</p>
-          </div>
+          <!-- Vue 渐进式改造：内容由 PageDownloads 组件渲染 -->
         </div>
 
         <div id="page-console" class="page">
@@ -624,6 +616,7 @@
   <script src="js/vue/page-settings-personalize.js"></script>
   <script src="js/vue/page-settings-other.js"></script>
   <script src="js/vue/page-java.js"></script>
+  <script src="js/vue/page-downloads.js"></script>
   <script>
     // 挂载 Vue 到首页、版本页、已安装版本页容器
     window.addEventListener('DOMContentLoaded', function() {
@@ -649,6 +642,7 @@
         if (window.VersePC.PageSettingsPersonalize) Vue.createApp(PageSettingsPersonalize).mount('#page-settings-personalize');
         if (window.VersePC.PageSettingsOther) Vue.createApp(PageSettingsOther).mount('#page-settings-other');
         if (window.VersePC.PageJava) Vue.createApp(PageJava).mount('#page-java');
+        if (window.VersePC.PageDownloads) Vue.createApp(PageDownloads).mount('#page-downloads');
       }
     });
   </script>
