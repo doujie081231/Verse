@@ -577,4 +577,21 @@ function redstoneInitPage() {
         window._redstoneLogListener = true;
         try { window.electronAPI.redstoneOnline.onLog((msg) => addRedstoneLog(msg)); } catch (_) {}
     }
+    // 监听断连通知
+    if (!window._redstoneDisconnectListener) {
+        window._redstoneDisconnectListener = true;
+        try {
+            window.electronAPI.redstoneOnline.onDisconnected(() => {
+                if (!_redstoneRunning) return;
+                _redstoneRunning = false;
+                const btn = document.getElementById('redstone-action-btn');
+                if (btn) { btn.textContent = '开启隧道'; btn.disabled = false; }
+                const info = document.getElementById('redstone-connected-info');
+                if (info) info.style.display = 'none';
+                updateRedstoneStatus('连接已断开', 'disconnected');
+                addRedstoneLog('隧道连接已断开（服务器端关闭或网络超时）');
+                showToast('红石联机隧道已断开，请重新开启', 'error');
+            });
+        } catch (_) {}
+    }
 }

@@ -275,6 +275,14 @@ const PageSettingsOther = {
                   </div>
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 16px; height: 16px; color: var(--text-muted); flex-shrink: 0;"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
                 </div>
+                <div class="mod-item" style="flex: 1; min-width: 280px; padding: 16px; cursor: pointer;" onclick="window.open('https://www.ifdian.net/a/RedstoneOnline?utm_source=copylink&utm_medium=link', '_blank')">
+                  <img src="img/chrono-avatar.jpg" alt="Chrono" style="width: 48px; height: 48px; border-radius: 50%; object-fit: cover; flex-shrink: 0; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);">
+                  <div style="flex: 1; min-width: 0;">
+                    <div style="font-size: 15px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px;">Chrono · 红石联机</div>
+                    <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.5;">提供内网穿透服务与 TCP 隧道技术支持，让外网联机变得简单</div>
+                  </div>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 16px; height: 16px; color: var(--text-muted); flex-shrink: 0;"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                </div>
               </div>
             </div>
 

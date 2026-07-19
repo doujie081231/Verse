@@ -617,6 +617,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
      * @returns {void}
      */
     onLog: (callback) => ipcRenderer.on('redstone:log', (event, msg) => callback(msg)),
+    /**
+     * 监听隧道断开通知（服务器端断开 / 连接超时）
+     * @param {()=>void} callback
+     * @returns {void}
+     */
+    onDisconnected: (callback) => ipcRenderer.on('redstone:disconnected', () => callback()),
   },
 
   /** 当前运行平台（如 'win32' / 'darwin' / 'linux'） */

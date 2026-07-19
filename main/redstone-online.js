@@ -37,6 +37,8 @@ const state = {
   localRelaySockets: [],  // 本地中转的 socket 列表
   running: false,
   stopping: false,
+  _sender: null,          // 保存 IPC sender 用于通知前端
+  _healthTimer: null,     // 健康检查定时器
 };
 
 // ===================================================================
@@ -228,7 +230,7 @@ async function startTunnel(params, onLog) {
     });
     controlSocket.setTimeout(0);
     controlSocket.setNoDelay(true);
-    controlSocket.setKeepAlive(true, 15000);
+    controlSocket.setKeepAlive(true, 10000);
     state.controlSocket = controlSocket;
     log('已建立 TCP 控制连接');
 
@@ -329,6 +331,23 @@ async function startTunnel(params, onLog) {
     startLocalRelay(controlSocket, gamePort, log);
 
     log('隧道已就绪，地址: ' + state.tunnel.address);
+
+    // 启动保活健康检查：每 30 秒检测控制 socket 是否还活着
+    state._healthTimer = setInterval(() => {
+      if (!state.controlSocket || state.controlSocket.destroyed) {
+        if (state.running && !state.stopping) {
+          log('检测到连接已断开，正在自动清理...');
+          stopTunnel((m) => {}).catch(() => {});
+          // 通知前端
+          if (state._sender) {
+            try { state._sender.send('redstone:disconnected', {}); } catch (_) {}
+          }
+        }
+        clearInterval(state._healthTimer);
+        state._healthTimer = null;
+      }
+    }, 30000);
+
     return { ok: true, address: state.tunnel.address, listenPort };
   } catch (e) {
     state.running = false;
@@ -390,6 +409,17 @@ function startLocalRelay(controlSocket, gamePort, log) {
     log('控制连接已关闭');
     if (gameSocket) { try { gameSocket.end(); } catch (_) {} }
     state.running = false;
+    // 如果不是用户主动关闭，通知前端
+    if (!state.stopping) {
+      // 先调 API 清理服务端隧道
+      if (state.tunnel && state.apikey) {
+        closeTunnel(state.tunnel.serverAddress, state.apikey).catch(() => {});
+      }
+      // 通知前端
+      if (state._sender) {
+        try { state._sender.send('redstone:disconnected', {}); } catch (_) {}
+      }
+    }
   });
 }
 
@@ -429,6 +459,13 @@ async function stopTunnel(onLog) {
   state.tunnel = null;
   state.running = false;
   state.stopping = false;
+
+  // 清除保活定时器
+  if (state._healthTimer) {
+    clearInterval(state._healthTimer);
+    state._healthTimer = null;
+  }
+
   log('隧道已关闭');
   return { ok: true };
 }
@@ -476,6 +513,7 @@ function registerRedstoneOnlineIPC() {
   // 渲染进程通过 redstone:log 事件接收日志
   ipcMain.handle('redstone:start', async (event, params) => {
     const sender = event.sender;
+    state._sender = sender; // 保存 sender 供断连通知使用
     const onLog = (msg) => {
       try { sender.send('redstone:log', msg); } catch (_) {}
     };

@@ -368,6 +368,7 @@ const PageToolbox = {
               </div>
             </div>
           </div>
+
   `
 };
 
