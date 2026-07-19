@@ -350,29 +350,7 @@
         </div>
 
         <div id="page-shaders" class="page">
-          <div class="page-header">
-            <h2>光影包</h2>
-            <div class="page-actions">
-              <button class="btn btn-secondary" onclick="openFolder('shaderpacks')">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
-                打开文件夹
-              </button>
-            </div>
-          </div>
-          <div class="mod-filter-bar">
-            <div class="search-bar">
-              <input type="text" id="shader-search-input" placeholder="搜索光影包..." class="search-input">
-              <button id="shader-search-btn" class="btn btn-primary">搜索</button>
-            </div>
-          </div>
-          <div id="shader-browse-list" class="mod-list">
-            <div class="loading-spinner"><div class="spinner"></div></div>
-          </div>
-          <div class="pagination">
-            <button id="shader-prev-btn" class="btn btn-secondary btn-sm">上一页</button>
-            <span id="shader-page-info" class="page-info">1/1</span>
-            <button id="shader-next-btn" class="btn btn-secondary btn-sm">下一页</button>
-          </div>
+          <!-- Vue 渐进式改造：内容由 PageShaders 组件渲染 -->
         </div>
 
         <div id="page-lan-terracotta" class="page">
@@ -2089,6 +2067,7 @@
   <script src="js/vue/page-modpacks.js"></script>
   <script src="js/vue/page-datapacks.js"></script>
   <script src="js/vue/page-resourcepacks.js"></script>
+  <script src="js/vue/page-shaders.js"></script>
   <script>
     // 挂载 Vue 到首页、版本页、已安装版本页容器
     window.addEventListener('DOMContentLoaded', function() {
@@ -2104,6 +2083,7 @@
         if (window.VersePC.PageModpacks) Vue.createApp(PageModpacks).mount('#page-modpacks');
         if (window.VersePC.PageDatapacks) Vue.createApp(PageDatapacks).mount('#page-datapacks');
         if (window.VersePC.PageResourcepacks) Vue.createApp(PageResourcepacks).mount('#page-resourcepacks');
+        if (window.VersePC.PageShaders) Vue.createApp(PageShaders).mount('#page-shaders');
       }
     });
   </script>
