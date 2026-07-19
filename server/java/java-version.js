@@ -92,8 +92,15 @@ function getLoaderInfoForJava(versionId, versionJson) {
     const forgeMatch = fullJsonStr.match(/net\.minecraftforge:(?:forge|fmlloader):(\d+\.\d+(?:\.\d+)?)/);
     if (forgeMatch) {
       result.baseVersion = forgeMatch[1];
-      const forgeVerMatch = fullJsonStr.match(/net\.minecraftforge:(?:forge|fmlloader):([\d.]+(?:-\d+)?)/);
-      result.forgeVersion = forgeVerMatch ? forgeVerMatch[1] : '';
+      // forgeVersion = 完整 artifact 版本（去掉 MC 版本前缀）
+      // 如 "1.16.5-36.2.25" → baseVersion = "1.16.5", forgeVersion = "36.2.25"
+      const forgeFullMatch = fullJsonStr.match(/net\.minecraftforge:(?:forge|fmlloader):([\d.]+(?:-[\d.]+)?)/);
+      if (forgeFullMatch) {
+        const full = forgeFullMatch[1];
+        result.forgeVersion = full.startsWith(result.baseVersion + '-')
+          ? full.slice(result.baseVersion.length + 1)
+          : full;
+      }
     } else {
       const fmlArg = gameArgsArr.find((a) => typeof a === 'string' && a.startsWith('--fml.mcVersion'));
       if (fmlArg) {

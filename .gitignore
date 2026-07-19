@@ -161,5 +161,4 @@ forge-installer-wrapper/
 eslint.config.js
 .npmrc
 build-tools/
-test/
-*.test.js
+# test files are tracked intentionally

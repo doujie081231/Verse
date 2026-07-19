@@ -47,11 +47,12 @@ module.exports = {
   appendReason(reason, additional = null) {
     if (this.crashReasons.has(reason)) {
       if (additional !== null) {
-        this.crashReasons.get(reason).push(...additional);
+        const items = [additional].flat();
+        this.crashReasons.get(reason).push(...items);
         this.crashReasons.set(reason, [...new Set(this.crashReasons.get(reason))]);
       }
     } else {
-      this.crashReasons.set(reason, additional ? [additional].flat() : []);
+      this.crashReasons.set(reason, additional ? [...new Set([additional].flat())] : []);
     }
   }
 };
