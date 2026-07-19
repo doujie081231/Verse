@@ -568,7 +568,34 @@ function addRedstoneLog(msg) {
 }
 
 /** 红石联机页面初始化（由导航跳转触发） */
-function redstoneInitPage() {
+async function redstoneInitPage() {
+    // 同步主进程状态：每次进入页面都检查真实隧道状态
+    // 防止页面切换后 _redstoneRunning 与主进程不一致
+    try {
+        const status = await window.electronAPI.redstoneOnline.getStatus();
+        if (!status.running) {
+            _redstoneRunning = false;
+            const btn = document.getElementById('redstone-action-btn');
+            if (btn) { btn.textContent = '开启隧道'; btn.disabled = false; }
+            const info = document.getElementById('redstone-connected-info');
+            if (info) info.style.display = 'none';
+            updateRedstoneStatus('未连接', 'disconnected');
+        } else {
+            _redstoneRunning = true;
+            const btn = document.getElementById('redstone-action-btn');
+            if (btn) { btn.textContent = '关闭隧道'; btn.disabled = false; }
+            const info = document.getElementById('redstone-connected-info');
+            if (info) info.style.display = '';
+            if (status.address) {
+                document.getElementById('redstone-room-addr').textContent = status.address;
+                updateRedstoneStatus('隧道已开启 | ' + status.address, 'connected');
+            }
+        }
+    } catch (e) {
+        // 查不到状态时按断开处理
+        _redstoneRunning = false;
+    }
+
     redstoneSwitchTab('connect');
     redstoneRefreshServers();
     redstoneLoadApikey();
