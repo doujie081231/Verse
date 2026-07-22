@@ -1,13 +1,13 @@
 {
-  "version": "1.1.15",
-  "releaseDate": "2026-07-17T00:00:00Z",
-  "releaseName": "VersePC v1.1.15",
-  "releaseNotes": "## v1.1.15 正式版更新\n\n### 核心修复\n- 修复导入整合包时因 JPMS split package 问题导致的游戏崩溃（Forge/NeoForge）\n- 修复 `isJarIntact` 函数中 EOCD 位置校验漏洞，误判截断损坏的 jar 文件为正常\n- 修复 `resolveMaxMemory` 内存分配逻辑，避免可用内存不足时分配过量导致 OOM 静默退出\n- 修复因损坏的 mod jar 文件导致游戏启动崩溃的问题\n\n### 下载优化\n- 新增下载失败 mod 列表保存功能，便于后续排查\n- 恢复 64 并发下载和 45 秒无数据超时，提升下载速度",
+  "version": "1.2.0",
+  "releaseDate": "2026-07-22T00:00:00Z",
+  "releaseName": "VersePC v1.2.0",
+  "releaseNotes": "## v1.2.0 正式版更新\n\n### 核心修复\n- 修复 NeoForge 20.6+/21.x/26.x 启动崩溃（universal jar 未加入 classpath）\n- 优化启动速度：splash 提前移除 + 窗口提前显示，消除启动后卡顿\n- 修复自动修复功能：保留原文件、放宽 EOCD 校验、并发下载、SHA1 校验\n\n### 新功能\n- 新增私人服务器页面\n- 红石联机：房间标题8字符上限、人数上限8人、对外开放选项\n\n### 优化\n- 皮肤服务优化：完整皮肤服务列表 + 标准格式校验\n- 下载稳定性：分块下载重试、cache-buster、socket 超时优化",
   "files": {
     "win-x64": {
-      "url": "https://github.com/doujie081231/Verse/releases/download/v1.1.15/VersePC-Setup-1.1.15.exe",
-      "size": 163897923,
-      "sha256": "F9154BE21AC965B30F61B6D2DF32774D5464AD393BB7B2CAC20CF556A0243245"
+      "url": "https://github.com/doujie081231/Verse/releases/download/v1.2.0/VersePC-Setup-1.2.0.exe",
+      "size": 165753959,
+      "sha256": "5549DD6A54B062CF6DE645FC6E4448366791514D3631052976151F7825AAE4B2"
     }
   }
 }
