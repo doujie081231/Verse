@@ -403,6 +403,39 @@ async function downloadFileWithMirror(urlStr, destPath, onProgress, retries = 3,
     return _dlSingle(urlStr, destPath, { onProgress, retries, abortSignal, timeout: customTimeout || 30000, stallTimeout: 60000 });
   }
 
+  // [P0 OPT - 2026-07-21] libraries 目录下文件直接走单流，跳过 downloadFileChunked 的 probe 探测
+  // 原因：库文件通常 100KB-5MB，分块收益小，但 probe 探测每个 URL 2000ms 超时，
+  // 64 个库文件 × 2s probe = 128s 开销（实际观察 24s 是因为部分文件命中缓存或快速响应）。
+  // 直接顺序尝试镜像列表，保留 JAR 完整性校验和 fallback 逻辑。
+  // 基准测试：1.20.2 libraries 阶段 24s → 优化后预期 5-8s
+  const isLibraryFile = destPath.includes('/libraries/') || destPath.includes('\\libraries\\');
+  if (isLibraryFile) {
+    let _libLastErr = null;
+    for (const tryUrl of allUrls) {
+      if (abortSignal && abortSignal.aborted) throw new Error('下载已中止');
+      try {
+        const result = await _dlSingle(tryUrl, destPath, {
+          onProgress,
+          retries,
+          abortSignal,
+          timeout: customTimeout || 60000,
+          stallTimeout: 30000  // 库文件小，30s stall 足够
+        });
+        // 单流下载后校验 JAR 完整性
+        if (destPath.endsWith('.jar') && !utils.isJarIntact(destPath)) {
+          await fs.promises.unlink(destPath).catch(() => {});
+          _libLastErr = new Error(`Downloaded JAR is corrupt: ${tryUrl}`);
+          continue;
+        }
+        return result;
+      } catch (e) {
+        if (abortSignal && abortSignal.aborted) throw e;
+        _libLastErr = e;
+      }
+    }
+    throw _libLastErr || new Error('所有下载源均失败');
+  }
+
   // 非 NO_CHUNK_HOSTS：优先尝试分块下载（带镜像列表）
   if (!ctx.constants.NO_CHUNK_HOSTS.some((d) => urlStr.includes(d))) {
     try {

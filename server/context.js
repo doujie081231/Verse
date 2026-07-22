@@ -281,6 +281,13 @@ const ctx = {
       (uuid) => `https://crafatar.com/avatars/${uuid}?size=64&overlay`,
       (uuid) => `https://visage.surgeplay.com/face/64/${uuid}`
     ],
+    // 完整皮肤纹理服务（返回 64x64 或 64x32 的整张皮肤图，不是头像）
+    SKIN_SERVICES: [
+      (uuid) => `https://mc-heads.net/skin/${uuid}`,
+      (uuid) => `https://crafatar.com/skins/${uuid}`,
+      (uuid) => `https://minotar.net/skin/${uuid}`,
+      (uuid) => `https://visage.surgeplay.com/skin/${uuid}`
+    ],
     SENSITIVE_PATTERNS: [
       /--accessToken\s+\S+/gi,
       /--uuid\s+\S+/gi,

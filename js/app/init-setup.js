@@ -6,7 +6,7 @@ async function init() {
   const splashProgress = document.getElementById('splash-progress');
   const splashOverlay = document.getElementById('splash-overlay');
   const startTime = Date.now();
-  const MIN_SPLASH_DURATION = 800;
+  const MIN_SPLASH_DURATION = 300;
 
   try {
     const earlyTheme = await window.electronAPI.store.get('versepc_theme');
@@ -14,11 +14,18 @@ async function init() {
       const legacyThemes = ['blue', 'purple', 'green', 'orange', 'red', 'pink', 'teal', 'cyan', 'amber'];
       const themeName = legacyThemes.includes(earlyTheme) ? 'light' : earlyTheme;
       document.documentElement.setAttribute('data-theme', themeName);
-      document.documentElement.classList.toggle('dark-theme', themeName === 'dark');
+      document.documentElement.classList.toggle('dark-theme', themeName === 'dark' || themeName === 'custom');
       document.documentElement.classList.toggle('light-theme', themeName === 'light');
       document.querySelectorAll('.theme-option').forEach(btn => {
         btn.classList.toggle('active', btn.getAttribute('data-theme') === themeName);
       });
+      if (themeName === 'custom' && typeof applyCustomThemeColor === 'function' && typeof getSavedCustomThemeColor === 'function') {
+        const customColor = await getSavedCustomThemeColor();
+        const isLight = typeof getSavedCustomThemeLight === 'function'
+          ? await getSavedCustomThemeLight()
+          : false;
+        await applyCustomThemeColor(customColor, { save: false, isLight });
+      }
     } else {
       document.documentElement.setAttribute('data-theme', 'light');
       document.documentElement.classList.add('light-theme');
@@ -80,66 +87,61 @@ async function init() {
     safeSetup('accountButtons', setupAccountButtons);
     safeSetup('versionListClicks', setupVersionListClicks);
     safeSetup('favSearch', setupFavSearchListeners);
-    setProgress(25, '正在加载数据...');
-
-    // 并行加载核心数据，避免串行等待
-    const [settingsResult, versionsResult, accountsResult] = await Promise.allSettled([
-      loadSettings(),
-      loadVersions(),
-      loadAccounts(),
-      loadFavoritesData()
-    ]);
-    setProgress(70, '正在初始化功能...');
-
-    // 设置页面初始化（轻量，不涉及网络请求）
+    // 设置页面初始化（轻量 UI 绑定，不涉及网络请求）
     safeSetup('settingsPage', setupSettingsPage);
     safeSetup('javaPage', setupJavaPage);
     safeSetup('console', setupConsole);
-
-    setProgress(90, '正在完成...');
-
-    setProgress(100, '准备就绪!');
-
-    updateGameStatus();
-    setManagedInterval(updateGameStatus, 3000, 'updateGameStatus');
-    checkJavaOnStartup();
-
-    setTimeout(() => {
-      triggerJvmPreheat();
-    }, 10000);
-
-    cacheCommonElements();
-
-    if (typeof initWallpaper === 'function') {
-      _lazyLoadScript('js/three.bundle.js').then(() => {
-        try { initWallpaper(); } catch (e) { console.error('[Wallpaper] init error:', e); }
-        loadWallpaperSettings();
-      }).catch(() => console.warn('[Wallpaper] THREE.js load failed'));
-    }
-
-    initWallpaperDropZone();
-    initWallpaperAutoAdapt();
+    setProgress(40, '正在准备主页...');
 
   } catch (e) {
     console.error('Init critical error:', e);
-    setProgress(100, '初始化完成');
   }
 
+  // 移除 splash：主题已应用 + UI 按钮已绑定，用户可立即操作主页
   const elapsed = Date.now() - startTime;
   const remainingMinTime = Math.max(MIN_SPLASH_DURATION - elapsed, 0);
   await new Promise(r => setTimeout(r, remainingMinTime));
 
-  await new Promise(r => setTimeout(r, 200));
-
   if (splashOverlay) {
-    splashOverlay.style.transition = 'opacity 0.4s cubic-bezier(0.4,0,0.2,1)';
+    splashOverlay.style.transition = 'opacity 0.3s cubic-bezier(0.4,0,0.2,1)';
     splashOverlay.style.opacity = '0';
     splashOverlay.style.pointerEvents = 'none';
-    await new Promise(r => setTimeout(r, 400));
+    await new Promise(r => setTimeout(r, 300));
     try { splashOverlay.remove(); } catch (err) {}
   }
 
-  // 首屏显示后，延迟加载非关键数据
+  // 后台异步加载核心数据（不阻塞用户操作主页）
+  setProgress(70, '正在加载数据...');
+  Promise.allSettled([
+    loadSettings(),
+    loadVersions(),
+    loadAccounts(),
+    loadFavoritesData()
+  ]).then(() => {
+    setProgress(100, '准备就绪!');
+  }).catch(e => console.error('后台数据加载失败:', e));
+
+  updateGameStatus();
+  setManagedInterval(updateGameStatus, 3000, 'updateGameStatus');
+  checkJavaOnStartup();
+
+  setTimeout(() => {
+    triggerJvmPreheat();
+  }, 10000);
+
+  cacheCommonElements();
+
+  if (typeof initWallpaper === 'function') {
+    _lazyLoadScript('js/three.bundle.js').then(() => {
+      try { initWallpaper(); } catch (e) { console.error('[Wallpaper] init error:', e); }
+      loadWallpaperSettings();
+    }).catch(() => console.warn('[Wallpaper] THREE.js load failed'));
+  }
+
+  initWallpaperDropZone();
+  initWallpaperAutoAdapt();
+
+  // 延迟加载非关键数据
   setTimeout(() => {
     Promise.allSettled([
       loadModFilterOptions(),

@@ -54,14 +54,33 @@ async function loadSettings() {
         document.querySelectorAll('.theme-option').forEach(btn => {
             btn.classList.toggle('active', btn.getAttribute('data-theme') === savedTheme);
         });
-        const defaultAccent = savedTheme === 'light' ? '#1a1a1a' : '#ffffff';
-        const effectiveAccent = settings.accentColor || defaultAccent;
-        if (accentColorInput) accentColorInput.value = effectiveAccent;
-        if (accentColorValueEl) accentColorValueEl.textContent = effectiveAccent;
-        const colorPreviewDot = document.getElementById('color-preview-dot');
-        if (colorPreviewDot) colorPreviewDot.style.background = effectiveAccent;
-        if (settings.accentColor && settings.accentColor !== defaultAccent) {
-            applyAccentColor(settings.accentColor);
+        if (savedTheme === 'custom') {
+            // 自定义主题色：恢复保存的颜色/深浅模式并显示颜色选择器
+            if (typeof toggleCustomThemeColorGroup === 'function') toggleCustomThemeColorGroup(true);
+            if (typeof getSavedCustomThemeColor === 'function' && typeof applyCustomThemeColor === 'function') {
+                const customColor = await getSavedCustomThemeColor();
+                const isLight = typeof getSavedCustomThemeLight === 'function'
+                    ? await getSavedCustomThemeLight()
+                    : false;
+                await applyCustomThemeColor(customColor, { save: false, isLight });
+            }
+            if (typeof syncCustomThemeLightModeUI === 'function') {
+                const isLight = typeof getSavedCustomThemeLight === 'function'
+                    ? await getSavedCustomThemeLight()
+                    : false;
+                syncCustomThemeLightModeUI(isLight);
+            }
+        } else {
+            if (typeof toggleCustomThemeColorGroup === 'function') toggleCustomThemeColorGroup(false);
+            const defaultAccent = savedTheme === 'light' ? '#1a1a1a' : '#ffffff';
+            const effectiveAccent = settings.accentColor || defaultAccent;
+            if (accentColorInput) accentColorInput.value = effectiveAccent;
+            if (accentColorValueEl) accentColorValueEl.textContent = effectiveAccent;
+            const colorPreviewDot = document.getElementById('color-preview-dot');
+            if (colorPreviewDot) colorPreviewDot.style.background = effectiveAccent;
+            if (settings.accentColor && settings.accentColor !== defaultAccent) {
+                applyAccentColor(settings.accentColor);
+            }
         }
     } catch (e) { console.error('[Settings] Failed to load settings:', e); }
 }

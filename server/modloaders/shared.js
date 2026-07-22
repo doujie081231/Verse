@@ -196,7 +196,13 @@ async function ensureBaseVersionInstalled(gameVersion, onProgress = null) {
         };
 
         const _allLibTasks = _collectLibTasks();
-        const _libParallel = 32;
+        // [P0 OPT - 2026-07-21] 库下载并发从硬编码 32 提升到 48
+        // 原因：库文件通常较小（100KB-5MB），单流下载后单连接占用时间短，
+        // 32 并发下 64 个文件需要 2 批次；提升到 48 后基本 1 批次完成。
+        // 全局 connectionLimit 是 64，48 并发留 16 给其他下载任务。
+        // 配合优化1（跳过 probe 探测），预期 libraries 阶段从 24s 降到 5-8s。
+        const _settings = require('../http-client/settings').loadSettingsCached();
+        const _libParallel = Math.min(Math.max(_settings.maxThreads || 48, 48), 64);
         if (_allLibTasks.length > 0) {
             let _libDone = 0;
             let _libActive = 0;
@@ -844,18 +850,22 @@ async function runPatchProcessor({ mcJarPath, clientLzmaPath, patchedJarPath, pr
         if (!neoVersion) {
             throw new Error(`无法从 patchedJarPath 提取版本号: ${patchedJarPath}`);
         }
+        // NeoForge 1.20.1 旧版本沿用 forge maven 坐标（installer 位于 net/neoforged/forge/），
+        // 1.20.5+ 才使用 neoforge 包名。需要与 installNeoForge 的下载路径保持一致。
+        const isLegacyNeo = neoVersion.startsWith('1.20.1-');
+        const neoPkg = isLegacyNeo ? 'forge' : 'neoforge';
         installerJarPath = path.join(
             ctx.dirs.LIBRARIES_DIR,
-            'net', 'neoforged', 'neoforge', neoVersion,
-            `neoforge-${neoVersion}-installer.jar`
+            'net', 'neoforged', neoPkg, neoVersion,
+            `${neoPkg}-${neoVersion}-installer.jar`
         );
         simpleInstallerOutput = path.join(
             ctx.dirs.LIBRARIES_DIR,
-            'net', 'neoforged', 'neoforge', neoVersion,
-            `neoforge-${neoVersion}-client.jar`
+            'net', 'neoforged', neoPkg, neoVersion,
+            `${neoPkg}-${neoVersion}-client.jar`
         );
-        siVersionDirName = `neoforge-${neoVersion}`;
-        installerLogFileName = `neoforge-${neoVersion}-installer.jar.log`;
+        siVersionDirName = `${neoPkg}-${neoVersion}`;
+        installerLogFileName = `${neoPkg}-${neoVersion}-installer.jar.log`;
     }
     if (!fs.existsSync(installerJarPath)) {
         throw new Error(`${logPrefix} installer jar 未找到: ${installerJarPath}`);

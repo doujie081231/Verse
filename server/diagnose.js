@@ -302,9 +302,78 @@ async function performRepair(sessionId, versionId) {
                 corruptLibs.push({ lib, path: libPath });
             }
         }
-        session.missingFiles = missingLibs.length + corruptLibs.length;
+        rlog(`Phase3 库文件扫描完成: 缺失=${missingLibs.length}, 损坏=${corruptLibs.length}`);
+
+        // Phase 3.5: 扫描 assets 资源文件
+        session.message = '正在扫描资源文件...';
+        const missingAssets = [];
+        try {
+            const assetIndexInfo = versionJson.assetIndex;
+            if (assetIndexInfo && assetIndexInfo.id) {
+                const assetIndexPath = path.join(ctx.dirs.ASSETS_DIR, 'indexes', `${assetIndexInfo.id}.json`);
+                let indexOk = fs.existsSync(assetIndexPath);
+                if (indexOk && assetIndexInfo.sha1) {
+                    try {
+                        const idxSha = await utils.calculateSHA1(assetIndexPath);
+                        if (idxSha !== assetIndexInfo.sha1) indexOk = false;
+                    } catch (_) {}
+                }
+                if (!indexOk) {
+                    rlog(`Phase3.5 资源索引缺失或损坏，尝试下载: ${assetIndexInfo.id}`);
+                    try {
+                        if (!fs.existsSync(path.dirname(assetIndexPath))) fs.mkdirSync(path.dirname(assetIndexPath), { recursive: true });
+                        await http.downloadFileWithMirror(assetIndexInfo.url, assetIndexPath, null, 3, session._abortController ? session._abortController.signal : null);
+                    } catch (e) { rlog(`Phase3.5 资源索引下载失败: ${e.message}`); }
+                }
+                if (fs.existsSync(assetIndexPath)) {
+                    const assetIndexData = JSON.parse(fs.readFileSync(assetIndexPath, 'utf-8'));
+                    const assetObjects = assetIndexData.objects || {};
+                    const assetEntries = Object.entries(assetObjects);
+                    rlog(`Phase3.5 资源索引包含 ${assetEntries.length} 个对象`);
+                    for (let i = 0; i < assetEntries.length; i++) {
+                        if (isAborted()) return;
+                        const [name, info] = assetEntries[i];
+                        const hash = info.hash;
+                        const subDir = hash.substring(0, 2);
+                        const assetPath = path.join(ctx.dirs.ASSETS_DIR, 'objects', subDir, hash);
+                        if (!fs.existsSync(assetPath)) {
+                            missingAssets.push({
+                                lib: { name: `asset:${name}`, downloads: { artifact: { url: `https://resources.download.minecraft.net/${subDir}/${hash}`, sha1: hash, size: info.size } } },
+                                path: assetPath,
+                                isAsset: true
+                            });
+                        }
+                    }
+                    rlog(`Phase3.5 资源扫描完成: 缺失=${missingAssets.length}`);
+                }
+            }
+        } catch (e) { rlog(`Phase3.5 资源扫描异常: ${e.message}`); }
+
+        // Phase 3.6: 扫描 natives 本地库
+        session.message = '正在扫描本地库...';
+        const missingNatives = [];
+        try {
+            const currentPlatform = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'osx' : 'linux';
+            for (const lib of allLibs) {
+                if (!lib.name || !lib.natives || !lib.natives[currentPlatform]) continue;
+                if (lib.rules && !evaluateRules(lib.rules)) continue;
+                const classifier = lib.natives[currentPlatform].replace(/\${arch}/g, process.arch === 'x64' ? '64' : '32');
+                const nativeArtifact = lib.downloads?.classifiers?.[classifier];
+                if (!nativeArtifact) continue;
+                const nativePath = path.join(ctx.dirs.LIBRARIES_DIR, nativeArtifact.path);
+                if (!fs.existsSync(nativePath) || (nativePath.endsWith('.jar') && !utils.isJarIntact(nativePath))) {
+                    missingNatives.push({
+                        lib: { name: `native:${lib.name}:${classifier}`, downloads: { artifact: nativeArtifact } },
+                        path: nativePath,
+                        isNative: true
+                    });
+                }
+            }
+            rlog(`Phase3.6 本地库扫描完成: 缺失=${missingNatives.length}`);
+        } catch (e) { rlog(`Phase3.6 本地库扫描异常: ${e.message}`); }
+
+        session.missingFiles = missingLibs.length + corruptLibs.length + missingAssets.length + missingNatives.length;
         session.checkedFiles = allLibs.length;
-        rlog(`Phase3 扫描完成: 缺失=${missingLibs.length}, 损坏=${corruptLibs.length}`);
         missingLibs.forEach(m => rlog(`  缺失: ${path.basename(m.path)}`));
         corruptLibs.forEach(m => rlog(`  损坏: ${path.basename(m.path)}`));
         session.progress = 25;
@@ -394,8 +463,8 @@ async function performRepair(sessionId, versionId) {
 
         // Phase 5: Download missing/corrupted files (30-95%)
         session.stage = 'downloading';
-        const allMissing = [...corruptLibs, ...missingLibs];
-        rlog(`Phase5 准备下载: 总计=${allMissing.length}个缺失/损坏文件`);
+        const allMissing = [...corruptLibs, ...missingLibs, ...missingAssets, ...missingNatives];
+        rlog(`Phase5 准备下载: 总计=${allMissing.length}个文件 (库=${missingLibs.length+corruptLibs.length}, 资源=${missingAssets.length}, 本地库=${missingNatives.length})`);
         const uniqueMissing = [];
         const seen = new Set();
         for (const item of allMissing) {
@@ -408,27 +477,20 @@ async function performRepair(sessionId, versionId) {
         let repaired = 0;
         let failed = 0;
         const failedList = [];
+        let completedCount = 0;
 
-        for (let i = 0; i < uniqueMissing.length; i++) {
-            if (isAborted()) { session.message = '修复已取消'; return; }
-
-            const item = uniqueMissing[i];
+        // 为下载任务构造 URL 和 SHA1
+        function buildDownloadInfo(item) {
             const lib = item.lib;
             const libPath = item.path;
-
-            session.currentFile = path.basename(libPath);
-            session.message = `正在修复 (${i+1}/${uniqueMissing.length}): ${session.currentFile}`;
-            session.progress = 30 + (i / Math.max(uniqueMissing.length, 1)) * 65;
-            session.repairedFiles = repaired;
-            session.lastActivity = Date.now();
-
-            if (utils.isJarIntact(libPath)) { repaired++; continue; }
-
-            if (lib._patchingJar) { rlog(`  跳过补丁JAR (Phase5.5处理): ${path.basename(libPath)}`); failed++; failedList.push(path.basename(libPath)); continue; }
-
             let url = null;
+            let sha1 = null;
             if (lib.downloads?.artifact?.url) {
                 url = lib.downloads.artifact.url;
+                sha1 = lib.downloads.artifact.sha1 || null;
+            } else if (lib.downloads?.client?.url) {
+                url = lib.downloads.client.url;
+                sha1 = lib.downloads.client.sha1 || null;
             } else if (lib.name) {
                 const p = lib.name.split(':');
                 if (p.length >= 3) {
@@ -441,53 +503,124 @@ async function performRepair(sessionId, versionId) {
                     url = `${base}${mg}/${p[1]}/${p[2]}/${jn}`;
                 }
             }
-            if (!url && lib.downloads?.client?.url) {
-                url = lib.downloads.client.url;
-            }
+            return { url, sha1, libPath };
+        }
 
-            if (!url) {
-                failed++;
-                failedList.push(path.basename(libPath));
-                continue;
-            }
-
-            try {
-                if (fs.existsSync(libPath)) {
-                    try { fs.unlinkSync(libPath); } catch (e) {}
+        // 清理路径中的文件冲突（处理 ENOTDIR 问题）
+        function ensureDirForFile(filePath) {
+            const dir = path.dirname(filePath);
+            if (fs.existsSync(dir) && fs.statSync(dir).isDirectory()) return;
+            const parts = dir.split(path.sep);
+            for (let i = 1; i <= parts.length; i++) {
+                const partial = parts.slice(0, i).join(path.sep);
+                if (partial && fs.existsSync(partial)) {
+                    try { const st = fs.statSync(partial); if (!st.isDirectory()) fs.unlinkSync(partial); } catch (_) {}
                 }
-                if (!fs.existsSync(path.dirname(libPath))) {
-                    // [CRITICAL] depCheck 自动下载库文件前清理路径中的文件冲突（同 ensureDir 的 ENOTDIR 修复）。
-                    // [AI-AUTOGEN-WARNING] 请勿删除此处的文件清理逻辑。
-                    {
-                        const _d = path.dirname(libPath);
-                        const _parts = _d.split(path.sep);
-                        for (let _i = 1; _i <= _parts.length; _i++) {
-                            const _partial = _parts.slice(0, _i).join(path.sep);
-                            if (_partial && fs.existsSync(_partial)) {
-                                try { const _st = fs.statSync(_partial); if (!_st.isDirectory()) fs.unlinkSync(_partial); } catch (_) {}
+            }
+            fs.mkdirSync(dir, { recursive: true });
+        }
+
+        // 下载单个文件：保留原文件策略 + SHA1 校验 + cache-buster 重试
+        async function downloadOne(item) {
+            if (isAborted()) return { ok: false, skipped: true, name: path.basename(item.path) };
+            const lib = item.lib;
+            const libPath = item.path;
+
+            // 预检查：文件已存在且完整则跳过
+            if (fs.existsSync(libPath) && (!libPath.endsWith('.jar') || utils.isJarIntact(libPath))) {
+                return { ok: true, skipped: true, name: path.basename(libPath) };
+            }
+
+            // 补丁 JAR 由 Phase 5.5 处理
+            if (lib._patchingJar) {
+                rlog(`  跳过补丁JAR (Phase5.5处理): ${path.basename(libPath)}`);
+                return { ok: false, skipped: true, name: path.basename(libPath), isPatching: true };
+            }
+
+            const { url, sha1 } = buildDownloadInfo(item);
+            if (!url) {
+                return { ok: false, name: path.basename(libPath), reason: '无URL' };
+            }
+
+            ensureDirForFile(libPath);
+            const signal = session._abortController ? session._abortController.signal : null;
+
+            // 重试3轮，每轮切换 cache-buster 强制 CDN 路由
+            const MAX_RETRY = 3;
+            let lastErr = null;
+            for (let attempt = 0; attempt < MAX_RETRY; attempt++) {
+                if (isAborted()) return { ok: false, skipped: true, name: path.basename(libPath) };
+                const cbUrl = attempt > 0 ? (url + (url.includes('?') ? '&' : '?') + `_cb=${Date.now()}_${attempt}`) : url;
+                try {
+                    await http.downloadFileWithMirror(cbUrl, libPath, null, 3, signal);
+                    // 下载后立即复查文件存在性
+                    if (!fs.existsSync(libPath) || fs.statSync(libPath).size === 0) {
+                        throw new Error('下载后文件不存在或大小为0');
+                    }
+                    // SHA1 校验（若版本 JSON 提供 sha1）
+                    if (sha1) {
+                        try {
+                            const actualSha = await utils.calculateSHA1(libPath);
+                            if (actualSha !== sha1) {
+                                throw new Error(`SHA1 不匹配: 期望 ${sha1.slice(0,8)}, 实际 ${(actualSha||'').slice(0,8)}`);
                             }
+                        } catch (shaErr) {
+                            // SHA1 校验失败：删除重试，不保留错误文件
+                            try { fs.unlinkSync(libPath); } catch (_) {}
+                            throw shaErr;
                         }
                     }
-                    fs.mkdirSync(path.dirname(libPath), { recursive: true });
-                }
-
-                await http.downloadFileWithMirror(url, libPath, null, 2, session._abortController ? session._abortController.signal : null);
-
-                if (libPath.endsWith('.jar') && !utils.isJarIntact(libPath)) {
-                    failed++;
-                    failedList.push(path.basename(libPath));
-                    try { fs.unlinkSync(libPath); } catch (e) {}
-                } else {
-                    repaired++;
-                }
-            } catch (e) {
-                failed++;
-                failedList.push(path.basename(libPath));
-                if (fs.existsSync(libPath) && !utils.isJarIntact(libPath)) {
-                    try { fs.unlinkSync(libPath); } catch (e2) {}
+                    // JAR 完整性校验（非资源文件）
+                    if (libPath.endsWith('.jar') && !utils.isJarIntact(libPath)) {
+                        // EOCD 检查失败：删除重试
+                        try { fs.unlinkSync(libPath); } catch (_) {}
+                        throw new Error('JAR 结构不完整');
+                    }
+                    return { ok: true, name: path.basename(libPath), attempt };
+                } catch (e) {
+                    lastErr = e;
+                    rlog(`  下载失败 [${attempt+1}/${MAX_RETRY}] ${path.basename(libPath)}: ${e.message}`);
+                    if (attempt < MAX_RETRY - 1) {
+                        await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+                    }
                 }
             }
+            // 全部重试失败：保留原文件（若存在），让游戏决定能否加载
+            rlog(`  最终失败 ${path.basename(libPath)}: ${lastErr ? lastErr.message : '未知错误'}`);
+            return { ok: false, name: path.basename(libPath), reason: lastErr ? lastErr.message : '重试耗尽' };
         }
+
+        // 并发下载池（并发数 8，平衡速度和 CDN 压力）
+        const PARALLEL = 8;
+        let taskIndex = 0;
+        async function runNext() {
+            while (true) {
+                if (isAborted()) return;
+                const myIndex = taskIndex++;
+                if (myIndex >= uniqueMissing.length) return;
+                const item = uniqueMissing[myIndex];
+                const result = await downloadOne(item);
+                completedCount++;
+                if (result.ok) {
+                    if (!result.skipped) repaired++;
+                } else if (!result.skipped) {
+                    failed++;
+                    failedList.push(result.name);
+                }
+                // 跳过的文件不计入 repaired 也不计入 failed
+                session.repairedFiles = repaired;
+                session.currentFile = result.name || '';
+                session.message = `正在修复 (${completedCount}/${uniqueMissing.length})${result.ok ? ' ✓' : result.skipped ? ' ⟳' : ' ✗'}`;
+                session.progress = 30 + (completedCount / Math.max(uniqueMissing.length, 1)) * 65;
+                session.lastActivity = Date.now();
+            }
+        }
+
+        const workers = [];
+        for (let w = 0; w < Math.min(PARALLEL, uniqueMissing.length); w++) {
+            workers.push(runNext());
+        }
+        await Promise.all(workers);
 
         if (isAborted()) return;
 
@@ -564,7 +697,7 @@ async function performRepair(sessionId, versionId) {
                                 }
                             } catch (_) {}
                             const instResult = await runForgeInstallerJar(installerPath, installerGameDir, (msg, pct) => {
-                                session.progress = 90 + pct * 8;
+                                session.progress = Math.max(session.progress, 90 + pct * 8);
                             }, true);
                             rlog(`Phase5.5 安装器结果: success=${instResult.success}, error=${instResult.error || '无'}`);
                             if (instResult.success) {

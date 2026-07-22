@@ -169,10 +169,13 @@ const { registerAIProxyIPC } = require('./main/ai-proxy');
 // 红石联机内网穿透模块（TCP 隧道 + 本地中继）
 const { registerRedstoneOnlineIPC } = require('./main/redstone-online');
 
+// 私人服务器管理模块
+const { initPrivateServerIPC } = require('./main/private-server');
+
 // versepc:// 协议处理模块 - 启动时立即需要（协议注册）
 const {
   setupProtocolHandler, handleVersePCProtocol,
-  isPathAllowed
+  isPathAllowed, registerAllowedPath
 } = require('./main/protocol-handler');
 _bootLog('top-level requires done');
 
@@ -290,20 +293,25 @@ async function createWindow() {
   mainWindow.loadURL('versepc://app/index.html');
   try { _bootLog('after loadURL'); } catch (e) {}
 
-  // 等待页面准备就绪后再显示窗口，避免脚本加载期间出现蓝框闪烁
-  // ready-to-show 事件会在页面首次渲染完成且所有 defer 脚本执行完后触发
-  mainWindow.once('ready-to-show', () => {
+  // 窗口显示控制：优先由渲染进程内联脚本尽早触发，ready-to-show 作为兜底
+  let _windowShown = false;
+  const _showMainWindow = (source) => {
+    if (_windowShown) return;
+    _windowShown = true;
     mainWindow.show();
-    try { _bootLog('mainWindow.show() (ready-to-show)'); } catch (e) {}
-
-    // 根据保存的配置恢复窗口状态
+    try { _bootLog(`mainWindow.show() (${source})`); } catch (e) {}
     if (config.fullscreen && !config.windowMode) {
       setSavedWindowBounds({ x: windowX, y: windowY, width: windowWidth, height: windowHeight });
       mainWindow.setFullScreen(true);
     } else if (config.maximized) {
       mainWindow.maximize();
     }
-  });
+  };
+
+  // 渲染进程 HTML 解析到内联脚本时立刻通知显示窗口（不等 65 个 defer 脚本）
+  ipcMain.on('window-show-early', () => _showMainWindow('early'));
+  // 兜底：如果内联脚本未能触发，等首次渲染完成后显示
+  mainWindow.once('ready-to-show', () => _showMainWindow('ready-to-show'));
 
   // GPU 黑屏检测看门狗：15 秒内页面若未渲染出任何子节点，则判定 GPU 加速异常
   // 写入 .disable-gpu 标记文件，下次启动自动禁用 GPU 加速并显示降级提示页
@@ -839,14 +847,41 @@ app.whenReady().then(async () => {
     });
     try { _bootLog('protocol.handle registered'); } catch (e) {}
 
-    // 创建窗口（最优先）
+    // 提前开始加载 server.js（与 createWindow 并行，不阻塞窗口创建）
+    // server.js 加载需要 ~100ms，与 createWindow 的 ~200ms 并行执行
+    // 当渲染进程 init() 开始时，server.js 通常已加载完成，API 调用能立即返回
+    setImmediate(() => {
+      let loadOk = false;
+      try {
+        loadServerModule();
+        loadOk = true;
+      } catch (e) {
+        console.error('[Server] Load failed:', e.message);
+      }
+      // 只有加载成功才标记 _serverReady，避免后续调用 NPE
+      if (loadOk) {
+        _serverReady = true;
+        // mainWindow 此时可能还未创建，setMainWindow 延迟到 createWindow 之后
+        try { _runIntegrityCheckAsync().catch(() => {}); } catch (e) {}
+        try { _deferredRepairData(); } catch (e) {}
+        if (serverModuleCache) {
+          try { serverModuleCache.logStartupInfo(); } catch (e) {}
+        }
+      }
+    });
+
+    // 创建窗口（最优先，与 server.js 加载并行）
     try { _bootLog('before createWindow'); } catch (e) {}
     await createWindow();
     try { _bootLog('after createWindow'); } catch (e) {}
 
+    // 窗口创建后，设置 mainWindow 给 server.js（server.js 可能已加载完成）
+    if (serverModuleCache && serverModuleCache.setMainWindow) {
+      try { serverModuleCache.setMainWindow(mainWindow); } catch (e) {}
+    }
+
     // 启动成功，清除崩溃日志
-    // 临时注释：启动诊断期间保留 crash.log 以便读取时间戳（测完恢复）
-    // try { require('fs').writeFileSync(_crashLogPath, '', 'utf8'); } catch (e) {}
+    try { require('fs').writeFileSync(_crashLogPath, '', 'utf8'); } catch (e) {}
 
     // 窗口显示后再做一切非关键初始化
     setImmediate(() => {
@@ -878,6 +913,8 @@ app.whenReady().then(async () => {
           let filePath = decodeURIComponent(url.pathname);
           if (filePath.startsWith('/')) filePath = filePath.substring(1);
           const resolved = path.resolve(filePath);
+          // 注册路径到白名单，确保用户选择的壁纸文件可被读取
+          if (typeof registerAllowedPath === 'function') registerAllowedPath(resolved);
           if (!isPathAllowed(resolved)) return new Response('Forbidden', { status: 403 });
           if (!fs.existsSync(resolved)) return new Response('Not Found', { status: 404 });
           const ext = path.extname(resolved).toLowerCase();
@@ -909,6 +946,7 @@ app.whenReady().then(async () => {
       registerTTSIPC();
       registerAIProxyIPC();
       registerRedstoneOnlineIPC();
+      initPrivateServerIPC();
 
       // V 岛语音助手需要麦克风权限，统一授权（避免 SpeechRecognition 静默失效）
       session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
@@ -924,29 +962,6 @@ app.whenReady().then(async () => {
       });
       registerUpdaterIPC();
       initAutoUpdater();
-
-      // 加载 server.js、启动 SSE、完整性检查等（延迟执行，不阻塞启动）
-      setImmediate(() => {
-        let loadOk = false;
-        try {
-          loadServerModule();
-          loadOk = true;
-        } catch (e) {
-          console.error('[Server] Load failed:', e.message);
-        }
-        // 只有加载成功才标记 _serverReady，避免后续调用 NPE
-        if (loadOk) {
-          _serverReady = true;
-          if (serverModuleCache && serverModuleCache.setMainWindow) {
-            try { serverModuleCache.setMainWindow(mainWindow); } catch (e) {}
-          }
-          try { _runIntegrityCheckAsync().catch(() => {}); } catch (e) {}
-          try { _deferredRepairData(); } catch (e) {}
-          if (serverModuleCache) {
-            try { serverModuleCache.logStartupInfo(); } catch (e) {}
-          }
-        }
-      });
     });
 
   } catch (e) {

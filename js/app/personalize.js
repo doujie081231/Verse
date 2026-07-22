@@ -200,10 +200,12 @@ function initWallpaperAutoAdapt() {
         if (!app) return;
 
         const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+        const isLightTheme = currentTheme === 'light' ||
+            (currentTheme === 'custom' && document.documentElement.getAttribute('data-custom-theme-mode') === 'light');
         const isLight = brightness > 0.55;
         const isDark = brightness < 0.35;
 
-        if (currentTheme === 'light') {
+        if (isLightTheme) {
             app.classList.remove('wp-light', 'wp-dark');
             overlay.style.background = 'transparent';
         } else if (isLight) {
@@ -342,6 +344,9 @@ async function resetPersonalizeSettings() {
     const glassCheckbox = document.getElementById('setting-glass-effect');
     if (glassCheckbox) { glassCheckbox.checked = false; toggleGlassEffect(false); }
 
+    if (typeof clearCustomThemeVars === 'function') clearCustomThemeVars();
+    if (typeof syncCustomThemeColorUI === 'function') syncCustomThemeColorUI('#4c8dff');
+
     try {
         await window.electronAPI.store.set('versepc_personalize_settings', JSON.stringify({
             theme: 'light',
@@ -350,6 +355,8 @@ async function resetPersonalizeSettings() {
         }));
         await window.electronAPI.store.set('versepc_wallpaper', 'none');
         await window.electronAPI.store.delete('versepc_solid_color');
+        await window.electronAPI.store.delete('versepc_custom_theme_color');
+        await window.electronAPI.store.delete('versepc_custom_theme_light');
         await window.electronAPI.store.set('versepc_wallpaper_opacity', 100);
         await window.electronAPI.store.set('versepc_wallpaper_blur', 0);
         await window.electronAPI.store.set('versepc_wallpaper_fit', 'cover');

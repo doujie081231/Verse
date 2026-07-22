@@ -249,33 +249,49 @@ function findForgeCoreJars(versionJson, searchBases) {
   }
 
   {
+    // Forge 1.13+ 需要 client.jar（patched vanilla client.jar，含 Minecraft 主类）
+    // 和 universal.jar（Forge 主代码）同时存在于 classpath 中。
+    // 旧逻辑只添加首个找到的 jar（优先 universal），导致 BootstrapLauncher
+    // 找不到 net.minecraft.client.main.Main，游戏启动后立即退出。
     const forgeDir = `${prefix}/forge/${verStr}`;
     for (const base of searchBases) {
       if (!base) continue;
       const dirPath = path.join(base, forgeDir);
       if (!fs.existsSync(dirPath)) continue;
-      const candidates = [
-        `forge-${verStr}-universal.jar`,
+      // client.jar（patched MC client）和 universal.jar（Forge 代码）都要加入
+      const requiredJars = [
         `forge-${verStr}-client.jar`,
-        `forge-${verStr}.jar`
+        `forge-${verStr}-universal.jar`
       ];
-      let found = false;
-      for (const candidate of candidates) {
-        const jarPath = path.join(dirPath, candidate);
+      let addedAny = false;
+      for (const required of requiredJars) {
+        const jarPath = path.join(dirPath, required);
         if (fs.existsSync(jarPath)) {
-          result.push(jarPath);
-          found = true;
-          break;
+          if (!result.some((r) => path.basename(r) === path.basename(jarPath))) {
+            result.push(jarPath);
+          }
+          addedAny = true;
         }
       }
-      if (!found) {
+      // 兜底：若两个必需 jar 都没找到，扫描目录下任意 forge-*.jar
+      if (!addedAny) {
         try {
           const files = fs.readdirSync(dirPath)
             .filter((f) => f.startsWith('forge-') && f.endsWith('.jar') && !f.endsWith('-sources.jar') && !f.endsWith('-javadoc.jar'));
           if (files.length > 0) {
-            result.push(path.join(dirPath, files[0]));
+            for (const f of files) {
+              const fp = path.join(dirPath, f);
+              if (!result.some((r) => path.basename(r) === f)) {
+                result.push(fp);
+              }
+            }
           }
         } catch (e) {}
+      }
+      // 旧版本兼容：若只有 forge-${verStr}.jar（合并 jar），也加入
+      const mergedJar = path.join(dirPath, `forge-${verStr}.jar`);
+      if (fs.existsSync(mergedJar) && !result.some((r) => r === mergedJar)) {
+        result.push(mergedJar);
       }
       break;
     }

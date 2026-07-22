@@ -88,9 +88,6 @@ function resolveMaxMemory({ memoryMode, memoryValue, totalMB, freeMB, modCount }
 
   // ----------------------------------------------------------------------
   // 4) 受物理内存总量约束（保留系统/启动器自身占用）
-  //    不再受"当前可用内存"约束 —— 其他程序占用的内存并非持续占用，
-  //    若强行按"当前可用"分配，会导致大型整合包（如含大量 3D 模型的整合包）
-  //    永远拿不到足够内存而 OOM 崩溃。
   //    分档保留：
   //      - ≤4GB 物理：保留 1.5GB（系统紧张，多留给系统）
   //      - ≤8GB 物理：保留 2GB
@@ -102,6 +99,20 @@ function resolveMaxMemory({ memoryMode, memoryValue, totalMB, freeMB, modCount }
   else SYSTEM_RESERVE_MB = 2560;
   const physicalCapMB = Math.max(totalMB - SYSTEM_RESERVE_MB, 512);
   autoMB = Math.min(autoMB, physicalCapMB);
+
+  // ----------------------------------------------------------------------
+  // 4.5) [P0 FIX - 2026-07-21] 受当前可用内存约束
+  //    之前的 bug：只看物理内存总量，不看当前可用。当用户开着浏览器/IDE 等占用
+  //    大量内存的程序时，物理内存剩余不足，但 JVM 仍按总量分配 -Xms 初始堆，
+  //    导致启动时无法分配或运行时 OOM 崩溃（如 OutOfMemoryError: Failed to allocate）。
+  //    修复：上限不超过"当前可用内存的 85%"，保留 15% 给 JVM 自身开销和系统波动。
+  //    但不低于最低限度（ramMininumGB），保证大整合包至少能启动。
+  // ----------------------------------------------------------------------
+  const minRequiredMB = Math.floor(ramMininumGB * GB_TO_MB);
+  const freeCapMB = Math.floor(freeMB * 0.85);
+  if (autoMB > freeCapMB) {
+    autoMB = Math.max(freeCapMB, minRequiredMB);
+  }
 
   // ----------------------------------------------------------------------
   // 5) 封顶 16GB，避免极端配置下分配过多

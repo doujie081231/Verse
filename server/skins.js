@@ -478,14 +478,31 @@ async function fetchAvatarDataFull(cleanUuid, avatarServerUrl, avatarUsername, s
     }
   }
   if (!avatarData && !avatarServerUrl) {
+    // [P0 FIX - 2026-07-21] 用 SKIN_SERVICES（完整皮肤）而不是 AVATAR_SERVICES（头像）
+    // 原问题：回退到头像服务拿到 64x64 头像图，被当成完整皮肤纹理塞给 3D 查看器，
+    // 导致皮肤显示错乱（180x180 头像被当成 64x64 皮肤拉伸）。
+    // 修复：用专门的完整皮肤服务，并校验返回的 PNG 尺寸必须是 64x64 或 64x32。
+    const skinServices = ctx.constants.SKIN_SERVICES || ctx.constants.AVATAR_SERVICES;
     const serviceResults = await Promise.allSettled(
-      ctx.constants.AVATAR_SERVICES.map(async (serviceFn) => {
+      skinServices.map(async (serviceFn) => {
         const tryUrl = serviceFn(cleanUuid);
         const checkRes = await http.fetchWithProtocol(tryUrl, { timeout: 4000 });
         if (checkRes.statusCode === 200) {
           const chunks = [];
           for await (const chunk of checkRes) chunks.push(chunk);
-          return { data: Buffer.concat(chunks), contentType: checkRes.headers['content-type'] || 'image/png' };
+          const buf = Buffer.concat(chunks);
+          // 尺寸校验：必须是 64x64 或 64x32 的 Minecraft 皮肤格式
+          try {
+            const sharpLib = require('sharp');
+            const meta = await sharpLib(buf).metadata();
+            if (meta.width !== 64 || (meta.height !== 64 && meta.height !== 32)) {
+              throw new Error(`invalid skin size: ${meta.width}x${meta.height}`);
+            }
+          } catch (e) {
+            // sharp 校验失败，跳过这个源
+            throw new Error('size check failed: ' + e.message);
+          }
+          return { data: buf, contentType: checkRes.headers['content-type'] || 'image/png' };
         }
         checkRes.resume();
         throw new Error('non-200');

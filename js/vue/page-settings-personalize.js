@@ -31,7 +31,34 @@ const PageSettingsPersonalize = {
                     </div>
                     <span class="theme-name">白色</span>
                   </div>
+                  <div class="theme-option" data-theme="custom" onclick="selectTheme(this)">
+                    <div class="theme-swatch">
+                      <div class="theme-dot" id="custom-theme-swatch-dot" style="background: #4c8dff;"></div>
+                      <div class="theme-dot" style="background: #14171d;"></div>
+                      <div class="theme-dot" style="background: #2a2f3a;"></div>
+                    </div>
+                    <span class="theme-name">自定义</span>
+                  </div>
                 </div>
+              </div>
+              <div class="form-group" id="custom-theme-color-group" style="display:none;">
+                <label>自定义主题色 <span id="custom-theme-color-value" class="custom-theme-color-value">#4c8dff</span></label>
+                <div class="custom-theme-color-row">
+                  <input type="color" id="custom-theme-color-input" value="#4c8dff" oninput="onCustomThemeColorInput(this.value)">
+                  <div class="custom-theme-presets">
+                    <div class="custom-theme-preset" data-color="#4c8dff" style="background: #4c8dff;" onclick="pickCustomThemePreset('#4c8dff')" title="湛蓝"></div>
+                    <div class="custom-theme-preset" data-color="#3dd68c" style="background: #3dd68c;" onclick="pickCustomThemePreset('#3dd68c')" title="翠绿"></div>
+                    <div class="custom-theme-preset" data-color="#a06cff" style="background: #a06cff;" onclick="pickCustomThemePreset('#a06cff')" title="幽紫"></div>
+                    <div class="custom-theme-preset" data-color="#ff8a3d" style="background: #ff8a3d;" onclick="pickCustomThemePreset('#ff8a3d')" title="暖橙"></div>
+                    <div class="custom-theme-preset" data-color="#ff6b9d" style="background: #ff6b9d;" onclick="pickCustomThemePreset('#ff6b9d')" title="樱粉"></div>
+                    <div class="custom-theme-preset" data-color="#3dc8d6" style="background: #3dc8d6;" onclick="pickCustomThemePreset('#3dc8d6')" title="青碧"></div>
+                  </div>
+                </div>
+                <label class="checkbox-label" style="margin-top:10px;">
+                  <input type="checkbox" id="custom-theme-light-mode" onchange="onCustomThemeLightModeChange(this.checked)">
+                  <span>使用浅色背景</span>
+                </label>
+                <span class="form-hint">开启后自定义主题将使用白色基底，关闭则为深色基底</span>
               </div>
             </div>
 

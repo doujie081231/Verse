@@ -309,6 +309,7 @@ async function handleStaticFile(pathname, request) {
   }
 }
 
+let _allowedExtraPaths = new Set();
 let _allowedPathRoots = null;
 
 /**
@@ -330,10 +331,27 @@ function getAllowedPathRoots() {
   try { roots.push(app.getPath('downloads')); } catch (e) {}
   try { roots.push(app.getPath('desktop')); } catch (e) {}
   try { roots.push(app.getPath('documents')); } catch (e) {}
+  try { roots.push(app.getPath('pictures')); } catch (e) {}
+  try { roots.push(app.getPath('videos')); } catch (e) {}
   try { if (process.resourcesPath) roots.push(process.resourcesPath); } catch (e) {}
   try { if (process.resourcesPath) roots.push(path.join(process.resourcesPath, 'app.asar.unpacked')); } catch (e) {}
+  // 动态注册的额外路径（如用户自定义壁纸文件所在目录）
+  if (_allowedExtraPaths.size > 0) {
+    _allowedExtraPaths.forEach(p => roots.push(p));
+  }
   _allowedPathRoots = roots.map((r) => path.resolve(r).toLowerCase());
   return _allowedPathRoots;
+}
+
+// 动态注册一个路径到白名单（用于用户通过文件选择器选中的自定义文件）
+function registerAllowedPath(filePath) {
+  if (!filePath || typeof filePath !== 'string') return;
+  try {
+    const dir = path.dirname(path.resolve(filePath));
+    _allowedExtraPaths.add(dir.toLowerCase());
+    // 清除缓存，下次调用 getAllowedPathRoots 时重新生成
+    _allowedPathRoots = null;
+  } catch (e) {}
 }
 
 /**
@@ -358,5 +376,6 @@ module.exports = {
   handleStaticFile,
   getAllowedPathRoots,
   isPathAllowed,
+  registerAllowedPath,
   MIME_TYPES,
 };

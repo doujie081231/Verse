@@ -47,7 +47,6 @@ async function importModpackFromFile() {
           DynamicIsland.show(result.name || '整合包导入');
         } else if (typeof dlManager !== 'undefined') {
           dlManager.add(taskId, result.name || '整合包导入', 'modpack', sessionId, '');
-          navigateToPage('downloads');
         }
         if (window.electronAPI?.onImportProgress) {
           if (window.electronAPI.removeImportProgressListener) window.electronAPI.removeImportProgressListener();
@@ -129,7 +128,6 @@ document.addEventListener('drop', (e) => {
         DynamicIsland.show(name || '整合包导入');
       } else if (typeof dlManager !== 'undefined') {
         dlManager.add(taskId, name || '整合包导入', 'modpack', sessionId, '');
-        navigateToPage('downloads');
       }
       if (window.electronAPI?.onImportProgress) {
         if (window.electronAPI.removeImportProgressListener) window.electronAPI.removeImportProgressListener();
@@ -318,10 +316,7 @@ async function openResourceDetail(projectId, type) {
   mdDepsVersionInfo = {};
 
   const backBtn = document.querySelector('#page-mod-detail .moddetail-page-header .btn-icon');
-  if (backBtn) {
-    const pageMap = { mod: 'mods', modpack: 'modpacks', datapack: 'datapacks', resourcepack: 'resourcepacks', shader: 'shaders' };
-    backBtn.setAttribute('onclick', `navigateToPage('${pageMap[type] || 'mods'}')`);
-  }
+  if (backBtn) backBtn.setAttribute('onclick', 'goBackFromDetail()');
 
   const mdName = document.getElementById('md-name');
   const mdDesc = document.getElementById('md-desc');

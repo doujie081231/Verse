@@ -33,10 +33,13 @@
         return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
     }
 
-    function showReleaseNotes(notes) {
+    async function showReleaseNotes(notes) {
         const container = document.getElementById('updater-release-notes');
         const content = document.getElementById('updater-release-notes-content');
         if (notes && notes.trim()) {
+            if (typeof marked === 'undefined') {
+                try { await _lazyLoadScript('js/marked.min.js'); } catch (e) {}
+            }
             if (typeof marked !== 'undefined') {
                 content.innerHTML = marked.parse(notes.trim());
             } else {
@@ -196,10 +199,19 @@
         const contentEl = document.getElementById('update-modal-content');
         if (verEl) verEl.textContent = 'v' + (data.currentVersion || '?.?.?') + ' → v' + data.version;
         if (contentEl && data.releaseNotes) {
-            const html = typeof marked !== 'undefined'
-                ? marked.parse(data.releaseNotes)
-                : data.releaseNotes.replace(/\n/g, '<br>');
-            contentEl.innerHTML = html;
+            const renderNotes = () => {
+                const html = typeof marked !== 'undefined'
+                    ? marked.parse(data.releaseNotes)
+                    : data.releaseNotes.replace(/\n/g, '<br>');
+                contentEl.innerHTML = html;
+            };
+            if (typeof marked === 'undefined') {
+                _lazyLoadScript('js/marked.min.js').then(renderNotes).catch(() => {
+                    contentEl.innerHTML = data.releaseNotes.replace(/\n/g, '<br>');
+                });
+            } else {
+                renderNotes();
+            }
         } else if (contentEl) {
             contentEl.innerHTML = '<p>更新内容加载中...</p>';
         }

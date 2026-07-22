@@ -156,8 +156,11 @@ async function registerApikey(serverAddress, apikey) {
 }
 
 /** 创建隧道 */
-async function createTunnel(serverAddress, apikey, maxPlayers) {
-  const url = `http://${serverAddress}:${HTTP_PORT}/tunnels?maxPlayers=${maxPlayers}`;
+async function createTunnel(serverAddress, apikey, maxPlayers, title, isOpen, allowOffline) {
+  let url = `http://${serverAddress}:${HTTP_PORT}/tunnels?maxPlayers=${maxPlayers}`;
+  if (title) url += `&title=${encodeURIComponent(title)}`;
+  if (isOpen) url += `&isOpen=true`;
+  if (allowOffline) url += `&allowOffline=true`;
   const resp = await httpRequest('POST', url, {
     headers: { Authorization: apikey },
     timeout: 10000,
@@ -226,8 +229,11 @@ async function startTunnel(params, onLog, options = {}) {
     return { ok: false, error: '隧道已在运行中，请先关闭' };
   }
   const serverAddress = params.serverAddress;
-  const maxPlayers = Math.max(1, parseInt(params.maxPlayers) || 1);
+  const maxPlayers = Math.min(8, Math.max(1, parseInt(params.maxPlayers) || 8));
   const gamePort = Math.max(1, parseInt(params.gamePort) || 25565);
+  const title = String(params.title || '').trim().slice(0, 8);
+  const isOpen = params.isOpen !== false;
+  const allowOffline = !!params.allowOffline;
 
   state.stopping = false;
   state.running = true;
@@ -235,7 +241,7 @@ async function startTunnel(params, onLog, options = {}) {
 
   // 保存参数和日志回调供自动重连使用（仅首次启动路径保存，重连路径复用已有值）
   if (!isReconnect) {
-    state._lastParams = { serverAddress, maxPlayers, gamePort };
+    state._lastParams = { serverAddress, maxPlayers, gamePort, title, isOpen, allowOffline };
     state._onLog = onLog;
     state._reconnectAttempts = 0;
     state._reconnecting = false;
@@ -326,7 +332,7 @@ async function startTunnel(params, onLog, options = {}) {
     } else if (firstLine === 'OK WAITING' || firstLine.startsWith('OK WAITING')) {
       // 6. 需要创建隧道
       log('正在创建隧道（最大人数: ' + maxPlayers + '）...');
-      const result = await createTunnel(serverAddress, state.apikey, maxPlayers);
+      const result = await createTunnel(serverAddress, state.apikey, maxPlayers, title, isOpen, allowOffline);
       listenPort = result.listenPort;
       log('隧道已创建，端口: ' + listenPort);
 
@@ -367,6 +373,9 @@ async function startTunnel(params, onLog, options = {}) {
       listenPort,
       serverAddress,
       address: serverAddress + ':' + listenPort,
+      title,
+      isOpen,
+      allowOffline,
     };
 
     // 7. 启动本地中继：游戏端口 ↔ 控制连接
@@ -1025,6 +1034,9 @@ function registerRedstoneOnlineIPC() {
       running: state.running,
       address: state.tunnel ? state.tunnel.address : null,
       listenPort: state.tunnel ? state.tunnel.listenPort : null,
+      title: state.tunnel ? state.tunnel.title : '',
+      isOpen: state.tunnel ? state.tunnel.isOpen : true,
+      allowOffline: state.tunnel ? state.tunnel.allowOffline : false,
       apikey: state.apikey,
       servers: state.servers,
       reconnecting: state._reconnecting,

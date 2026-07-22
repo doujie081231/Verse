@@ -112,7 +112,35 @@ function buildLaunchArguments(versionJson, settings, account, versionId, customG
   }
   const userType = account?.type === 'microsoft' ? 'msa' : (account?.type === 'legacy' ? 'legacy' : 'mojang');
 
-  const mainJarPath = versions.findMainJar(versionJson, actualVersionId, externalVersionDir) || path.join(ctx.dirs.VERSIONS_DIR, actualVersionId, actualVersionId + '.jar');
+  let mainJarPath = versions.findMainJar(versionJson, actualVersionId, externalVersionDir) || path.join(ctx.dirs.VERSIONS_DIR, actualVersionId, actualVersionId + '.jar');
+
+  // [关键修复 2026-07-21] mainJar 可能是 0 字节空文件（Modrinth 整合包导入时
+  // vanilla client.jar 复制失败留下的空壳）。Forge 环境下回退到 patched client.jar
+  // （forge-<mc>-<forge>-client.jar），它包含 Minecraft 主类，可作为 mainJar。
+  try {
+    if (fs.existsSync(mainJarPath) && fs.statSync(mainJarPath).size === 0) {
+      const _gArgs = versionJson.arguments?.game || [];
+      const _isForge = _gArgs.some((a) => typeof a === 'string' && a === 'forgeclient') ||
+        (versionJson.mainClass || '').toLowerCase().includes('bootstraplauncher');
+      if (_isForge) {
+        let _fv = '', _mv = '';
+        const _fvi = _gArgs.findIndex((a) => typeof a === 'string' && a === '--fml.forgeVersion');
+        const _mvi = _gArgs.findIndex((a) => typeof a === 'string' && a === '--fml.mcVersion');
+        if (_fvi >= 0 && _fvi + 1 < _gArgs.length) _fv = _gArgs[_fvi + 1];
+        if (_mvi >= 0 && _mvi + 1 < _gArgs.length) _mv = _gArgs[_mvi + 1];
+        if (!_mv && versionJson.clientVersion) _mv = versionJson.clientVersion;
+        if (_fv && _mv) {
+          const _patchedJar = path.join(ctx.dirs.LIBRARIES_DIR, 'net', 'minecraftforge', 'forge', `${_mv}-${_fv}`, `forge-${_mv}-${_fv}-client.jar`);
+          if (fs.existsSync(_patchedJar) && fs.statSync(_patchedJar).size > 0) {
+            console.log(`[Launch] mainJar 是空文件，回退到 Forge patched client.jar: ${path.basename(_patchedJar)}`);
+            mainJarPath = _patchedJar;
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn(`[Launch] 检查 mainJar 大小失败: ${e.message}`);
+  }
 
   // 启动参数模板变量，供版本 JSON 中的 ${var} 占位符替换
   const variables = {
@@ -191,7 +219,14 @@ function buildLaunchArguments(versionJson, settings, account, versionId, customG
   const totalMB = Math.floor(os.totalmem() / 1024 / 1024);
   const freeMB = Math.floor(os.freemem() / 1024 / 1024);
   const maxMemMB = resolveMaxMemory({ memoryMode, memoryValue, totalMB, freeMB, modCount });
-  const minMemMB = maxMemMB;
+  // [P0 FIX - 2026-07-21] -Xms 不再等于 -Xmx
+  // 旧代码 minMemMB = maxMemMB，JVM 启动时就要分配全部堆内存。当物理内存不足时，
+  // JVM 无法分配 -Xms 指定的初始堆，导致启动失败或运行时 OOM。
+  // 新策略：-Xms 取 maxMemMB 的 1/2，对齐到 256MB，最小 512MB
+  // 让 JVM 按需扩展堆内存，避免启动时一次性占用过多物理内存
+  let minMemMB = Math.floor(maxMemMB / 2 / 256) * 256;
+  minMemMB = Math.max(minMemMB, 512);
+  minMemMB = Math.min(minMemMB, maxMemMB);
   jvmArgs.push(`-Xmx${maxMemMB}M`, `-Xms${minMemMB}M`);
   jvmArgs.push('-Dlog4j2.formatMsgNoLookups=true');
   jvmArgs.push('-Djava.net.preferIPv4Stack=true');

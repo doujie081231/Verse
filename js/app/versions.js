@@ -406,6 +406,10 @@ async function navigateToPage(pageName) {
     return;
   }
 
+  if (pageName === 'downloads' && window.DynamicIsland && typeof window.DynamicIsland.isEnabled === 'function' && window.DynamicIsland.isEnabled()) {
+    return;
+  }
+
   const currentPage = document.querySelector('.page.active');
   const target = document.getElementById(`page-${pageName}`);
   if (!target) {
@@ -876,7 +880,6 @@ function showInstallModal(versionId) {
   const taskId = 'version-' + currentInstallSessionId;
   dlManager.add(taskId, `安装 ${versionId}`, 'version', currentInstallSessionId,
     versionId ? `/api/version-icon?id=${encodeURIComponent(versionId)}&type=release` : '');
-  navigateToPage('downloads');
 }
 
 function closeInstallModal() {

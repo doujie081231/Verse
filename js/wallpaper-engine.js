@@ -60,9 +60,14 @@ class WallpaperEngine {
 
         this._onResize = this._onResize.bind(this);
         this._onMouseMove = this._onMouseMove.bind(this);
+        this._onIdleCheck = this._onIdleCheck.bind(this);
         this._animate = this._animate.bind(this);
         this._savedRotationSpeed = 0.005;
         this._savedPanoramaTheme = 'overworld';
+        // 空闲帧率优化：鼠标静默 3 秒后从 60fps 降到 30fps
+        this._lastInteraction = performance.now();
+        this._idleThrottle = false;
+        this._frameCount = 0;
     }
 
     start() {
@@ -251,6 +256,19 @@ class WallpaperEngine {
     _onMouseMove(e) {
         this.mouseX = (e.clientX / window.innerWidth - 0.5) * 2;
         this.mouseY = (e.clientY / window.innerHeight - 0.5) * 2;
+        this._lastInteraction = performance.now();
+        if (this._idleThrottle) {
+            this._idleThrottle = false;
+            this._frameCount = 0;
+        }
+    }
+
+    _onIdleCheck() {
+        if (this._idleThrottle) return;
+        if (performance.now() - this._lastInteraction > 3000) {
+            this._idleThrottle = true;
+            this._frameCount = 0;
+        }
     }
 
     _animate(timestamp) {
@@ -258,19 +276,26 @@ class WallpaperEngine {
         const dt = Math.min(timestamp - this.lastTime, 50);
         this.lastTime = timestamp;
 
-        if (this.transitioning) {
-            this.transitionAlpha = Math.min(1, this.transitionAlpha + dt * 0.003);
-            if (this.transitionAlpha >= 1) this.transitioning = false;
-        }
+        // 空闲时每 2 帧渲染 1 帧，降至 ~30fps
+        this._frameCount++;
+        this._onIdleCheck();
+        const skipFrame = this._idleThrottle && (this._frameCount % 2 === 0) && this.currentMode === 'panorama';
 
-        if (this.renderer) {
-            if (this.currentMode === 'customImage' && !this.transitioning && this.renderer.loaded) {
-                // Static image: skip redraw, but still update style for opacity/blur changes
-                if (typeof this.renderer._updateStyle === 'function') {
-                    this.renderer._updateStyle();
+        if (!skipFrame) {
+            if (this.transitioning) {
+                this.transitionAlpha = Math.min(1, this.transitionAlpha + dt * 0.003);
+                if (this.transitionAlpha >= 1) this.transitioning = false;
+            }
+
+            if (this.renderer) {
+                if (this.currentMode === 'customImage' && !this.transitioning && this.renderer.loaded) {
+                    // Static image: skip redraw, but still update style for opacity/blur changes
+                    if (typeof this.renderer._updateStyle === 'function') {
+                        this.renderer._updateStyle();
+                    }
+                } else {
+                    this.renderer.render(dt, timestamp);
                 }
-            } else {
-                this.renderer.render(dt, timestamp);
             }
         }
 
@@ -405,9 +430,9 @@ class PanoramaRenderer {
             this.threeCamera = new THREE.PerspectiveCamera(75, glCanvas.clientWidth / glCanvas.clientHeight, 0.1, 1000);
             this.threeCamera.position.set(0, 0, 0);
 
-            this.threeRenderer = new THREE.WebGLRenderer({ canvas: glCanvas, alpha: false, antialias: true });
+            this.threeRenderer = new THREE.WebGLRenderer({ canvas: glCanvas, alpha: false, antialias: true, powerPreference: 'low-power' });
             this.threeRenderer.setSize(glCanvas.clientWidth, glCanvas.clientHeight, false);
-            this.threeRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            this.threeRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 1));
             this.threeRenderer.setClearColor(0x0a0a0a);
 
             const faceOrder = [1, 3, 4, 5, 0, 2];
@@ -542,6 +567,7 @@ class CustomImageRenderer {
             console.error('[Wallpaper] Image load failed:', filePath, e);
             this.loaded = false;
             this.image = null;
+            if (typeof showToast === 'function') showToast('图片壁纸加载失败，请检查文件是否存在或更换其他位置', 'error');
         };
         this.image.src = imgUrl;
 
@@ -703,6 +729,7 @@ class CustomVideoRenderer {
         this.video.onerror = (e) => {
             console.error('[Wallpaper] Video load failed, errorCode:', this.video.error);
             this.loaded = false;
+            if (typeof showToast === 'function') showToast('视频壁纸加载失败，请检查文件是否存在或更换其他位置', 'error');
         };
         this.video.src = videoUrl;
 

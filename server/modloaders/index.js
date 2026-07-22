@@ -21,7 +21,7 @@ const optifine = require('./optifine');
 const { ensureBaseVersionInstalled } = shared;
 const { installForge } = forge;
 const { mergeFabricLoaderToVersion, autoDownloadFabricApi } = fabric;
-const { mergeNeoForgeLoaderToVersion } = neoforge;
+const { mergeNeoForgeLoaderToVersion, installNeoForge } = neoforge;
 const { mergeOptiFineToVersion } = optifine;
 // [CRITICAL - 2026-07-03] natives.js 顶层 require('./modloaders') 形成循环依赖。
 // 如果这里也顶层 require('../natives')，Node.js 会返回部分加载的空对象，
@@ -565,7 +565,21 @@ async function performInstallation(sessionId, versionDetails) {
           // 触发 "Module X reads more than one module named Y" 冲突。
           // 参考：1.21.1-Forge-52.1.142 启动崩溃问题。
         } else if (loaderType === 'neoforge') {
-          await mergeNeoForgeLoaderToVersion(versionId, gameVersion, loaderVersion, loaderProgress);
+          // [CRITICAL FIX - 2026-07-20] 必须调用 installNeoForge 而不是 mergeNeoForgeLoaderToVersion！
+          // installNeoForge 负责：下载 installer JAR、提取 version.json（含34个 NeoForge/FML 运行时库）、
+          // 构造正确的 versionJson（mainClass=cpw.mods.bootstraplauncher.BootstrapLauncher）、
+          // 下载库、写入 version.json，最后内部调用 mergeNeoForgeLoaderToVersion 合并运行时库和运行处理器。
+          // 如果只调用 mergeNeoForgeLoaderToVersion，会跳过上述步骤，version.json 保留 MC 原版内容
+          // （88个 MC 原版库，mainClass=net.minecraft.client.main.Main），导致：
+          //   1. 预下载逻辑没有下载 NeoForge/FML 库（version.json 里没有这些库）
+          //   2. 官方安装器运行时直连 maven.neoforged.net 下载失败（Connection reset）
+          //   3. 启动游戏时是原版 MC 而不是 NeoForge
+          // [CRITICAL - 2026-07-20] 必须传 versionId 作为 targetVersionId！
+          // 否则 installNeoForge 内部用默认 ${gameVersion}-NeoForge-${neoVersion} 生成 versionId，
+          // 与本函数（performInstallation）创建的版本目录不一致：本函数在 A 目录写原版 JSON，
+          // installNeoForge 在 B 目录写正确的 NeoForge JSON，启动时找到的是 A 目录的原版 JSON。
+          // 详见 installNeoForge 函数顶部注释。
+          loaderResult = await installNeoForge(gameVersion, loaderVersion, loaderProgress, versionId);
         } else if (loaderType === 'optifine') {
           await mergeOptiFineToVersion(versionId, gameVersion, loaderVersion, loaderProgress);
         }

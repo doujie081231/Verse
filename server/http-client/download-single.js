@@ -26,7 +26,10 @@ async function _dlSingle(urlStr, destPath, options = {}) {
   // 等待连接数配额
   while (!ctx.DownloadManager.acquireConnection()) {
     if (abortSignal && abortSignal.aborted) throw new Error('下载已中止');
-    await new Promise((r) => setTimeout(r, 50));
+    // [P0 FIX - 2026-07-21] 轮询间隔从 50ms 缩短到 10ms
+    // 50ms 在高并发下会累积延迟：16 个 mod 等待 1 个连接释放，平均浪费 25ms
+    // 10ms 让连接释放被更快感知，提升并发效率
+    await new Promise((r) => setTimeout(r, 10));
   }
   const tmpPath = destPath + '.downloading';
   let settled = false;
@@ -72,6 +75,8 @@ async function _dlSingle(urlStr, destPath, options = {}) {
           if (!keepTmp) _tryRemoveFile(tmpPath);
           _tryRemoveFile(destPath);
           if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
+          // [P0 OPT - 2026-07-21] 清理低速检测计时器
+          if (lowSpeedTimer) { clearInterval(lowSpeedTimer); lowSpeedTimer = null; }
         };
         // stall 检测：stallTimeout 内无数据视为卡死
         const resetStall = () => {
@@ -88,6 +93,44 @@ async function _dlSingle(urlStr, destPath, options = {}) {
               }
             }
           }, stallTimeout);
+        };
+        // [P0 OPT - 2026-07-21] 低速检测：解决 CDN "滴漏"问题
+        // 问题：CDN 节点慢速滴漏（如 10KB/s），每秒都有数据进来重置 stall 计时器，
+        // 导致 stall 永远不触发，单个 mod 卡 240s+ 不换源。
+        // 修复：每 10 秒检查一次平均速度，低于 50KB/s 视为低速，换源重试。
+        // PCL2 的双源竞速能避免此问题，我们用低速检测达到类似效果。
+        let lowSpeedCheckBytes = resumeOffset;
+        let lowSpeedTimer = null;
+        let totalDownloaded = resumeOffset;  // 提升到外层，供低速检测访问
+        let totalSize = 0;                    // 提升到外层
+        const LOW_SPEED_THRESHOLD = 20 * 1024;  // 20KB/s（降低阈值避免误判）
+        const LOW_SPEED_CHECK_INTERVAL = 15000; // 15秒检查一次（给慢启动更多时间）
+        const startLowSpeedCheck = () => {
+          if (lowSpeedTimer) clearInterval(lowSpeedTimer);
+          lowSpeedCheckBytes = totalDownloaded;
+          lowSpeedTimer = setInterval(() => {
+            if (settled || cleaned) {
+              if (lowSpeedTimer) { clearInterval(lowSpeedTimer); lowSpeedTimer = null; }
+              return;
+            }
+            const receivedInWindow = totalDownloaded - lowSpeedCheckBytes;
+            const speedBps = receivedInWindow / (LOW_SPEED_CHECK_INTERVAL / 1000);
+            lowSpeedCheckBytes = totalDownloaded;
+            // 速度低于阈值且已经下载过一些数据（避免刚启动时误判）
+            // [P0 OPT - 2026-07-21] 阈值降低到 20KB/s，避免慢速但正常的下载被误判
+            if (speedBps < LOW_SPEED_THRESHOLD && totalDownloaded > 200 * 1024) {
+              console.warn(`[LowSpeed] ${urlStr.substring(0, 60)} 速度 ${Math.round(speedBps/1024)}KB/s 低于 50KB/s，换源`);
+              try { if (onProgress) onProgress({ bytesDownloaded: totalDownloaded, totalBytes: totalSize, speed: speedBps, progress: totalSize > 0 ? (totalDownloaded / totalSize * 100) : 0, chunks: 1, activeChunks: 1, lowSpeed: true }); } catch (_) {}
+              try { req.destroy(); } catch (_) {}
+              if (lowSpeedTimer) { clearInterval(lowSpeedTimer); lowSpeedTimer = null; }
+              clean(true); // 保留临时文件供续传
+              if (rc > 0) {
+                setTimeout(() => attempt(rc - 1), 500);
+              } else {
+                doReject(new Error(`Low speed: ${Math.round(speedBps/1024)}KB/s`));
+              }
+            }
+          }, LOW_SPEED_CHECK_INTERVAL);
         };
         currentAbortHandler = () => {
           try { req.destroy(); } catch (_) {}
@@ -118,13 +161,20 @@ async function _dlSingle(urlStr, destPath, options = {}) {
           // 206 响应的 content-length 是剩余字节数，总大小需加上 resumeOffset
           const contentLen = parseInt(res.headers['content-length'] || '0', 10);
           const tSz = isResume ? (resumeOffset + contentLen) : contentLen;
+          totalSize = tSz;  // 供低速检测访问
           let dl = resumeOffset;
+          totalDownloaded = dl;
           ws = fs.createWriteStream(tmpPath, isResume ? { flags: 'a' } : {});
+          // [P0 OPT - 2026-07-21] 启动低速检测（独立于 stall 检测）
+          // stall 检测只检测"完全无数据"，低速检测检测"速度过低"
+          startLowSpeedCheck();
           res.on('data', (ch) => {
             if (settled) { res.destroy(); return; }
             dl += ch.length;
+            totalDownloaded = dl;  // 同步到外层供低速检测访问
             ctx.DownloadManager.recordProgress(ch.length);
             resetStall();
+            // 注意：低速检测不在这里重置，它独立按 10 秒窗口计算
             try { if (onProgress) onProgress({ bytesDownloaded: dl, totalBytes: tSz, speed: ctx.DownloadManager.getSpeed(), progress: tSz > 0 ? (dl / tSz * 100) : 0, chunks: 1, activeChunks: 1 }); } catch (_) {}
           });
           res.pipe(ws);

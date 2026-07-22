@@ -155,7 +155,7 @@
     border-radius: var(--radius-lg);
     padding: 16px;
     border: 1px solid var(--border);
-    transition: all var(--transition);
+    transition: border-color var(--transition), box-shadow var(--transition), background-color var(--transition);
 }
 
 .world-item:hover {
@@ -195,7 +195,7 @@
     background: var(--bg-card);
     border-radius: var(--radius-lg);
     border: 1px solid var(--border);
-    transition: all var(--transition);
+    transition: border-color var(--transition), box-shadow var(--transition), background-color var(--transition);
 }
 
 .account-item:hover {
@@ -1036,7 +1036,7 @@
 
 .theme-picker-grid {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(3, 1fr);
     gap: 10px;
 }
 
@@ -1050,7 +1050,7 @@
     border-radius: var(--radius);
     background: var(--bg-tertiary);
     cursor: pointer;
-    transition: all 0.2s var(--ease-out-expo);
+    transition: border-color 0.2s var(--ease-out-expo), background-color 0.2s var(--ease-out-expo), box-shadow 0.2s var(--ease-out-expo), transform 0.2s var(--ease-out-expo);
 }
 
 .theme-option:hover {
@@ -1089,6 +1089,77 @@
     color: var(--accent);
 }
 
+/* 自定义主题色选择器 */
+.custom-theme-color-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 8px;
+}
+
+#custom-theme-color-input {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border: 2px solid var(--border);
+    border-radius: 50%;
+    background: transparent;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: border-color 0.2s var(--ease-out-expo), transform 0.2s var(--ease-out-expo);
+}
+
+#custom-theme-color-input:hover {
+    border-color: var(--accent);
+    transform: scale(1.08);
+}
+
+#custom-theme-color-input::-webkit-color-swatch-wrapper {
+    padding: 3px;
+}
+
+#custom-theme-color-input::-webkit-color-swatch {
+    border: none;
+    border-radius: 50%;
+}
+
+#custom-theme-color-input::-moz-color-swatch {
+    border: none;
+    border-radius: 50%;
+}
+
+.custom-theme-color-value {
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 12px;
+    color: var(--accent);
+    margin-left: 6px;
+    text-transform: uppercase;
+}
+
+.custom-theme-presets {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.custom-theme-preset {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: transform 0.15s var(--ease-out-expo), border-color 0.15s var(--ease-out-expo), box-shadow 0.15s var(--ease-out-expo);
+}
+
+.custom-theme-preset:hover {
+    transform: scale(1.15);
+}
+
+.custom-theme-preset.active {
+    border-color: var(--text-primary);
+    box-shadow: 0 0 0 2px var(--bg-primary), 0 0 8px rgba(0, 0, 0, 0.4);
+}
+
 .wallpaper-picker-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
@@ -1114,7 +1185,7 @@
     border-radius: var(--radius);
     background: var(--bg-tertiary);
     cursor: pointer;
-    transition: all 0.2s var(--ease-out-expo);
+    transition: border-color 0.2s var(--ease-out-expo), background-color 0.2s var(--ease-out-expo), box-shadow 0.2s var(--ease-out-expo), transform 0.2s var(--ease-out-expo);
 }
 
 .wallpaper-option:hover {
@@ -1176,7 +1247,7 @@
     border-radius: var(--radius);
     background: var(--bg-tertiary);
     cursor: pointer;
-    transition: all 0.2s var(--ease-out-expo);
+    transition: border-color 0.2s var(--ease-out-expo), background-color 0.2s var(--ease-out-expo), box-shadow 0.2s var(--ease-out-expo), transform 0.2s var(--ease-out-expo);
 }
 
 .panorama-theme-option:hover {
@@ -1251,7 +1322,7 @@
     text-align: center;
     font-size: 12px;
     color: var(--text-muted);
-    transition: all 0.2s ease;
+    transition: border-color 0.2s var(--ease-out-expo), background-color 0.2s var(--ease-out-expo), color 0.2s var(--ease-out-expo);
     cursor: pointer;
 }
 
@@ -1267,20 +1338,23 @@
 
 #app.wp-light .sidebar {
     background: rgba(20, 20, 20, 0.88);
-    backdrop-filter: blur(12px) saturate(1.3);
-    -webkit-backdrop-filter: blur(12px) saturate(1.3);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    contain: paint;
 }
 
 #app.wp-light .card {
     background: rgba(20, 20, 20, 0.75);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
+    contain: paint;
 }
 
 #app.wp-light .title-bar {
     background: rgba(20, 20, 20, 0.8);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    contain: paint;
 }
 
 #app.wp-light .nav-item {
@@ -1355,18 +1429,21 @@
     background: rgba(20, 20, 20, 0.75);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
+    contain: paint;
 }
 
 #app.wp-light .home-hero {
     background: linear-gradient(135deg, rgba(20, 20, 20, 0.75), rgba(30, 30, 30, 0.6));
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
+    contain: paint;
 }
 
 #app.wp-light .toast {
     background: rgba(20, 20, 20, 0.85);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    contain: paint;
 }
 
 #app.wp-light .mod-item,
@@ -1388,24 +1465,28 @@
     background: rgba(20, 20, 20, 0.75);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
+    contain: paint;
 }
 
 #app.wp-dark .sidebar {
     background: rgba(10, 10, 10, 0.88);
-    backdrop-filter: blur(12px) saturate(1.3);
-    -webkit-backdrop-filter: blur(12px) saturate(1.3);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    contain: paint;
 }
 
 #app.wp-dark .card {
     background: rgba(10, 10, 10, 0.75);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
+    contain: paint;
 }
 
 #app.wp-dark .title-bar {
     background: rgba(10, 10, 10, 0.8);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    contain: paint;
 }
 
 #app.wp-dark input,
@@ -1439,18 +1520,21 @@
     background: rgba(10, 10, 10, 0.75);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
+    contain: paint;
 }
 
 #app.wp-dark .home-hero {
     background: linear-gradient(135deg, rgba(10, 10, 10, 0.75), rgba(20, 20, 20, 0.6));
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
+    contain: paint;
 }
 
 #app.wp-dark .toast {
     background: rgba(10, 10, 10, 0.85);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    contain: paint;
 }
 
 #app.wp-dark .mod-item,
@@ -1472,13 +1556,14 @@
     background: rgba(10, 10, 10, 0.75);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
+    contain: paint;
 }
 
 /* 全景模式下自定义下拉框适配 */
 #app.wp-light .custom-select-dropdown,
 #app.wp-dark .custom-select-dropdown {
-    backdrop-filter: blur(12px) saturate(1.3);
-    -webkit-backdrop-filter: blur(12px) saturate(1.3);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
 }
 
@@ -1678,7 +1763,7 @@
     border: 1px solid var(--border);
     border-radius: var(--radius);
     cursor: pointer;
-    transition: all var(--transition);
+    transition: border-color var(--transition), background-color var(--transition), box-shadow var(--transition);
 }
 
 .ds-item:hover {
@@ -1694,7 +1779,7 @@
     border-radius: 50%;
     background: transparent;
     cursor: pointer;
-    transition: all var(--transition);
+    transition: border-color var(--transition), background-color var(--transition), box-shadow var(--transition);
     flex-shrink: 0;
 }
 
@@ -1737,7 +1822,7 @@
     border: 1px solid var(--border);
     border-radius: var(--radius);
     cursor: pointer;
-    transition: all var(--transition);
+    transition: border-color var(--transition), background-color var(--transition), box-shadow var(--transition);
 }
 
 .loader-card:hover {
@@ -1839,7 +1924,7 @@
     border: 1px solid var(--border);
     border-radius: var(--radius);
     cursor: pointer;
-    transition: all var(--transition);
+    transition: border-color var(--transition), background-color var(--transition), box-shadow var(--transition);
 }
 
 .lver-item:hover {
@@ -2112,7 +2197,7 @@
     font-size: 12px;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: background-color 0.2s var(--ease-out-expo), color 0.2s var(--ease-out-expo);
     white-space: nowrap;
 }
 
@@ -2256,7 +2341,7 @@
     border: 1px solid var(--border);
     border-radius: 20px;
     cursor: pointer;
-    transition: all var(--transition-fast);
+    transition: border-color var(--transition-fast), background-color var(--transition-fast), color var(--transition-fast);
 }
 
 .md-vtab:hover {
@@ -2283,7 +2368,7 @@
     border: 1px solid var(--border);
     border-radius: var(--radius);
     overflow: hidden;
-    transition: all var(--transition);
+    transition: border-color var(--transition);
 }
 
 .mdv-group.expanded {
@@ -2446,7 +2531,7 @@
     font-weight: 500;
     cursor: pointer;
     border-radius: var(--radius);
-    transition: all var(--transition);
+    transition: background-color var(--transition), color var(--transition);
     text-align: left;
 }
 
@@ -2493,7 +2578,7 @@
     font-weight: 500;
     color: var(--text-secondary);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: background-color 0.2s var(--ease-out-expo), color 0.2s var(--ease-out-expo), box-shadow 0.2s var(--ease-out-expo);
 }
 .lan-tab:hover {
     color: var(--text-primary);

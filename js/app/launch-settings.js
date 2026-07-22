@@ -377,8 +377,10 @@ async function selectTheme(element) {
   element.classList.add('active');
 
   const theme = element.dataset.theme;
+  const isCustom = theme === 'custom';
+
   document.documentElement.setAttribute('data-theme', theme);
-  document.documentElement.classList.toggle('dark-theme', theme === 'dark');
+  document.documentElement.classList.toggle('dark-theme', theme === 'dark' || isCustom);
   document.documentElement.classList.toggle('light-theme', theme === 'light');
 
   const app = document.getElementById('app');
@@ -386,17 +388,38 @@ async function selectTheme(element) {
     app.classList.remove('wp-light', 'wp-dark');
   }
 
-  document.documentElement.style.setProperty('--accent', theme === 'dark' ? '#ffffff' : '#1a1a1a');
-  document.documentElement.style.setProperty('--accent-hover', theme === 'dark' ? '#d0d0d0' : '#333333');
-  document.documentElement.style.setProperty('--accent-rgb', theme === 'dark' ? '255, 255, 255' : '26, 26, 26');
+  if (typeof toggleCustomThemeColorGroup === 'function') {
+    toggleCustomThemeColorGroup(isCustom);
+  }
+
+  if (isCustom) {
+    // 自定义主题色：根据保存的颜色/深浅模式动态生成整套主题变量
+    const savedColor = typeof getSavedCustomThemeColor === 'function'
+      ? await getSavedCustomThemeColor()
+      : '#4c8dff';
+    const isLight = typeof getSavedCustomThemeLight === 'function'
+      ? await getSavedCustomThemeLight()
+      : false;
+    if (typeof applyCustomThemeColor === 'function') {
+      await applyCustomThemeColor(savedColor, { save: false, isLight });
+    }
+    if (typeof syncCustomThemeLightModeUI === 'function') {
+      syncCustomThemeLightModeUI(isLight);
+    }
+  } else {
+    if (typeof clearCustomThemeVars === 'function') clearCustomThemeVars();
+    document.documentElement.style.setProperty('--accent', theme === 'dark' ? '#ffffff' : '#1a1a1a');
+    document.documentElement.style.setProperty('--accent-hover', theme === 'dark' ? '#d0d0d0' : '#333333');
+    document.documentElement.style.setProperty('--accent-rgb', theme === 'dark' ? '255, 255, 255' : '26, 26, 26');
+  }
 
   if (typeof updateWallpaperTheme === 'function') {
-    updateWallpaperTheme(theme === 'dark');
+    updateWallpaperTheme(theme === 'dark' || isCustom);
   }
 
   const editorIframe = document.getElementById('editor-iframe');
   if (editorIframe && editorIframe.contentWindow) {
-    editorIframe.contentWindow.postMessage({ type: 'editor:set-theme', theme: theme }, '*');
+    editorIframe.contentWindow.postMessage({ type: 'editor:set-theme', theme: isCustom ? 'dark' : theme }, '*');
   }
 
   try {

@@ -854,12 +854,55 @@ async function loadSkinSelector(acc) {
   const container = document.getElementById('acct-skin-grid');
   const section = document.getElementById('acct-detail-skins');
   if (!container || !section) return;
-  if (acc.type !== 'offline') {
+  if (acc.type !== 'offline' && acc.type !== 'microsoft') {
     section.style.display = 'none';
     return;
   }
   section.style.display = '';
   container.innerHTML = '';
+
+  // 微软账户：只显示本地导入的皮肤库
+  if (acc.type === 'microsoft') {
+    try {
+      const resp = await fetch(`/api/ms-skins/local?accountId=${encodeURIComponent(acc.id)}`);
+      const data = await resp.json();
+      if (data.success && data.skins && data.skins.length > 0) {
+        data.skins.forEach(skin => {
+          const div = document.createElement('div');
+          div.className = 'acct-skin-item';
+          div.title = `${skin.name}（点击应用到账户）`;
+          div.onclick = () => applyMsSkin(skin.id);
+          const canvas = document.createElement('canvas');
+          canvas.width = 8;
+          canvas.height = 8;
+          canvas.style.width = '100%';
+          canvas.style.height = '100%';
+          canvas.style.imageRendering = 'pixelated';
+          div.appendChild(canvas);
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = function() {
+            const ctx = canvas.getContext('2d');
+            ctx.imageSmoothingEnabled = false;
+            ctx.drawImage(img, 8, 8, 8, 8, 0, 0, 8, 8);
+          };
+          img.src = `/api/ms-skins/file?accountId=${encodeURIComponent(acc.id)}&skinId=${encodeURIComponent(skin.id)}&_=${Date.now()}`;
+          // 长按或右键删除
+          div.oncontextmenu = (e) => { e.preventDefault(); deleteMsSkin(skin.id, skin.name); };
+          container.appendChild(div);
+        });
+      } else {
+        const empty = document.createElement('div');
+        empty.className = 'acct-skin-empty';
+        empty.style.cssText = 'grid-column:1/-1;padding:12px;text-align:center;color:var(--text-muted);font-size:12px;';
+        empty.textContent = '暂无本地皮肤，点击下方按钮导入';
+        container.appendChild(empty);
+      }
+    } catch (e) {}
+    return;
+  }
+
+  // 离线账户：显示默认皮肤 + 自定义皮肤
   try {
     const resp = await fetch('/api/default-skins');
     const data = await resp.json();
@@ -940,7 +983,7 @@ async function handleSkinUpload(input) {
     input.value = '';
     return;
   }
-  showToast('正在上传…', 'info');
+  showToast('正在导入…', 'info');
   try {
     const fileBase64 = await new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -957,6 +1000,31 @@ async function handleSkinUpload(input) {
     if (modelSelect) {
       modelValue = modelSelect.value || modelSelect.getAttribute('data-model') || 'default';
     }
+
+    // 微软账户：导入到本地皮肤库
+    if (_currentDetailAccount.type === 'microsoft') {
+      const resp = await fetch('/api/ms-skins/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accountId: _currentDetailAccount.id,
+          model: modelValue,
+          fileBase64: fileBase64,
+          name: file.name.replace(/\.png$/i, '')
+        })
+      });
+      const result = await resp.json();
+      if (result.success) {
+        loadSkinSelector(_currentDetailAccount);
+        showToast('皮肤已导入本地库，点击皮肤可应用到账户', 'success');
+      } else {
+        showToast(result.error || '导入失败', 'error');
+      }
+      input.value = '';
+      return;
+    }
+
+    // 离线账户：直接应用
     const resp = await fetch('/api/upload-skin', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -984,6 +1052,61 @@ async function handleSkinUpload(input) {
     showToast('上传失败', 'error');
   }
   input.value = '';
+}
+
+// 微软账户：应用本地皮肤到 Minecraft 官方服务器
+async function applyMsSkin(skinId) {
+  if (!_currentDetailAccount || _currentDetailAccount.type !== 'microsoft') return;
+  showToast('正在上传到 Minecraft 官方…', 'info');
+  try {
+    const resp = await fetch('/api/ms-skins/apply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        accountId: _currentDetailAccount.id,
+        skinId: skinId
+      })
+    });
+    const result = await resp.json();
+    if (result.success) {
+      const accUuid = (_currentDetailAccount.uuid || '').replace(/-/g, '');
+      const skinUrl = `/api/skin-texture?uuid=${accUuid}&_=${Date.now()}`;
+      if (_skinViewer) await _skinViewer.loadSkin(skinUrl);
+      _refreshAccountAvatars();
+      showToast('皮肤已应用到账户', 'success');
+    } else if (result.needRelogin) {
+      showToast('登录已过期，请重新登录微软账户', 'error');
+    } else {
+      showToast(result.error || '应用失败', 'error');
+    }
+  } catch (e) {
+    showToast('应用失败', 'error');
+  }
+}
+
+// 微软账户：删除本地皮肤
+async function deleteMsSkin(skinId, skinName) {
+  if (!_currentDetailAccount || _currentDetailAccount.type !== 'microsoft') return;
+  if (!confirm(`确定要删除皮肤「${skinName}」吗？`)) return;
+  try {
+    const resp = await fetch('/api/ms-skins/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        accountId: _currentDetailAccount.id,
+        skinId: skinId
+      })
+    });
+    const result = await resp.json();
+    if (result.success) {
+      loadSkinSelector(_currentDetailAccount);
+      showToast('已删除', 'success');
+    } else {
+      showToast(result.error || '删除失败', 'error');
+    }
+  } catch (e) {
+    showToast('删除失败', 'error');
+  }
 }
 
 async function startMsAuth() {

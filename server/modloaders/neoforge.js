@@ -101,8 +101,12 @@ function findNeoForgeCoreJars(versionJson, searchBases, gameArgs) {
     return [];
   }
   if (hasPatchedClientLib && _isNewScheme) {
-    console.log(`[findNeoForgeCoreJars] NeoForge ${neoForgeVersion} 使用 --no-mod-manifest，universal jar 由 PathBasedLocator 自动加载，不添加到 classpath`);
-    return [];
+    // NeoForge 20.6+（含 21.x/26.x）使用 --no-mod-manifest 构建 patched jar：
+    // patched jar 只含补丁后的 Minecraft 类，不含 NeoForge mod 类（NeoForgeMod.class 等）。
+    // universal jar 提供 NeoForge mod 类，必须加入 classpath，否则启动时
+    // RequiredSystemFiles 检查找不到 NeoForgeMod.class 会崩溃。
+    // JPMS 冲突由 args-builder.js 的 ignoreList 处理（patched jar 被加入 ignoreList 不作为模块加载）。
+    console.log(`[findNeoForgeCoreJars] NeoForge ${neoForgeVersion} 使用 --no-mod-manifest，需要将 universal jar 加入 classpath 以提供 NeoForge mod 类`);
   }
 
   const result = [];
@@ -154,10 +158,16 @@ function findNeoForgeCoreJars(versionJson, searchBases, gameArgs) {
  * @param {(percent: number, message: string) => void} [onProgress] - 进度回调
  * @returns {Promise<{success: boolean, versionId?: string, libsMissing?: number, error?: string}>} 安装结果
  */
-async function installNeoForge(gameVersion, neoVersion, onProgress = null) {
+async function installNeoForge(gameVersion, neoVersion, onProgress = null, targetVersionId = null) {
   const isLegacy = neoVersion.startsWith('1.20.1-');
   const packageName = isLegacy ? 'forge' : 'neoforge';
-  const versionId = `${gameVersion}-NeoForge-${neoVersion}`;
+  // [CRITICAL FIX - 2026-07-20] 添加 targetVersionId 参数（参考 installForge 的同款修复）。
+  // performInstallation 创建的版本目录名（versionDetails.id）可能与本函数内部默认生成的
+  // versionId（${gameVersion}-NeoForge-${neoVersion}）不一致，例如用户在下载对话框改了版本名。
+  // 不一致会导致：performInstallation 在 A 目录写入原版 JSON（mainClass=net.minecraft.client.main.Main），
+  // 而本函数在 B 目录写入正确的 NeoForge JSON，启动游戏时找到的是 A 目录的原版 JSON，
+  // 游戏表现为原版 MC 而非 NeoForge。调用方（performInstallation）必须传入 versionId 作为 targetVersionId。
+  const versionId = targetVersionId || `${gameVersion}-NeoForge-${neoVersion}`;
 
   try {
     // 1. 确保原版已安装
@@ -232,11 +242,17 @@ async function installNeoForge(gameVersion, neoVersion, onProgress = null) {
     let versionJsonData = null;
     try {
       const versionEntry = zip.getEntry('version.json');
+      console.log(`[NeoForge][DEBUG] zip.getEntry('version.json') = ${versionEntry ? 'EXISTS' : 'NULL'}`);
       if (versionEntry) {
-        versionJsonData = JSON.parse(versionEntry.getData().toString('utf8'));
+        const rawText = versionEntry.getData().toString('utf8');
+        console.log(`[NeoForge][DEBUG] version.json raw length = ${rawText.length}`);
+        versionJsonData = JSON.parse(rawText);
+        console.log(`[NeoForge][DEBUG] parsed versionJsonData: mainClass=${versionJsonData.mainClass}, libs=${(versionJsonData.libraries || []).length}, id=${versionJsonData.id}`);
         console.log(`[NeoForge] 从 installer 中读取 version.json, mainClass=${versionJsonData.mainClass}`);
       }
-    } catch (e) {}
+    } catch (e) {
+      console.error(`[NeoForge][DEBUG] 读取 version.json 异常: ${e.message}\n${e.stack}`);
+    }
 
     // 如果 version.json 不在根目录，尝试从 installProfile.json 里找
     if (!versionJsonData && installProfile) {
@@ -403,12 +419,18 @@ async function installNeoForge(gameVersion, neoVersion, onProgress = null) {
       versionJsonData.arguments.game = ['--launchTarget', 'neoforgeclient', '--fml.neoForgeVersion', neoVersion, '--fml.mcVersion', gameVersion];
     }
 
-    // [CRITICAL FIX - 2026-06-20] inheritsFrom 必须从 versionId 提取纯MC版本号（如 "26.2"），
+    // [CRITICAL FIX - 2026-06-20] inheritsFrom 必须使用纯MC版本号（如 "1.20.1"），
     // 不能直接用 gameVersion 参数！因为 gameVersion 可能被前端传入 "26.2-forge-65.0.0" 这样的值，
     // 导致 inheritsFrom 指向错误的基础版本，NeoForge 启动时 AccessTransformerEngine 找不到方法。
     // 如果此段代码被修改导致 NeoForge 启动报 NoSuchMethodError，请优先检查 inheritsFrom 的值。
+    // [CRITICAL FIX - 2026-07-20] 优先从 gameVersion 提取版本号，而不是 versionId。
+    // 原因：performInstallation 调用时传入的 versionId 可能是用户自定义名称（如 "-T5"），
+    // 无法从中提取 MC 版本号。原回退逻辑 gameVersion.split('.')[0]+'.'+split[1] 会把
+    // "1.20.1" 截断为 "1.20"，导致找不到父版本，natives 加载被跳过，游戏启动崩溃。
+    // 现在优先用 gameVersion，并支持 "1.20.1" 和 "26.2-forge-65.0.0" 两种格式。
+    const mcVerFromGame = gameVersion.match(/^(\d+\.\d+(?:\.\d+)?)/);
     const mcVerFromId = versionId.match(/^(\d+\.\d+(?:\.\d+)?)/);
-    const cleanMcVer = mcVerFromId ? mcVerFromId[1] : gameVersion.split('.')[0] + '.' + (gameVersion.split('.')[1] || '0');
+    const cleanMcVer = mcVerFromGame ? mcVerFromGame[1] : (mcVerFromId ? mcVerFromId[1] : gameVersion);
 
     // [CRITICAL FIX - 2026-07-12] 过滤掉与父版本重复的库（group:artifact 相同的库）。
     // 安装器的 version.json 包含全部库（LWJGL、gson、guava 等），这些库已在父版本中存在。
@@ -445,6 +467,7 @@ async function installNeoForge(gameVersion, neoVersion, onProgress = null) {
       libraries: _filteredLibs,
       arguments: versionJsonData.arguments
     };
+    console.log(`[NeoForge][DEBUG] 构造 versionJson: mainClass=${versionJson.mainClass}, libs=${(versionJson.libraries || []).length}, filteredLibs=${_filteredLibs.length}, versionJsonData.libs=${(versionJsonData.libraries || []).length}`);
 
     // 8. 下载库文件
     if (onProgress) onProgress(0.3, '正在下载NeoForge库文件...');
@@ -533,6 +556,8 @@ async function installNeoForge(gameVersion, neoVersion, onProgress = null) {
     // 9. 写入版本 JSON
     fs.writeFileSync(versionJsonPath, JSON.stringify(versionJson, null, 2));
     versions._invalidateResolvedJsonCache(versionId);
+    console.log(`[NeoForge][DEBUG] 写入磁盘 versionJson: path=${versionJsonPath}, mainClass=${versionJson.mainClass}, libs=${(versionJson.libraries || []).length}, dlFailed=${neoLibFailures}`);
+    console.log(`[NeoForge][DEBUG] versionJson.libraries 前5个: ${(versionJson.libraries || []).slice(0, 5).map(l => l.name).join(', ')}`);
     console.log(`[NeoForge] 版本JSON已生成: ${versionJsonPath}, libs=${(versionJson.libraries || []).length}, dlFailed=${neoLibFailures}`);
 
     // 10. 补全库 + 运行处理器（merge 函数还会下载缺失的库和执行二进制补丁）
@@ -684,14 +709,19 @@ async function mergeNeoForgeLoaderToVersion(versionId, gameVersion, neoVersion, 
   const versionDir = path.join(ctx.dirs.VERSIONS_DIR, versionId);
   const jsonPath = path.join(versionDir, `${versionId}.json`);
   const versionJson = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
+  console.log(`[NeoForge][DEBUG][merge] 读取磁盘 version.json: path=${jsonPath}, mainClass=${versionJson.mainClass}, libs=${(versionJson.libraries || []).length}, id=${versionJson.id}, inheritsFrom=${versionJson.inheritsFrom}`);
+  console.log(`[NeoForge][DEBUG][merge] versionJson.libraries 前5个: ${(versionJson.libraries || []).slice(0, 5).map(l => l.name).join(', ')}`);
 
   // [CRITICAL FIX - 2026-06-20] 同样从 versionId 提取纯净的 MC 版本号。
   // 这个函数在 installNeoForge 之后被调用，负责合并 install_profile.json 中的运行时库。
   // 如果 inheritsFrom 写错（如 "26.2-forge-65.0.0"），launcher 会继承错误的基础版本，
   // 导致 NeoForge 的 access-transformers、earlydisplay 等关键库缺失，启动直接崩溃。
-  const correctGameVersion = gameVersion.match(/^\d+\.\d+/) ? gameVersion.split('.')[0] + '.' + gameVersion.split('.').slice(1).find((p) => /^\d+$/.test(p) && parseInt(p) < 100) || gameVersion.split('.')[0] + '.' + (gameVersion.split('.')[1] || '0') : gameVersion;
-  const mcVerMatch = versionId.match(/^(\d+\.\d+(?:\.\d+)?)/);
-  const mcVer = mcVerMatch ? mcVerMatch[1] : (versionJson.inheritsFrom && versionJson.inheritsFrom.match(/^\d+\.\d+/) ? versionJson.inheritsFrom : correctGameVersion);
+  // [CRITICAL FIX - 2026-07-20] 优先使用传入的 gameVersion 参数，而不是从 versionId 提取。
+  // 原因：performInstallation 调用本函数时传入的 versionId 可能是用户自定义名称（如 "-T5"），
+  // 无法从中提取 MC 版本号。回退到 versionJson.inheritsFrom 时只匹配前两段数字（如 "1.20"），
+  // 导致 1.20.1 被错误地截断为 1.20，找不到父版本，natives 加载被跳过，游戏启动崩溃。
+  // 现在直接用调用方传入的 gameVersion（应为完整版本号如 "1.20.1"），更可靠。
+  const mcVer = gameVersion || versionJson.inheritsFrom || versionId;
   versionJson.inheritsFrom = mcVer;
   console.log(`[NeoForge] inheritsFrom set to: ${mcVer} (gameVersion was: ${gameVersion})`);
 
@@ -1145,6 +1175,8 @@ async function mergeNeoForgeLoaderToVersion(versionId, gameVersion, neoVersion, 
 
   fs.writeFileSync(jsonPath, JSON.stringify(versionJson, null, 2));
   versions._invalidateResolvedJsonCache(versionId);
+  console.log(`[NeoForge][DEBUG][merge] 写入磁盘 version.json: path=${jsonPath}, mainClass=${versionJson.mainClass}, libs=${(versionJson.libraries || []).length}`);
+  console.log(`[NeoForge][DEBUG][merge] versionJson.libraries 前5个: ${(versionJson.libraries || []).slice(0, 5).map(l => l.name).join(', ')}`);
   console.log(`[NeoForge] Loader merged: ${versionId}, libs=${(versionJson.libraries || []).length}, mainClass=${versionJson.mainClass}`);
 }
 

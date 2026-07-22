@@ -162,3 +162,13 @@ eslint.config.js
 .npmrc
 build-tools/
 # test files are tracked intentionally
+
+# 临时调试/检查文件
+.dev-data/
+.tmp-test-modpack.cjs
+check-installer-output.txt
+check-ip-output.txt
+check-libs-output.txt
+check-ip.js
+check-libs.js
+test-screenshots/

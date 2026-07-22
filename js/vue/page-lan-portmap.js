@@ -48,14 +48,44 @@ const PageLanPortmap = {
               </button>
             </div>
 
-            <!-- 最大人数 -->
-            <div style="margin-bottom:8px">
-              <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em">最大人数</div>
-              <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;border:1px solid var(--border);border-radius:8px;background:var(--bg-primary)">
-                <span style="font-size:13px;color:var(--text-secondary);min-width:50px">人数</span>
-                <input type="number" id="redstone-max-players" value="5" min="1" max="99" style="flex:1;padding:0;border:none;background:transparent;color:var(--text-primary);font-size:14px;text-align:right;outline:none">
-                <span style="font-size:12px;color:var(--text-muted)">/ 99</span>
+            <!-- 对外开放 -->
+            <div class="rs-form-row">
+              <div class="rs-switch-row" onclick="var s=document.getElementById('redstone-is-open'); s.checked=!s.checked; s.dispatchEvent(new Event('change'));">
+                <div class="rs-switch-label">
+                  <span>对外开放</span>
+                </div>
+                <div id="redstone-is-open-switch" class="toggle-switch active" onclick="event.stopPropagation(); var s=document.getElementById('redstone-is-open'); s.checked=!s.checked; s.dispatchEvent(new Event('change'));">
+                  <input type="checkbox" id="redstone-is-open" checked style="display:none" onchange="document.getElementById('redstone-is-open-switch').classList.toggle('active', this.checked)">
+                </div>
               </div>
+              <div class="rs-form-desc">开启后，其他玩家可通过联机大厅搜索并加入你的房间；仅与朋友联机时建议关闭</div>
+            </div>
+
+            <!-- 房间标题 -->
+            <div class="rs-form-row">
+              <div class="rs-title-row" id="redstone-title-row">
+                <div class="rs-switch-label">
+                  <span>房间标题</span>
+                </div>
+                <div class="rs-title-input-wrap">
+                  <input type="text" id="redstone-room-title" maxlength="8" placeholder="输入标题" oninput="updateRedstoneTitleCount(this)" onfocus="document.getElementById('redstone-title-row').classList.add('focused')" onblur="document.getElementById('redstone-title-row').classList.remove('focused')">
+                  <span id="redstone-title-count" class="rs-title-count">0/8</span>
+                </div>
+              </div>
+              <div class="rs-form-desc">为你的房间起个名字，最多 8 个字符，其他玩家会在联机大厅看到这个名字</div>
+            </div>
+
+            <!-- 允许离线账户 -->
+            <div class="rs-form-row">
+              <div class="rs-switch-row" onclick="var s=document.getElementById('redstone-allow-offline'); s.checked=!s.checked; s.dispatchEvent(new Event('change'));">
+                <div class="rs-switch-label">
+                  <span>允许离线账户</span>
+                </div>
+                <div id="redstone-allow-offline-switch" class="toggle-switch" onclick="event.stopPropagation(); var s=document.getElementById('redstone-allow-offline'); s.checked=!s.checked; s.dispatchEvent(new Event('change'));">
+                  <input type="checkbox" id="redstone-allow-offline" style="display:none" onchange="document.getElementById('redstone-allow-offline-switch').classList.toggle('active', this.checked)">
+                </div>
+              </div>
+              <div class="rs-form-desc">开启后，未购买正版的玩家也能进入房间；关闭则仅允许正版账户加入</div>
             </div>
 
             <!-- 开启/关闭隧道按钮 -->
@@ -70,6 +100,7 @@ const PageLanPortmap = {
               <li>按 ESC → 对局域网开放（建议固定端口 25565）</li>
               <li>在本页选择服务器，点击<strong>"开启隧道"</strong></li>
               <li>联机地址<strong>自动复制到剪贴板</strong>，发给朋友即可加入</li>
+              <li>单隧道带宽上限 4 Mbps，约支持 5-8 人游玩</li>
             </ol>
           </div>
         </div>

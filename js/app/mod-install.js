@@ -219,7 +219,6 @@ function showModpackInstallModal(fileName, sessionId) {
   const taskId = 'modpack-' + sessionId;
   const iconUrl = currentModDetailData?.icon || '';
   dlManager.add(taskId, fileName || '整合包安装', 'modpack', sessionId, iconUrl);
-  navigateToPage('downloads');
 
   let unknownRetries = 0;
   const poll = async () => {
@@ -685,7 +684,6 @@ function showModDownloadModal(fileName, sessionId, savePath, iconUrl) {
   const taskId = 'mod-' + sessionId;
   const resolvedIcon = iconUrl || currentModDetailData?.icon || '';
   dlManager.add(taskId, fileName || '模组下载', 'mod', sessionId, resolvedIcon);
-  navigateToPage('downloads');
 
   modDownloadPollTimers.forEach(t => clearTimeout(t));
   modDownloadPollTimers = [];
@@ -841,8 +839,7 @@ async function batchDownloadMods() {
   });
   dlManager.add(batchTaskId, `批量下载 ${total} 个模组`, 'mod', '');
   dlManager.update(batchTaskId, { files: files });
-  navigateToPage('downloads');
-  
+
   let completed = 0;
   let failed = 0;
   

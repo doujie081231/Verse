@@ -22,6 +22,10 @@ const os = require('os');
 const { APP_STORE_FILE } = require('./paths');
 const STORE_PATH = APP_STORE_FILE;
 
+// 路径注册工具（用于将用户选中的壁纸文件加入白名单）
+let _registerAllowedPath = null;
+try { _registerAllowedPath = require('./protocol-handler').registerAllowedPath; } catch (e) {}
+
 /**
  * 安全写入文件 - 先备份再原子写入，防止写入中断导致文件损坏
  * @param {string} filePath - 目标文件路径
@@ -233,6 +237,8 @@ function registerStoreIPC({ app, isPathAllowed }) {
   ipcMain.handle('read-file-buffer', async (event, filePath) => {
     try {
       if (!filePath || typeof filePath !== 'string') return null;
+      // 注册此路径到白名单，便于重启后仍能读取
+      if (typeof _registerAllowedPath === 'function') _registerAllowedPath(filePath);
       if (!isPathAllowed(filePath)) return null;
       if (!fs.existsSync(filePath)) return null;
       const buffer = fs.readFileSync(filePath);

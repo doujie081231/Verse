@@ -99,7 +99,7 @@
     border-radius: var(--radius);
     cursor: pointer;
     font-size: 13px;
-    transition: all var(--transition);
+    transition: border-color var(--transition), background-color var(--transition), color var(--transition);
 }
 
 .loader-type-btn:hover {
@@ -187,8 +187,8 @@
     max-width: 420px;
     min-width: 200px;
     text-align: center;
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
     border: 1px solid var(--border);
     pointer-events: auto;
     background: var(--bg-card-glass);

@@ -167,13 +167,22 @@ module.exports = {
                 let mcVersion = '';
                 let packName = '';
 
-                let versionData;
+                // [P1 FIX - 2026-07-21] 并行化串行 API 请求：版本数据和项目信息同时获取
+                // 之前两次 await fetchJSON 是串行的，UI 实测前 3-4 秒 chunks=0/0 空等
+                // modpack 场景下 projectInfo 只是为了拿 title，完全可以和 versionData 并行
+                const _isModpackFetch = rdType === 'modpack';
+                let _versionPromise;
                 if (rdVersionId) {
-                    versionData = await http.fetchJSON(`${MODRINTH_API}/version/${rdVersionId}`);
+                    _versionPromise = http.fetchJSON(`${MODRINTH_API}/version/${rdVersionId}`);
                 } else {
-                    const versions = await http.fetchJSON(`${MODRINTH_API}/project/${rdProjectId}/version?limit=1`);
-                    versionData = versions?.[0];
+                    _versionPromise = http.fetchJSON(`${MODRINTH_API}/project/${rdProjectId}/version?limit=1`)
+                        .then(versions => versions?.[0]);
                 }
+                const _projectInfoPromise = _isModpackFetch
+                    ? http.fetchJSON(`${MODRINTH_API}/project/${rdProjectId}`).catch(() => null)
+                    : Promise.resolve(null);
+
+                const [versionData, projectInfo] = await Promise.all([_versionPromise, _projectInfoPromise]);
 
                 if (!versionData) { sendError(res, '未找到版本信息，请检查网络连接或稍后重试'); return; }
 
@@ -195,10 +204,9 @@ module.exports = {
                     return;
                 }
 
-                // 获取整合包的 Minecraft 版本信息
-                if (rdType === 'modpack') {
+                // 获取整合包的 Minecraft 版本信息（projectInfo 已并行获取，直接使用）
+                if (_isModpackFetch) {
                     mcVersion = versionData.game_versions?.[0] || '';
-                    const projectInfo = await http.fetchJSON(`${MODRINTH_API}/project/${rdProjectId}`).catch(() => null);
                     packName = projectInfo?.title || rdProjectId;
                 }
 
@@ -233,6 +241,11 @@ module.exports = {
                                 const session = ctx.sessions.modDownloadSessions.get(sessionId);
                                 if (session) {
                                     if (session.status === 'cancelled') { session._abortController?.abort(); return; }
+                                    // [P0 FIX - 2026-07-21] 防止 Promise.all 竞态：catch 块已把 status 置为 failed/completed，
+                                    // 但其他仍在运行的分块的 onProgress 回调会继续执行，覆盖 progress 和 message，
+                                    // 导致前端拿到 status=failed 但 message 还是旧进度消息（如"下载 xxx 59%"）。
+                                    // 修复：status 已是终态时直接 return，不再更新 progress/message。
+                                    if (session.status === 'failed' || session.status === 'completed') return;
                                     const rawPct = Math.round(p.progress || 0);
                                     const pct = Math.max(rawPct, _mpMaxPct);
                                     if (rawPct >= _mpMaxPct) _mpMaxPct = rawPct;
@@ -272,12 +285,15 @@ module.exports = {
                         } catch (e) { console.warn(`[Modpack] 测速失败，使用默认顺序: ${e.message}`); }
 
                         // Dynamic chunk count based on file size
-                        let _maxChunks = 16;
+                        // [P0 FIX - 2026-07-21] 恢复 32 分块，配合 allSettled + 延后重试 + 单流回退
+                        // 实测：32 分块初期速度最快(1-2MB/s)，虽可能触发 CDN 限速，
+                        // 但 allSettled 防止分块失败导致整体失败，延后重试让分块有机会恢复，
+                        // 单流回退作为最后保障。综合效果优于固定低分块数。
+                        let _maxChunks = 32;
                         if (fileSize > 0) {
-                            if (fileSize <= 1 * 1024 * 1024) _maxChunks = 1;
-                            else if (fileSize <= 10 * 1024 * 1024) _maxChunks = 4;
-                            else if (fileSize <= 50 * 1024 * 1024) _maxChunks = 8;
-                            else _maxChunks = 16;
+                            if (fileSize <= 1 * 1024 * 1024) _maxChunks = 2;
+                            else if (fileSize <= 10 * 1024 * 1024) _maxChunks = 16;
+                            else _maxChunks = 32;
                         }
 
                         // 单次调用，重试和镜像切换由 downloadFileChunked 内部处理
@@ -305,6 +321,16 @@ module.exports = {
                                 return;
                             }
                             console.warn(`[Modpack] 下载失败: ${e.message}`);
+                            // [P0 DIAG - 2026-07-21] 把真实错误传给前端，便于诊断
+                            // 之前固定写"整合包文件下载失败，请检查网络连接后重试"，
+                            // 看不到是分块失败、低速检测、SHA1 不匹配还是合并失败
+                            const sErr = ctx.sessions.modDownloadSessions.get(sessionId);
+                            if (sErr && sErr.status !== 'cancelled') {
+                                sErr.status = 'failed'; sErr.progress = 100;
+                                sErr.message = `整合包下载失败: ${e.message}`;
+                            }
+                            clearTimeout(_mpOverallTimer);
+                            return;
                         }
                         clearTimeout(_mpOverallTimer);
 

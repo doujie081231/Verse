@@ -87,7 +87,6 @@
             DynamicIsland.show(file.name || '整合包导入');
         } else if (typeof dlManager !== 'undefined') {
             dlManager.add(taskId, file.name || '整合包导入', 'modpack', sessionId, iconUrl);
-            if (typeof navigateToPage === 'function') navigateToPage('downloads');
         }
 
         if (window.electronAPI && window.electronAPI.onImportProgress) {

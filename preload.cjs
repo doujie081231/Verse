@@ -53,6 +53,9 @@ let updaterStatusCallbackWrapper = null;
  * @namespace electronAPI
  */
 contextBridge.exposeInMainWorld('electronAPI', {
+  /** 通知主进程尽早显示窗口（不等 defer 脚本执行完） */
+  showWindowEarly: () => ipcRenderer.send('window-show-early'),
+
   /** 最小化窗口 */
   minimize: () => ipcRenderer.send('window-minimize'),
 
@@ -597,7 +600,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     resetApikey: () => ipcRenderer.invoke('redstone:apikey-reset'),
     /**
      * 启动隧道
-     * @param {Object} params - { serverAddress, maxPlayers, gamePort }
+     * @param {Object} params - { serverAddress, maxPlayers, gamePort, title, isOpen, allowOffline }
      * @returns {Promise<{ok:boolean, address?:string, listenPort?:number, error?:string}>}
      */
     start: (params) => ipcRenderer.invoke('redstone:start', params),
@@ -613,7 +616,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     scanPort: () => ipcRenderer.invoke('redstone:scan-port'),
     /**
      * 查询当前状态
-     * @returns {Promise<{ok:boolean, running:boolean, address?:string, listenPort?:number, apikey?:string}>}
+     * @returns {Promise<{ok:boolean, running:boolean, address?:string, listenPort?:number, title?:string, isOpen?:boolean, allowOffline?:boolean, apikey?:string}>}
      */
     getStatus: () => ipcRenderer.invoke('redstone:status'),
     /**
@@ -640,6 +643,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
      * @returns {void}
      */
     onReconnected: (callback) => ipcRenderer.on('redstone:reconnected', (event, info) => callback(info || {})),
+  },
+
+  /**
+   * 私人服务器管理
+   * @namespace privateServer
+   */
+  privateServer: {
+    /** 获取服务器列表 */
+    list: () => ipcRenderer.invoke('private-server:list'),
+    /** 覆盖保存服务器列表 */
+    save: (servers) => ipcRenderer.invoke('private-server:save', servers),
+    /** 添加服务器 */
+    add: (server) => ipcRenderer.invoke('private-server:add', server),
+    /** 更新服务器 */
+    update: (server) => ipcRenderer.invoke('private-server:update', server),
+    /** 删除服务器 */
+    delete: (id) => ipcRenderer.invoke('private-server:delete', id),
+    /** 检测服务器在线状态 */
+    check: (address) => ipcRenderer.invoke('private-server:check', address),
+    /** 复制地址到剪贴板 */
+    copyAddress: (address) => ipcRenderer.invoke('private-server:copy-address', address),
   },
 
   /** 当前运行平台（如 'win32' / 'darwin' / 'linux'） */

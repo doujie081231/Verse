@@ -371,5 +371,187 @@ module.exports = {
             for (const f of avFiles) { if (fs.existsSync(f)) fs.unlinkSync(f); }
             sendJSON(res, { success: true });
         });
+
+        // ====================================================================
+        // 微软账户皮肤库管理
+        // 存储目录：DATA_DIR/ms-skins/<accountId>/
+        // 元数据文件：DATA_DIR/ms-skins/<accountId>/meta.json
+        // ====================================================================
+        const MS_SKINS_DIR = path.join(DATA_DIR, 'ms-skins');
+        const https = require('https');
+
+        function getMsSkinDir(accountId) {
+            const dir = path.join(MS_SKINS_DIR, accountId);
+            utils.ensureDir(path.join(dir, 'x'));
+            return dir;
+        }
+
+        function loadMsSkinMeta(accountId) {
+            const dir = getMsSkinDir(accountId);
+            const metaFile = path.join(dir, 'meta.json');
+            try {
+                if (fs.existsSync(metaFile)) return JSON.parse(fs.readFileSync(metaFile, 'utf8'));
+            } catch (_) {}
+            return { skins: [] };
+        }
+
+        function saveMsSkinMeta(accountId, meta) {
+            const dir = getMsSkinDir(accountId);
+            const metaFile = path.join(dir, 'meta.json');
+            fs.writeFileSync(metaFile, JSON.stringify(meta, null, 2), 'utf8');
+        }
+
+        // GET /api/ms-skins/local - 获取本地皮肤库
+        registerRoute('GET', '/api/ms-skins/local', async (req, res, parsedUrl) => {
+            const accountId = parsedUrl.query.accountId || '';
+            if (!accountId) { sendError(res, 'Missing accountId', 400); return; }
+            const accList = accounts.loadAccounts();
+            const acc = accList.find(a => a.id === accountId);
+            if (!acc) { sendError(res, 'Account not found', 404); return; }
+            if (acc.type !== 'microsoft') { sendError(res, 'Only microsoft account supported', 400); return; }
+            const meta = loadMsSkinMeta(accountId);
+            sendJSON(res, { success: true, skins: meta.skins || [] });
+        });
+
+        // GET /api/ms-skins/file - 获取本地皮肤文件
+        registerRoute('GET', '/api/ms-skins/file', async (req, res, parsedUrl) => {
+            const accountId = parsedUrl.query.accountId || '';
+            const skinId = parsedUrl.query.skinId || '';
+            if (!accountId || !skinId) { sendError(res, 'Missing params', 400); return; }
+            const meta = loadMsSkinMeta(accountId);
+            const skin = (meta.skins || []).find(s => s.id === skinId);
+            if (!skin) { sendError(res, 'Skin not found', 404); return; }
+            const dir = getMsSkinDir(accountId);
+            const filePath = path.join(dir, skin.file);
+            if (!fs.existsSync(filePath)) { sendError(res, 'File not found', 404); return; }
+            const buf = fs.readFileSync(filePath);
+            res.writeHead(200, {
+                'Content-Type': 'image/png',
+                'Content-Length': buf.length,
+                'Cache-Control': 'no-cache'
+            });
+            res.end(buf);
+        });
+
+        // POST /api/ms-skins/import - 导入皮肤到本地库
+        registerRoute('POST', '/api/ms-skins/import', async (req, res, parsedUrl) => {
+            const data = await readBody(req);
+            const { accountId, fileBase64, model, name } = data;
+            if (!accountId || !fileBase64) { sendError(res, 'Missing accountId or fileBase64', 400); return; }
+            const accList = accounts.loadAccounts();
+            const acc = accList.find(a => a.id === accountId);
+            if (!acc) { sendError(res, 'Account not found', 404); return; }
+            if (acc.type !== 'microsoft') { sendError(res, 'Only microsoft account supported', 400); return; }
+            let skinBuf;
+            try { skinBuf = Buffer.from(fileBase64, 'base64'); } catch (e) { sendError(res, 'Invalid base64', 400); return; }
+            const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4E, 0x47]);
+            if (!skinBuf.slice(0, 4).equals(PNG_MAGIC)) { sendError(res, 'File must be PNG', 400); return; }
+            let metadata;
+            try {
+                const sharpLib = require('sharp');
+                metadata = await sharpLib(skinBuf).metadata();
+                if (metadata.width !== 64 || (metadata.height !== 64 && metadata.height !== 32)) {
+                    skinBuf = await sharpLib(skinBuf).resize(64, 64, { kernel: 'nearest' }).png().toBuffer();
+                    metadata = await sharpLib(skinBuf).metadata();
+                }
+            } catch (e) { sendError(res, 'Invalid PNG: ' + e.message, 400); return; }
+            const dir = getMsSkinDir(accountId);
+            const skinId = `skin_${Date.now()}`;
+            const fileName = `${skinId}.png`;
+            const filePath = path.join(dir, fileName);
+            fs.writeFileSync(filePath, skinBuf);
+            const meta = loadMsSkinMeta(accountId);
+            meta.skins.push({
+                id: skinId,
+                name: name || `自定义皮肤 ${meta.skins.length + 1}`,
+                file: fileName,
+                model: model === 'slim' ? 'slim' : 'default',
+                importedAt: new Date().toISOString()
+            });
+            saveMsSkinMeta(accountId, meta);
+            sendJSON(res, { success: true, skin: meta.skins[meta.skins.length - 1] });
+        });
+
+        // POST /api/ms-skins/apply - 应用本地皮肤到 Minecraft 官方
+        registerRoute('POST', '/api/ms-skins/apply', async (req, res, parsedUrl) => {
+            const data = await readBody(req);
+            const { accountId, skinId } = data;
+            if (!accountId || !skinId) { sendError(res, 'Missing accountId or skinId', 400); return; }
+            const accList = accounts.loadAccounts();
+            const acc = accList.find(a => a.id === accountId);
+            if (!acc) { sendError(res, 'Account not found', 404); return; }
+            if (acc.type !== 'microsoft') { sendError(res, 'Only microsoft account supported', 400); return; }
+            if (!acc.accessToken) { sendError(res, '账户未登录，请重新登录微软账户', 401); return; }
+            const meta = loadMsSkinMeta(accountId);
+            const skin = (meta.skins || []).find(s => s.id === skinId);
+            if (!skin) { sendError(res, 'Skin not found', 404); return; }
+            const dir = getMsSkinDir(accountId);
+            const filePath = path.join(dir, skin.file);
+            if (!fs.existsSync(filePath)) { sendError(res, 'Skin file missing', 404); return; }
+            const skinBuf = fs.readFileSync(filePath);
+            const skinBase64 = skinBuf.toString('base64');
+            const payload = JSON.stringify({
+                variant: skin.model === 'slim' ? 'slim' : 'classic',
+                type: 'imported',
+                data: skinBase64
+            });
+            const uploadResult = await new Promise((resolve) => {
+                const upReq = https.request('https://api.minecraftservices.com/minecraft/profile/skins', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${acc.accessToken}`,
+                        'Content-Type': 'application/json',
+                        'Content-Length': Buffer.byteLength(payload)
+                    }
+                }, (upRes) => {
+                    let upBody = '';
+                    upRes.on('data', c => upBody += c);
+                    upRes.on('end', () => {
+                        resolve({ status: upRes.statusCode, body: upBody });
+                    });
+                });
+                upReq.on('error', (e) => resolve({ status: 0, body: e.message }));
+                upReq.write(payload);
+                upReq.end();
+            });
+            if (uploadResult.status === 200) {
+                let respData;
+                try { respData = JSON.parse(uploadResult.body); } catch (e) { respData = {}; }
+                const newSkinUrl = respData?.skins?.find(s => s.state === 'ACTIVE')?.url || null;
+                if (newSkinUrl) {
+                    acc.skinUrl = newSkinUrl;
+                    acc.skinModel = skin.model;
+                    accounts.saveAccounts(accList);
+                }
+                const cleanUuid = (acc.uuid || '').replace(/-/g, '');
+                for (const key of AVATAR_CACHE.keys()) {
+                    if (key.includes(cleanUuid)) AVATAR_CACHE.delete(key);
+                }
+                sendJSON(res, { success: true, skinUrl: newSkinUrl });
+            } else if (uploadResult.status === 401) {
+                sendJSON(res, { success: false, error: '登录已过期，请重新登录微软账户', needRelogin: true }, 401);
+            } else {
+                let errMsg = `上传失败 (HTTP ${uploadResult.status})`;
+                try { const e = JSON.parse(uploadResult.body); if (e.errorMessage) errMsg = e.errorMessage; } catch (_) {}
+                sendJSON(res, { success: false, error: errMsg }, 500);
+            }
+        });
+
+        // POST /api/ms-skins/delete - 删除本地皮肤
+        registerRoute('POST', '/api/ms-skins/delete', async (req, res, parsedUrl) => {
+            const data = await readBody(req);
+            const { accountId, skinId } = data;
+            if (!accountId || !skinId) { sendError(res, 'Missing accountId or skinId', 400); return; }
+            const meta = loadMsSkinMeta(accountId);
+            const idx = (meta.skins || []).findIndex(s => s.id === skinId);
+            if (idx === -1) { sendError(res, 'Skin not found', 404); return; }
+            const skin = meta.skins[idx];
+            const dir = getMsSkinDir(accountId);
+            const filePath = path.join(dir, skin.file);
+            try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch (_) {}
+            meta.skins.splice(idx, 1);
+            saveMsSkinMeta(accountId, meta);
+            sendJSON(res, { success: true });
+        });
     }
 };

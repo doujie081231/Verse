@@ -232,6 +232,56 @@ async function doLaunch(versionId, versionJson, settings, account, externalVersi
   }
 
   const nativesDir = natives.getNativesFolder(versionId);
+
+  // [P0 FIX - 2026-07-21] 启动前检查 missing_mods_checker.json，自动补全缺失文件
+  // Better MC 等整合包内置 MissingModsChecker mod，启动时检查 config/missing_mods_checker.json
+  // 列出的必需文件，缺失会弹窗阻止启动。这里在启动前主动扫描，缺的自动从 CurseForge 补下
+  try {
+    const checkerPath = path.join(gameDir, 'config', 'missing_mods_checker.json');
+    if (fs.existsSync(checkerPath)) {
+      const shared = require('../modpack/shared');
+      const rawList = JSON.parse(fs.readFileSync(checkerPath, 'utf8'));
+      // 规范化数据（提取 fileId、校验 destination 等）
+      const normalizedItems = shared._normalizeMissingModsItems(rawList);
+      if (normalizedItems.length > 0) {
+        // 检查每个文件是否存在且完整
+        // [P0 FIX - 2026-07-21] 只使用精确匹配，禁用宽松前缀匹配
+        // 之前的前缀匹配只用 pattern 第一个 '-' 之前的片段（如 "Mandala's GUI "），
+        // 导致 "Mandala Utopia" 被误判为 "Mandala's GUI - Dark Mode Compat"，
+        // 实际文件缺失却没触发补全。CurseForge API 会返回准确的 fileName，
+        // 精确匹配失败后重新下载最安全。
+        const missingNow = [];
+        for (const item of normalizedItems) {
+          const destDir = path.join(gameDir, item.destination);
+          const filePath = path.join(destDir, item.pattern);
+          let exists = false;
+          if (fs.existsSync(filePath)) {
+            try {
+              const stat = fs.statSync(filePath);
+              if (stat.size > 0) exists = true;
+            } catch (_) {}
+          }
+          if (!exists) missingNow.push(item);
+        }
+        if (missingNow.length > 0) {
+          console.log(`[Launch] 检测到 ${missingNow.length} 个 missing_mods_checker 文件缺失，启动前自动补全...`);
+          // 传入 items 数组（已规范化的缺失文件列表），而不是 zip 对象
+          const result = await shared._downloadMissingModsCheckerFiles(
+            missingNow, gameDir, settings, null, null
+          );
+          if (result.failed > 0) {
+            console.warn(`[Launch] 自动补全失败 ${result.failed} 个文件:`, result.failedItems.map(fi => fi.displayName).join(', '));
+            // 不阻止启动，让 MissingModsChecker mod 自己弹窗提示用户
+          } else {
+            console.log(`[Launch] 自动补全完成：${result.downloaded} 下载 ${result.skipped} 已存在`);
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn(`[Launch] 启动前检查 missing_mods_checker.json 失败: ${e.message}`);
+  }
+
   const launchResult = buildLaunchArguments(versionJson, settings, account, versionId, gameDir, externalVersionDir);
   const args = launchResult.args;
   const maxMemMB = launchResult.maxMemMB;

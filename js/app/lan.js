@@ -380,6 +380,16 @@ let _redstoneServers = [];
 let _redstoneRunning = false;
 let _redstoneServerIdx = 0;
 
+function updateRedstoneTitleCount(input) {
+    var c = input.value.length || 0;
+    var e = document.getElementById('redstone-title-count');
+    if (!e) return;
+    e.textContent = c + '/8';
+    e.classList.remove('warn', 'full');
+    if (c >= 8) e.classList.add('full');
+    else if (c >= 6) e.classList.add('warn');
+}
+
 /** 三级标签页切换 */
 function redstoneSwitchTab(tab) {
     // 切换 tab 按钮高亮
@@ -527,17 +537,23 @@ async function redstoneStart() {
         return;
     }
 
-    const maxPlayers = parseInt(document.getElementById('redstone-max-players').value) || 1;
+    const titleInput = document.getElementById('redstone-room-title');
+    const title = (titleInput ? titleInput.value : '').trim().slice(0, 8);
+    const isOpen = document.getElementById('redstone-is-open') ? document.getElementById('redstone-is-open').checked : true;
+    const allowOffline = document.getElementById('redstone-allow-offline') ? document.getElementById('redstone-allow-offline').checked : false;
+    const maxPlayers = 8;
 
     _redstoneRunning = true;
     if (btn) { btn.textContent = '正在开启...'; btn.disabled = true; }
     updateRedstoneStatus('正在连接...', 'connecting');
     addRedstoneLog('选择服务器: ' + server.name + ' (' + server.address + ')');
     addRedstoneLog('最大人数: ' + maxPlayers);
+    if (title) addRedstoneLog('房间标题: ' + title);
 
     try {
         const r = await window.electronAPI.redstoneOnline.start({
             serverAddress: server.address, maxPlayers: maxPlayers, gamePort: gamePort,
+            title: title, isOpen: isOpen, allowOffline: allowOffline,
         });
         if (r && r.ok) {
             document.getElementById('redstone-connected-info').style.display = '';
@@ -621,6 +637,24 @@ async function redstoneInitPage() {
             if (status.address) {
                 document.getElementById('redstone-room-addr').textContent = status.address;
                 updateRedstoneStatus('隧道已开启 | ' + status.address, 'connected');
+            }
+            // 恢复房间设置显示
+            const titleInput = document.getElementById('redstone-room-title');
+            if (titleInput && status.title !== undefined) {
+                titleInput.value = status.title;
+                updateRedstoneTitleCount(titleInput);
+            }
+            const isOpenInput = document.getElementById('redstone-is-open');
+            const isOpenSwitch = document.getElementById('redstone-is-open-switch');
+            if (isOpenInput && status.isOpen !== undefined) {
+                isOpenInput.checked = status.isOpen;
+                if (isOpenSwitch) isOpenSwitch.classList.toggle('active', status.isOpen);
+            }
+            const allowOfflineInput = document.getElementById('redstone-allow-offline');
+            const allowOfflineSwitch = document.getElementById('redstone-allow-offline-switch');
+            if (allowOfflineInput && status.allowOffline !== undefined) {
+                allowOfflineInput.checked = status.allowOffline;
+                if (allowOfflineSwitch) allowOfflineSwitch.classList.toggle('active', status.allowOffline);
             }
         }
     } catch (e) {

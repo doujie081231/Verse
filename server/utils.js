@@ -626,13 +626,12 @@ function isJarIntact(filePath) {
       if (buf.readUInt32LE(i) === 0x06054B50) { eocdOffset = i; break; }
     }
     if (eocdOffset < 0) return false;
-    // 关键修复：验证 EOCD 必须位于文件末尾（考虑注释长度）
-    // ZIP 规范要求 EOCD 是文件最后一条记录，其位置 + 22 + commentLength 应等于文件大小
-    // 之前缺少此约束，导致文件中间字节序列误匹配 EOCD 签名时通过校验
-    // 而真实文件可能被截断或末尾追加了垃圾数据，Java ZipFileSystem 会拒绝加载
+    // 验证 EOCD 位置：允许尾部有附加数据（数字签名 / self-extracting 包装等）
+    // 仅当 EOCD + 22 + 注释长度超过文件大小（说明文件被截断）才判损坏
+    // 不再要求严格等于文件大小，避免误判带签名 / 尾部追加数据的合法 JAR
     const commentLen = buf.readUInt16LE(eocdOffset + 20);
     const eocdOffsetInFile = searchStart + eocdOffset;
-    if (eocdOffsetInFile + 22 + commentLen !== stat.size) return false;
+    if (eocdOffsetInFile + 22 + commentLen > stat.size) return false;
     const cdOffset = buf.readUInt32LE(eocdOffset + 16);
     if (cdOffset < 0 || cdOffset + 4 > stat.size) return false;
     const cdHdr = Buffer.alloc(4);
@@ -676,11 +675,33 @@ function isJarIntactDeep(filePath) {
 /* SHA1 计算 */
 
 /**
- * 计算文件的 SHA1 哈希
+ * 计算文件的 SHA1 哈希（流式异步，不阻塞事件循环）
+ * 大文件下同步 readFileSync 会阻塞事件循环导致并发下载速度坍塌，
+ * 改用 fs.createReadStream + crypto 流式计算，每 chunk 让出事件循环。
+ * @param {string} filePath - 文件路径
+ * @returns {Promise<string|null>} SHA1 十六进制字符串，失败返回 null
+ */
+async function calculateSHA1(filePath) {
+  return new Promise((resolve) => {
+    try {
+      const hash = crypto.createHash('sha1');
+      const stream = fs.createReadStream(filePath, { highWaterMark: 256 * 1024 });
+      stream.on('data', (chunk) => hash.update(chunk));
+      stream.on('end', () => resolve(hash.digest('hex')));
+      stream.on('error', () => resolve(null));
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+
+/**
+ * 计算文件的 SHA1 哈希（同步版本，仅供小文件或启动期使用）
+ * 大文件下会阻塞事件循环，下载流程请使用 calculateSHA1（异步版本）
  * @param {string} filePath - 文件路径
  * @returns {string|null} SHA1 十六进制字符串，失败返回 null
  */
-function calculateSHA1(filePath) {
+function calculateSHA1Sync(filePath) {
   try {
     const data = fs.readFileSync(filePath);
     return crypto.createHash('sha1').update(data).digest('hex');
@@ -697,7 +718,7 @@ function calculateSHA1(filePath) {
  */
 async function verifyFileSha1(filePath, expectedSha1) {
   if (!expectedSha1) return true;
-  const actual = calculateSHA1(filePath);
+  const actual = await calculateSHA1(filePath);
   return actual === expectedSha1;
 }
 
@@ -709,7 +730,7 @@ async function verifyFileSha1(filePath, expectedSha1) {
  */
 function verifyFileSha1Sync(filePath, expectedSha1) {
   if (!expectedSha1) return true;
-  const actual = calculateSHA1(filePath);
+  const actual = calculateSHA1Sync(filePath);
   return actual === expectedSha1;
 }
 
@@ -829,6 +850,7 @@ module.exports = {
   isJarIntact,
   isJarIntactDeep,
   calculateSHA1,
+  calculateSHA1Sync,
   verifyFileSha1,
   verifyFileSha1Sync
 };
