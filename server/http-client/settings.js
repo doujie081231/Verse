@@ -34,7 +34,7 @@ function loadSettingsCached() {
     versionSource: 'auto',
     maxThreads: 16,
     enableChunkDownload: true,
-    maxChunksPerFile: 32,
+    maxChunksPerFile: 16,
     speedLimit: 0,
     targetDir: '',
     sslVerify: false,

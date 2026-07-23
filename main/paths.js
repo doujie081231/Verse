@@ -56,7 +56,8 @@ function resolveDataDir(opts) {
   // 优先级 1: data-config.json 指定的 dataDir
   try {
     if (fs.existsSync(configPath)) {
-      const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      const raw = fs.readFileSync(configPath, 'utf8').replace(/^\uFEFF/, '');
+      const cfg = JSON.parse(raw);
       if (cfg.dataDir && typeof cfg.dataDir === 'string' && fs.existsSync(cfg.dataDir)) {
         return cfg.dataDir;
       }

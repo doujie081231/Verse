@@ -94,7 +94,7 @@ function getMirrorUrls(originalUrl) {
 
 /**
  * 并行探测所有 URL 的速度，返回按速度降序排列的 URL 列表 + 每个 URL 的文件大小/Range 支持情况。
- * 对标 PCL2：下载前并行测速所有镜像，选最快的源，而非串行探测或只用第一个。
+ * 下载前并行测速所有镜像，选最快的源，而非串行探测或只用第一个。
  *
  * @param {string[]} urls - 待探测的 URL 列表
  * @param {number} [timeoutMs=1500] - 单 URL 探测超时

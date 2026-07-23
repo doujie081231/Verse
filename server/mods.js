@@ -223,6 +223,7 @@ function parseModJar(jarPath) {
                 var hash = crypto.createHash('md5').update(jarPath + '|' + iconPath).digest('hex');
                 var cacheFilePath = path.join(ctx.dirs.ICON_CACHE_DIR, hash + '.png');
                 if (!fs.existsSync(cacheFilePath)) {
+                    try { fs.mkdirSync(ctx.dirs.ICON_CACHE_DIR, { recursive: true }); } catch (_) {}
                     fs.writeFileSync(cacheFilePath, data);
                 }
                 result.icon = hash;

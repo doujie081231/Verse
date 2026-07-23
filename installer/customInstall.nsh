@@ -69,10 +69,15 @@ Var CONFIG_BACKUP_PATH
     ; 恢复 data 目录
     StrCmp "$DATA_BACKUP_PATH" "" _no_data_restore 0
     IfFileExists "$DATA_BACKUP_PATH\*.*" 0 _no_data_restore
-        ; 如果安装过程中创建了 data 目录（新装器写入），先删除
-        IfFileExists "$INSTDIR\data\*.*" 0 +2
-            RMDir /r "$INSTDIR\data"
-        ; 先尝试 Rename（同盘符瞬间完成），失败则用 xcopy
+        ; 如果 data 目录已存在（旧卸载器 customRemoveFiles 已恢复，或 xcopy 备份未移动），
+        ; 保留它，不删除——删除后若恢复失败会导致数据彻底丢失
+        IfFileExists "$INSTDIR\data\*.*" 0 _do_restore_data
+            DetailPrint "data 目录已存在（旧卸载器已恢复），跳过恢复"
+            RMDir /r "$DATA_BACKUP_PATH"
+            StrCpy $DATA_BACKUP_PATH ""
+            Goto _no_data_restore
+        _do_restore_data:
+        ; data 目录不存在，从备份恢复
         Rename "$DATA_BACKUP_PATH" "$INSTDIR\data"
         IfFileExists "$INSTDIR\data\*.*" 0 _restore_via_xcopy
             DetailPrint "已从临时目录恢复用户数据 (同盘符 Rename)"
@@ -93,6 +98,13 @@ Var CONFIG_BACKUP_PATH
     ; 恢复 data-config.json
     StrCmp "$CONFIG_BACKUP_PATH" "" _no_config_restore 0
     IfFileExists "$CONFIG_BACKUP_PATH" 0 _no_config_restore
+        ; 如果 data-config.json 已存在（旧卸载器已恢复），跳过
+        IfFileExists "$INSTDIR\data-config.json" 0 _do_restore_config
+            DetailPrint "data-config.json 已存在，跳过恢复"
+            Delete "$CONFIG_BACKUP_PATH"
+            StrCpy $CONFIG_BACKUP_PATH ""
+            Goto _no_config_restore
+        _do_restore_config:
         CopyFiles /SILENT "$CONFIG_BACKUP_PATH" "$INSTDIR\data-config.json"
         IfFileExists "$INSTDIR\data-config.json" 0 _config_restore_failed
             DetailPrint "已恢复数据目录配置"
@@ -132,7 +144,7 @@ Var CONFIG_BACKUP_PATH
         ${If} $0 == "0"
             DetailPrint "数据迁移成功，正在清理 C 盘旧数据..."
             RMDir /r "$PROFILE\.versepc"
-            nsExec::ExecToLog `powershell -NoProfile -Command "@{dataDir='$INSTDIR\data'} | ConvertTo-Json -Compress | Out-File -FilePath '$INSTDIR\data-config.json' -Encoding utf8"`
+            nsExec::ExecToLog `powershell -NoProfile -Command "[IO.File]::WriteAllText('$INSTDIR\data-config.json', (@{dataDir='$INSTDIR\data'} | ConvertTo-Json -Compress), (New-Object Text.UTF8Encoding $false))"`
             DetailPrint "数据目录已设置为 $INSTDIR\data"
         ${Else}
             MessageBox MB_OK|MB_ICONEXCLAMATION "数据迁移失败（代码 $0），将继续使用 C 盘数据。$\n$\n你可以稍后在软件设置中手动修改数据目录。"
@@ -142,7 +154,7 @@ Var CONFIG_BACKUP_PATH
     _setup_new_data_dir:
         ; 新用户，数据放安装目录
         CreateDirectory "$INSTDIR\data"
-        nsExec::ExecToLog `powershell -NoProfile -Command "@{dataDir='$INSTDIR\data'} | ConvertTo-Json -Compress | Out-File -FilePath '$INSTDIR\data-config.json' -Encoding utf8"`
+        nsExec::ExecToLog `powershell -NoProfile -Command "[IO.File]::WriteAllText('$INSTDIR\data-config.json', (@{dataDir='$INSTDIR\data'} | ConvertTo-Json -Compress), (New-Object Text.UTF8Encoding $false))"`
         DetailPrint "数据目录设置为 $INSTDIR\data"
     _data_dir_done:
 

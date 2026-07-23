@@ -62,7 +62,7 @@ async function downloadFileChunked(url, destPath, options = {}) {
   const rawUrls = (mirrors && mirrors.length > 0) ? mirrors : getMirrorUrls(url);
   const _agent = customAgent || undefined;
 
-  // [P0 OPT - 2026-07-23] 并行测速所有镜像，选最快的源（对标 PCL2）
+  // 并行测速所有镜像，选最快的源
   // 之前的问题：串行探针（1000ms × N），主 URL 返回 206 就不探测镜像，
   // Modrinth CDN 卡住时无镜像可切。现在并行探测所有 URL，按响应延迟排序。
   // allUrls 存储排序后的 URL 列表，allProbeResults 存储每个 URL 的元信息。
@@ -195,6 +195,8 @@ async function downloadFileChunked(url, destPath, options = {}) {
 
         const dlChunk = async (c) => {
           if (abortSignal && abortSignal.aborted) throw new Error('下载已中止');
+          // 递增启动延迟：前 i 块无延迟，后面的块逐渐启动，避免全并发瞬间冲击 CDN
+          if (c.i > 0 && c._splitFrom == null) await new Promise(r => setTimeout(r, c.i * 150));
           // 检测续传偏移
           let resumeOffset = _getChunkResumeOffset(c);
           if (resumeOffset === -1) {
@@ -227,6 +229,9 @@ async function downloadFileChunked(url, destPath, options = {}) {
               if (abortSignal && abortSignal.aborted) throw new Error('下载已中止');
               await new Promise((r) => setTimeout(r, 10));
             }
+            if (chunkUrl.includes('bmclapi')) {
+              await new Promise(r => setTimeout(r, 100));
+            }
             try {
               // 续传时调整 Range 起始位置
               const startByte = c.s + resumeOffset;
@@ -250,11 +255,10 @@ async function downloadFileChunked(url, destPath, options = {}) {
               // 且严格模式下读取未声明变量抛 ReferenceError 使应用崩溃。
               let chunkLowSpeedTimer = null;
               let chunkLowSpeedBytes = 0;
-              // [P0 OPT - 2026-07-22] 分块级低速检测
-              // 和单流一样，防止 CDN 滴漏导致 stall 永远不触发
-              // 关键修复：窗口从 10s 缩短到 5s
-              // 之前 10s 窗口 + 10KB/s 阈值时，CDN 每 10s 滴漏 100KB 刚好等于阈值不触发
-              const CHUNK_LOW_SPEED_THRESHOLD = 10 * 1024;  // 10KB/s
+              // 分块级低速检测 + 动态分块：慢块剩余的 40% 交给新线程，避免单 CDN 节点拖垮整文件
+              const CHUNK_LOW_SPEED_THRESHOLD = 256 * 1024;  // 256KB/s
+              const SPLIT_MIN_REMAINING = 256 * 1024;        // 剩余 < 256KB 不拆
+              let _splitTriggered = false;
               const startChunkLowSpeed = () => {
                 if (chunkLowSpeedTimer) clearInterval(chunkLowSpeedTimer);
                 chunkLowSpeedBytes = dl;
@@ -266,13 +270,45 @@ async function downloadFileChunked(url, destPath, options = {}) {
                   const received = dl - chunkLowSpeedBytes;
                   const speedBps = received / 5;  // 5秒窗口
                   chunkLowSpeedBytes = dl;
-                  if (speedBps < CHUNK_LOW_SPEED_THRESHOLD && dl > 50 * 1024) {
-                    console.warn(`[MultiThread] Chunk ${c.i} low speed ${Math.round(speedBps/1024)}KB/s on ${chunkUrl.substring(0, 50)}, retry ${chunkRetry + 1}/${CHUNK_MAX_RETRIES}`);
-                    try { cr.stream.destroy(); } catch (_) {}
-                    try { ws.destroy(); } catch (_) {}
-                    if (chunkLowSpeedTimer) { clearInterval(chunkLowSpeedTimer); chunkLowSpeedTimer = null; }
-                    if (_chunkReject) { try { _chunkReject(new Error(`Chunk ${c.i} low speed: ${Math.round(speedBps/1024)}KB/s`)); } catch (_) {} _chunkReject = null; }
+                  if (speedBps >= CHUNK_LOW_SPEED_THRESHOLD || dl <= 50 * 1024) return;
+
+                  // --- 动态分块：优先拆，而不是直接 fail 整块 ---
+                  // 已下载 > 0，剩余 > 256KB，且该块未被拆过，则拆出后 40%
+                  const expectedTotal = c.e - c.s + 1;
+                  const remaining = expectedTotal - dl;
+                  if (!_splitTriggered && remaining > SPLIT_MIN_REMAINING && !c._noSplit) {
+                    _splitTriggered = true;
+                    const originalEnd = c.e;
+                    // 新线程从 后 40% 处 开始 = s+dl + remaining*0.6 = e - remaining*0.4
+                    const splitStart = originalEnd - Math.floor(remaining * 0.4);
+                    if (splitStart > c.s + dl && splitStart < originalEnd) {
+                      // 当前块截断到 splitStart-1，停止本连接后仅完成前段（续传时按新 e）
+                      c.e = splitStart - 1;
+                      const newChunk = {
+                        i: chunks.length,
+                        s: splitStart,
+                        e: originalEnd,
+                        tmp: `${destPath}.c${chunks.length}`,
+                        _splitFrom: c.i,
+                        _noSplit: false
+                      };
+                      chunks.push(newChunk);
+                      cProg.push(0);
+                      console.log(`[MultiThread] Chunk ${c.i} low ${Math.round(speedBps/1024)}KB/s → split [${splitStart}-${originalEnd}] as chunk ${newChunk.i}`);
+                      // 入队新块，立即由调度器启动（无递增延迟）
+                      if (typeof enqueueChunk === 'function') enqueueChunk(newChunk);
+                      // 截断当前写流：收到足够字节后在 data 回调里自然结束
+                      // 不 destroy，让当前连接继续写到 c.e
+                      return;
+                    }
                   }
+
+                  // 无法再拆 → 低速重试（换 URL）
+                  console.warn(`[MultiThread] Chunk ${c.i} low speed ${Math.round(speedBps/1024)}KB/s on ${chunkUrl.substring(0, 50)}, retry ${chunkRetry + 1}/${CHUNK_MAX_RETRIES}`);
+                  try { cr.stream.destroy(); } catch (_) {}
+                  try { ws.destroy(); } catch (_) {}
+                  if (chunkLowSpeedTimer) { clearInterval(chunkLowSpeedTimer); chunkLowSpeedTimer = null; }
+                  if (_chunkReject) { try { _chunkReject(new Error(`Chunk ${c.i} low speed: ${Math.round(speedBps/1024)}KB/s`)); } catch (_) {} _chunkReject = null; }
                 }, 5000);
               };
               const resetStall = () => {
@@ -305,11 +341,31 @@ async function downloadFileChunked(url, destPath, options = {}) {
               try {
                 await new Promise((resolve, reject) => {
                   _chunkReject = reject;
+                  // 不 pipe：手动写，以便动态拆分后能在新 c.e 处截断
                   cr.stream.on('data', (d) => {
-                    dl += d.length;
-                    ctx.DownloadManager.recordProgress(d.length);
+                    // 动态拆分后 c.e 可能已缩短，丢弃越界数据
+                    const expectedTotal = c.e - c.s + 1;
+                    if (dl >= expectedTotal) {
+                      try { cr.stream.destroy(); } catch (_) {}
+                      try { ws.end(); } catch (_) {}
+                      return;
+                    }
+                    let buf = d;
+                    if (dl + d.length > expectedTotal) {
+                      buf = d.subarray(0, expectedTotal - dl);
+                    }
+                    const wrote = buf.length;
+                    if (wrote <= 0) return;
+                    try { ws.write(buf); } catch (_) {}
+                    dl += wrote;
+                    ctx.DownloadManager.recordProgress(wrote);
                     cProg[c.i] = dl;
                     resetStall();
+                    if (dl >= expectedTotal) {
+                      // 本块已按截断后的范围写满，结束本连接
+                      try { cr.stream.destroy(); } catch (_) {}
+                      try { ws.end(); } catch (_) {}
+                    }
                     if (onProgress && Date.now() - lastProgUpdate > 50) {
                       lastProgUpdate = Date.now();
                       const t = cProg.reduce((a, b) => a + b, 0);
@@ -318,12 +374,12 @@ async function downloadFileChunked(url, destPath, options = {}) {
                         totalBytes: fileSize,
                         speed: ctx.DownloadManager.getSpeed(),
                         progress: Math.min(99.9, (t / fileSize) * 100),
-                        chunks: cCount,
+                        chunks: chunks.length,
                         activeChunks: ctx.DownloadManager.activeConnections
                       });
                     }
                   });
-                  cr.stream.pipe(ws);
+                  cr.stream.on('end', () => { try { ws.end(); } catch (_) {} });
                   ws.on('finish', () => {
                     _chunkReject = null;
                     if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
@@ -400,21 +456,41 @@ async function downloadFileChunked(url, destPath, options = {}) {
           // 所有重试都失败
           throw lastChunkErr || new Error(`Chunk ${c.i} failed after ${CHUNK_MAX_RETRIES + 1} attempts`);
         };
-        try {
-          // [P0 FIX - 2026-07-21] Promise.all → allSettled + 失败分块延后重试
-          // 原问题：单个分块 4 次重试失败后 throw，整个 Promise.all reject，
-          // 一个慢速分块（如 Chunk 15 low speed 0KB/s）拖垮整个下载。
-          // 修复：用 allSettled 等所有分块结束（成功或失败），然后对失败的分块
-          // 单独延后重试——其他分块已完成，连接配额已释放，CDN 节点可能已恢复，
-          // 且 cache-buster 让重试路由到不同 CDN 节点。
-          let _chunkResults = await Promise.allSettled(chunks.map((c) => dlChunk(c)));
-          let _failedChunks = [];
-          _chunkResults.forEach((r, idx) => {
-            if (r.status === 'rejected') {
-              _failedChunks.push({ chunk: chunks[idx], reason: r.reason });
-            }
-          });
+        // 动态调度器：支持运行时 enqueueChunk，拆分后可在执行中追加新块
+        // 现在用队列 + 进行中 Promise 集合，enqueueChunk 可随时追加。
+        const _pending = [...chunks];
+        const _inflight = new Set();
+        let _failedChunks = [];
+        // 闭包供 dlChunk 内动态拆分调用
+        var enqueueChunk = (chunk) => {
+          if (!chunk || _pending.includes(chunk)) return;
+          _pending.push(chunk);
+          // 立即泵一次（若还有配额）
+          _pump();
+        };
+        const _pump = () => {
+          while (_pending.length > 0) {
+            const next = _pending.shift();
+            const p = dlChunk(next)
+              .then(() => { /* success */ })
+              .catch((e) => {
+                _failedChunks.push({ chunk: next, reason: e });
+              })
+              .finally(() => {
+                _inflight.delete(p);
+                _pump();
+              });
+            _inflight.add(p);
+          }
+        };
+        _pump();
+        // 等待全部完成（含动态拆出的子块）
+        while (_inflight.size > 0 || _pending.length > 0) {
+          if (abortSignal && abortSignal.aborted) throw new Error('下载已中止');
+          await Promise.race([..._inflight, new Promise(r => setTimeout(r, 200))]);
+        }
 
+        try {
           // 失败分块延后重试
           if (_failedChunks.length > 0) {
             // 超过半数分块失败，说明 CDN 节点不可用，立即回退单流

@@ -371,7 +371,7 @@ ctx.setMainWindow = setMainWindow;
 /* DownloadManager (连接池 + 令牌桶限速) */
 const DownloadManager = {
   activeConnections: 0,
-  connectionLimit: 64,
+  connectionLimit: 48,
   speedHistory: [],
   totalBytesDownloaded: 0,
   lastBytesSnapshot: 0,

@@ -15,6 +15,7 @@ const ctx = require('../context');
 const utils = require('../utils');
 const { getMirrorUrls } = require('./mirror');
 const { downloadFileChunked } = require('./download-chunked');
+const { downloadFileH2, shouldTryH2 } = require('./download-h2');
 const { _dlSingle } = require('./download-single');
 
 /* 下载入口（根据 host 选择分块/单流） */
@@ -30,6 +31,17 @@ const { _dlSingle } = require('./download-single');
  */
 function downloadFile(urlStr, destPath, onProgress, retries = 3, abortSignal = null) {
   if (ctx.constants.NO_CHUNK_HOSTS.some((d) => urlStr.includes(d))) return _dlSingle(urlStr, destPath, { onProgress, retries, abortSignal });
+  // [P0 OPT - 2026-07-23] 优先走 H2 多路复用，失败回退 chunked → single
+  if (shouldTryH2(urlStr)) {
+    return downloadFileH2(urlStr, destPath, { onProgress, abortSignal }).catch((err) => {
+      if (abortSignal && abortSignal.aborted) throw err;
+      // H2 失败回退 H1.1 chunked
+      return downloadFileChunked(urlStr, destPath, { onProgress, retries, abortSignal }).catch((err2) => {
+        if (abortSignal && abortSignal.aborted) throw err2;
+        return _dlSingle(urlStr, destPath, { onProgress, retries, abortSignal });
+      });
+    });
+  }
   return downloadFileChunked(urlStr, destPath, { onProgress, retries, abortSignal }).catch((err) => {
     if (abortSignal && abortSignal.aborted) throw err;
     return _dlSingle(urlStr, destPath, { onProgress, retries, abortSignal });
