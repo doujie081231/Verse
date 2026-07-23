@@ -48,73 +48,11 @@ if (!gotTheLockEarly) {
   process.exit(0);
 }
 
-// 单实例锁第一阶段：清理遗留的旧进程和占用 3001-3010 端口的进程
-// 移到 setImmediate 中，不阻塞 app.requestSingleInstanceLock 和后续窗口创建
-setImmediate(() => {
-  try {
-    const { exec: _execAsync } = require('child_process');
-    const _currentPid = process.pid;
-    _execAsync('chcp 65001 >nul 2>nul && wmic process where "name=\'VersePC.exe\'" get ProcessId,ParentProcessId,CommandLine /format:csv 2>nul', { encoding: 'utf8', timeout: 5000, windowsHide: true }, (_err, _wmicOut) => {
-      try {
-        if (_wmicOut) {
-          for (const _line of _wmicOut.split('\n')) {
-            const _trim = _line.trim();
-            if (!_trim || _trim.startsWith('Node')) continue;
-            const _parts = _trim.split(',');
-            if (_parts.length < 4) continue;
-            const _pid = parseInt(_parts[_parts.length - 2]);
-            const _ppid = parseInt(_parts[_parts.length - 1]);
-            if (!_pid || _pid === _currentPid) continue;
-            if (_ppid && _ppid !== 0) continue;
-            try { process.kill(_pid); } catch (e) {}
-          }
-        }
-      } catch (e) {}
-    });
-    _execAsync('netstat -ano | findstr LISTENING', { encoding: 'utf8', timeout: 5000, windowsHide: true }, (_err, _netOut) => {
-      try {
-        if (_netOut) {
-          for (let _port = 3001; _port <= 3010; _port++) {
-            const _regex = new RegExp(`:${_port}\\s.*LISTENING\\s+(\\d+)`, 'g');
-            let _match;
-            while ((_match = _regex.exec(_netOut)) !== null) {
-              const _pid = parseInt(_match[1]);
-              if (_pid && _pid !== _currentPid) {
-                try { process.kill(_pid); } catch (e) {}
-              }
-            }
-          }
-        }
-      } catch (e) {}
-    });
-  } catch (e) {}
-});
-
-/* V8 Code Cache - 首次启动后缓存编译结果，后续启动提速 40-60% */
-// 缓存目录放在 DATA_DIR 下，避免系统清理临时目录导致缓存失效
-try {
-  const v8 = require('v8');
-  const { DATA_DIR } = require('./main/paths');
-  const cacheDir = require('path').join(DATA_DIR, 'v8-cache');
-  try { require('fs').mkdirSync(cacheDir, { recursive: true }); } catch (e) {}
-  v8.setFlagsFromString('--compile-cache-dir=' + cacheDir);
-} catch (e) {}
-
-/* V8 内存上限 - 根据系统内存动态设置，防止渲染进程 OOM 崩溃 */
-try {
-  const osMod = require('os');
-  const totalMemMB = Math.floor(osMod.totalmem() / 1024 / 1024);
-  let rendererHeapMB;
-  if (totalMemMB <= 4096) rendererHeapMB = 768;
-  else if (totalMemMB <= 8192) rendererHeapMB = 1024;
-  else if (totalMemMB <= 16384) rendererHeapMB = 1536;
-  else rendererHeapMB = 2048;
-  process.env.ELECTRON_RENDERER_V8_HEAP_SIZE = String(rendererHeapMB);
-  try {
-    const v8 = require('v8');
-    v8.setFlagsFromString('--max-old-space-size=' + rendererHeapMB);
-  } catch (e) {}
-} catch (e) {}
+// 启动调优：清理遗留进程/端口 + V8 代码缓存 + 内存上限（抽到 main/startup-tuning）
+const { cleanupStaleProcesses, setupV8CodeCache, setupV8MemoryLimit } = require('./main/startup-tuning');
+cleanupStaleProcesses();
+setupV8CodeCache();
+setupV8MemoryLimit();
 
 // 运行时完整性自检模块
 const { _runIntegrityCheckAsync } = require('./main/integrity');

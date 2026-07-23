@@ -2,15 +2,16 @@ Var DATA_BACKUP_PATH
 Var CONFIG_BACKUP_PATH
 
 ; =============================================================================
-; 方案 A：把 data 目录和 data-config.json 备份到安装目录外的临时目录
-; 旧卸载器执行 RMDir /r $INSTDIR 或 atomicRMDir 时，备份在 $TEMP 下，不受影响
+; 方案 A：把 data 目录和 data-config.json 备份到用户主目录($PROFILE)下
+; 旧卸载器执行 RMDir /r $INSTDIR 或 atomicRMDir 时，备份在 $PROFILE 下，不受影响
+; 用 $PROFILE 而非 $TEMP：$TEMP 可能被系统磁盘清理工具清掉，$PROFILE 不会，更可靠
 ; =============================================================================
 !macro BackupUserDataToTemp
-    ; 备份 data 目录到 $TEMP\versepc-data-backup
+    ; 备份 data 目录到 $PROFILE\versepc-data-backup
     ; 同盘符用 Rename（瞬间完成，不占额外空间），跨盘符用 xcopy
     StrCpy $DATA_BACKUP_PATH ""
     IfFileExists "$INSTDIR\data\*.*" 0 _no_data_backup
-        StrCpy $0 "$TEMP\versepc-data-backup"
+        StrCpy $0 "$PROFILE\versepc-data-backup"
         ; 如果上次安装失败残留了备份目录，先清理
         IfFileExists "$0\*.*" 0 +2
             RMDir /r "$0"
@@ -40,10 +41,10 @@ Var CONFIG_BACKUP_PATH
     _data_backup_done:
     _no_data_backup:
 
-    ; 备份 data-config.json 到 $TEMP\versepc-config-backup.json
+    ; 备份 data-config.json 到 $PROFILE\versepc-config-backup.json
     StrCpy $CONFIG_BACKUP_PATH ""
     IfFileExists "$INSTDIR\data-config.json" 0 _no_config_backup
-        StrCpy $0 "$TEMP\versepc-config-backup.json"
+        StrCpy $0 "$PROFILE\versepc-config-backup.json"
         ; 如果上次残留了配置备份，先删除
         IfFileExists "$0" 0 +2
             Delete "$0"
@@ -54,6 +55,10 @@ Var CONFIG_BACKUP_PATH
             Goto _no_config_backup
         _config_backup_failed:
             DetailPrint "警告：数据目录配置备份失败"
+            ; config 备份失败同样中止：放行后若旧卸载器删掉 data-config.json，
+            ; 数据目录解析会回退，可能造成"数据回到 C 盘"。宁可中止让用户处理。
+            MessageBox MB_OK|MB_ICONSTOP "数据目录配置(data-config.json)备份失败。$\n$\n为防止覆盖安装导致数据目录错乱，安装已中止。$\n$\n请手动备份安装目录下的 data-config.json 后重新运行安装程序。"
+            Abort
     _no_config_backup:
 !macroend
 
@@ -185,10 +190,10 @@ Var CONFIG_BACKUP_PATH
 ;   运行的是旧版卸载器，仍会用 RMDir /r，由方案 A 兜底）
 ; =============================================================================
 !macro customRemoveFiles
-    ; 把 data 目录和 data-config.json 移到临时目录，删完程序文件后再移回来
-    ; 用 xcopy 而非 Rename，因为 $TEMP 和 $INSTDIR 可能不在同一盘符
+    ; 把 data 目录和 data-config.json 移到 $PROFILE 下，删完程序文件后再移回来
+    ; 用 xcopy 而非 Rename，因为 $PROFILE(C盘) 和 $INSTDIR 可能不在同一盘符
 
-    StrCpy $0 "$TEMP\versepc-data-protect"
+    StrCpy $0 "$PROFILE\versepc-data-protect"
     IfFileExists "$0\*.*" 0 +2
         RMDir /r "$0"
     CreateDirectory "$0"

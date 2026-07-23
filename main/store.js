@@ -26,56 +26,9 @@ const STORE_PATH = APP_STORE_FILE;
 let _registerAllowedPath = null;
 try { _registerAllowedPath = require('./protocol-handler').registerAllowedPath; } catch (e) {}
 
-/**
- * 安全写入文件 - 先备份再原子写入，防止写入中断导致文件损坏
- * @param {string} filePath - 目标文件路径
- * @param {string} content - 文件内容
- */
-function safeWriteFileSync(filePath, content) {
-  const bakPath = filePath + '.bak';
-  try {
-    if (fs.existsSync(filePath)) {
-      fs.copyFileSync(filePath, bakPath);
-    }
-  } catch (e) {}
-  const tmpPath = filePath + '.tmp';
-  try {
-    fs.writeFileSync(tmpPath, content, 'utf8');
-    fs.renameSync(tmpPath, filePath);
-  } catch (e) {
-    try { fs.writeFileSync(filePath, content, 'utf8'); } catch (e2) {}
-    try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch (e3) {}
-  }
-}
-
-/**
- * 安全读取 JSON 文件 - 损坏时尝试从 .bak 恢复
- * @param {string} filePath - 文件路径
- * @param {*} defaults - 文件不存在或损坏且无备份时返回的默认值
- * @returns {*} 解析后的对象，或默认值
- */
-function safeReadJsonFile(filePath, defaults) {
-  try {
-    if (fs.existsSync(filePath)) {
-      const raw = fs.readFileSync(filePath, 'utf8');
-      return JSON.parse(raw);
-    }
-  } catch (e) {
-    console.error(`[Storage] File corrupted: ${filePath}`, e.message);
-    const bakPath = filePath + '.bak';
-    try {
-      if (fs.existsSync(bakPath)) {
-        const bakRaw = fs.readFileSync(bakPath, 'utf8');
-        const restored = JSON.parse(bakRaw);
-        console.log(`[Storage] Recovered from backup: ${bakPath}`);
-        safeWriteFileSync(filePath, JSON.stringify(restored, null, 2));
-        return restored;
-      }
-    } catch (e2) {}
-    console.warn(`[Storage] No valid backup, using defaults for: ${filePath}`);
-  }
-  return defaults;
-}
+// 安全文件读写 - 复用 file-safe.js 的唯一实现（.bak 备份恢复 + Buffer 支持）
+// 不在 store.js 重复实现，避免与 server/utils.js 出现两份不一致的版本
+const { safeWriteFileSync, safeReadJsonFile } = require('./file-safe');
 
 // 存储缓存（3秒 TTL，避免频繁读盘）
 let _storeCache = null;

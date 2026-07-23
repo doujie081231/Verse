@@ -23,7 +23,8 @@ module.exports = {
       try {
         const systemJava = java.detectSystemJava();
         const bundledJava = java.detectBundledJava();
-        const allJava = [...bundledJava, ...systemJava];
+        const customJava = java.detectCustomJava();
+        const allJava = [...bundledJava, ...systemJava, ...customJava];
         sendJSON(res, {
           success: true,
           platform: utils.getPlatformKey(),
@@ -93,7 +94,8 @@ module.exports = {
         try {
           const systemJava = java.detectSystemJava();
           const bundledJava = java.detectBundledJava();
-          const allJava = [...bundledJava, ...systemJava];
+          const customJava = java.detectCustomJava();
+          const allJava = [...bundledJava, ...systemJava, ...customJava];
           const suitable = allJava.find((j) => j.majorVersion >= requiredVersion);
 
           if (suitable) {
@@ -244,16 +246,25 @@ module.exports = {
       sendJSON(res, { success: true, message: '已取消Java下载' });
     });
 
-    /* /api/java/installed - 返回已安装 Java 列表 */
+    /* /api/java/installed - 返回已安装 Java 列表（含自定义 Java 与当前使用路径） */
     registerRoute('GET', '/api/java/installed', async (req, res, parsedUrl) => {
       try {
         const systemJava = java.detectSystemJava();
         const bundledJava = java.detectBundledJava();
-        const allJava = [...bundledJava, ...systemJava];
+        const customJava = java.detectCustomJava();
+        const allJava = [...bundledJava, ...systemJava, ...customJava];
+
+        // 读取当前使用的 Java 路径供前端标记「当前使用」
+        let currentJavaPath = '';
+        try {
+          const settings = accounts.loadSettingsCached();
+          currentJavaPath = settings.javaPath || '';
+        } catch (e) {}
 
         sendJSON(res, {
           java: allJava,
-          total: allJava.length
+          total: allJava.length,
+          currentJavaPath: currentJavaPath
         });
       } catch (e) {
         sendError(res, '获取已安装Java列表失败: ' + e.message);
@@ -396,6 +407,193 @@ module.exports = {
       } catch (e) {
         console.error('[Java] 删除失败:', e.message);
         sendError(res, '删除Java失败: ' + e.message);
+      }
+    });
+
+    /* /api/java/add-manual - 手动添加 Java（原位引用，不复制文件） */
+    registerRoute('POST', '/api/java/add-manual', async (req, res, parsedUrl) => {
+      try {
+        const body = await readBody(req);
+        const { javaPath } = body;
+        if (!javaPath) {
+          sendError(res, '缺少 javaPath 参数', 400);
+          return;
+        }
+        const result = java.addManualJava(javaPath);
+        if (result.success) {
+          sendJSON(res, { success: true, message: result.message, entry: result.entry });
+        } else {
+          sendJSON(res, { success: false, message: result.message });
+        }
+      } catch (e) {
+        sendError(res, '添加 Java 失败: ' + e.message);
+      }
+    });
+
+    /* /api/java/import - 导入 Java（压缩包或目录）
+     * body: { type: 'archive'|'directory', path: '...' }
+     * 返回 sessionId 用于轮询导入进度（导入是耗时操作）
+     */
+    registerRoute('POST', '/api/java/import', async (req, res, parsedUrl) => {
+      try {
+        const body = await readBody(req);
+        const { type, path: sourcePath } = body;
+        if (!type || !sourcePath) {
+          sendError(res, '缺少 type 或 path 参数', 400);
+          return;
+        }
+        if (type !== 'archive' && type !== 'directory') {
+          sendError(res, 'type 必须是 archive 或 directory', 400);
+          return;
+        }
+
+        const sessionId = `java-import-${Date.now()}`;
+        const sessionFile = path.join(ctx.dirs.DATA_DIR, `java-import-${sessionId}.json`);
+
+        // 初始化导入状态
+        fs.writeFileSync(sessionFile, JSON.stringify({
+          status: 'starting',
+          progress: 0,
+          message: '准备导入...',
+          startTime: Date.now()
+        }));
+
+        sendJSON(res, { success: true, sessionId });
+
+        // 异步执行导入
+        (async () => {
+          const onProgress = ({ phase, progress, message }) => {
+            try {
+              fs.writeFileSync(sessionFile, JSON.stringify({
+                status: 'importing',
+                progress,
+                message,
+                phase,
+                startTime: Date.now()
+              }));
+            } catch (e) {}
+          };
+
+          try {
+            const result = type === 'archive'
+              ? await java.importJavaArchive(sourcePath, onProgress)
+              : await java.importJavaDirectory(sourcePath, onProgress);
+
+            const finalStatus = result.success
+              ? { status: 'completed', progress: 100, message: result.message, entry: result.entry, endTime: Date.now() }
+              : { status: 'error', progress: 0, message: result.message, endTime: Date.now() };
+
+            fs.writeFileSync(sessionFile, JSON.stringify(finalStatus));
+            // 完成后 60 秒清理状态文件
+            setTimeout(() => {
+              try { fs.unlinkSync(sessionFile); } catch (e) {}
+            }, 60000);
+          } catch (e) {
+            fs.writeFileSync(sessionFile, JSON.stringify({
+              status: 'error',
+              progress: 0,
+              message: '导入失败: ' + e.message,
+              endTime: Date.now()
+            }));
+            setTimeout(() => {
+              try { fs.unlinkSync(sessionFile); } catch (er) {}
+            }, 60000);
+          }
+        })();
+      } catch (e) {
+        sendError(res, '启动 Java 导入失败: ' + e.message);
+      }
+    });
+
+    /* /api/java/import-status - 轮询 Java 导入状态 */
+    registerRoute('GET', '/api/java/import-status', async (req, res, parsedUrl) => {
+      const sessionId = parsedUrl.query.sessionId;
+      if (!sessionId) {
+        sendError(res, '缺少 sessionId 参数', 400);
+        return;
+      }
+      const sessionFile = path.join(ctx.dirs.DATA_DIR, `java-import-${sessionId}.json`);
+      if (!fs.existsSync(sessionFile)) {
+        sendJSON(res, { status: 'not_found' });
+        return;
+      }
+      try {
+        const status = JSON.parse(fs.readFileSync(sessionFile, 'utf8'));
+        sendJSON(res, status);
+      } catch (e) {
+        sendJSON(res, { status: 'error', error: e.message });
+      }
+    });
+
+    /* /api/java/set-current - 设置当前使用的 Java 路径 */
+    registerRoute('POST', '/api/java/set-current', async (req, res, parsedUrl) => {
+      try {
+        const body = await readBody(req);
+        const { javaPath } = body;
+        if (!javaPath) {
+          sendError(res, '缺少 javaPath 参数', 400);
+          return;
+        }
+        if (!fs.existsSync(javaPath)) {
+          sendError(res, 'Java 文件不存在: ' + javaPath, 400);
+          return;
+        }
+
+        const settings = accounts.loadSettingsCached();
+        settings.javaPath = javaPath;
+        accounts.saveSettings(settings);
+
+        // 同时配置环境变量（如果可能）
+        try {
+          const binDir = path.dirname(javaPath);
+          const javaHome = path.dirname(binDir);
+          const info = java.inspectJavaExe ? java.inspectJavaExe(javaPath) : null;
+          const majorVersion = info ? info.majorVersion : 17;
+          await java.configureJavaEnv(javaHome, majorVersion);
+        } catch (e) {
+          console.warn('[Java] 配置环境变量失败（不影响设置）:', e.message);
+        }
+
+        sendJSON(res, { success: true, message: '已设为当前 Java' });
+      } catch (e) {
+        sendError(res, '设置当前 Java 失败: ' + e.message);
+      }
+    });
+
+    /* /api/java/remove-custom - 移除自定义添加/导入的 Java
+     * body: { javaHome: '...', deleteFiles: boolean }
+     * deleteFiles=true 时同时删除导入的文件（仅对 source=imported 有效）
+     */
+    registerRoute('POST', '/api/java/remove-custom', async (req, res, parsedUrl) => {
+      try {
+        const body = await readBody(req);
+        const { javaHome, deleteFiles } = body;
+        if (!javaHome) {
+          sendError(res, '缺少 javaHome 参数', 400);
+          return;
+        }
+
+        // 如果是当前使用的 Java，清空设置
+        try {
+          const settings = accounts.loadSettingsCached();
+          if (settings.javaPath) {
+            const normalizedSettings = settings.javaPath.toLowerCase().replace(/\\/g, '/').replace(/\/$/, '');
+            const normalizedHome = javaHome.toLowerCase().replace(/\\/g, '/').replace(/\/$/, '');
+            if (normalizedSettings.startsWith(normalizedHome)) {
+              settings.javaPath = '';
+              accounts.saveSettings(settings);
+            }
+          }
+        } catch (e) {}
+
+        const result = java.removeCustomJava(javaHome, !!deleteFiles);
+        if (result.success) {
+          sendJSON(res, { success: true, message: result.message });
+        } else {
+          sendJSON(res, { success: false, message: result.message });
+        }
+      } catch (e) {
+        sendError(res, '移除 Java 失败: ' + e.message);
       }
     });
   }

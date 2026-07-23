@@ -8,10 +8,12 @@ const version = require('./java-version');
 const detect = require('./java-detect');
 const runtime = require('./java-runtime');
 const download = require('./java-download');
+const custom = require('./java-custom');
 
 module.exports = {
   ...version,
   ...detect,
   ...runtime,
-  ...download
+  ...download,
+  ...custom
 };

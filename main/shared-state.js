@@ -25,30 +25,44 @@ let _launcherMinimized = false;
 
 module.exports = {
   // 主窗口实例
+  /** @returns {import('electron').BrowserWindow | null} */
   getMainWindow: () => _mainWindow,
+  /** @param {import('electron').BrowserWindow | null} win */
   setMainWindow: (win) => { _mainWindow = win; },
 
-  // server.js 的 API 处理函数引用
+  // server.js 的 API 处理函数引用（handleNativeAPI / handleNativeSSE）
+  /** @returns {{ handleNativeAPI: Function, handleNativeSSE: Function } | null} */
   getApiHandler: () => _apiHandler,
+  /** @param {{ handleNativeAPI: Function, handleNativeSSE: Function } | null} handler */
   setApiHandler: (handler) => { _apiHandler = handler; },
 
   // SSE 工具执行函数
+  /** @returns {Function | null} */
   getSseExecuteTool: () => _sseExecuteTool,
+  /** @param {Function | null} fn */
   setSseExecuteTool: (fn) => { _sseExecuteTool = fn; },
 
   // 是否正在关闭应用
+  /** @returns {boolean} */
   getShuttingDown: () => _shuttingDown,
+  /** @param {boolean} v */
   setShuttingDown: (v) => { _shuttingDown = v; },
 
   // server.js 模块缓存
+  /** @returns {Object | null} */
   getServerModuleCache: () => _serverModuleCache,
+  /** @param {Object | null} cache */
   setServerModuleCache: (cache) => { _serverModuleCache = cache; },
 
   // SSE 端口
+  /** @returns {number} */
   getSsePort: () => _ssePort,
+  /** @param {number} port */
   setSsePort: (port) => { _ssePort = port; },
 
   // 启动器窗口是否最小化（供 SSE 流降频使用）
+  /** @returns {boolean} */
   getLauncherMinimized: () => _launcherMinimized,
+  /** @param {boolean} v */
   setLauncherMinimized: (v) => { _launcherMinimized = v; },
 };

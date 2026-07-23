@@ -346,6 +346,22 @@
     color: #607d8b;
 }
 
+.java-badge.manual {
+    background: rgba(33, 150, 243, 0.15);
+    color: #2196f3;
+}
+
+.java-badge.imported {
+    background: rgba(0, 188, 212, 0.15);
+    color: #00bcd4;
+}
+
+.java-badge.current {
+    background: rgba(76, 175, 80, 0.25);
+    color: var(--green);
+    font-weight: 600;
+}
+
 .java-download-list {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));

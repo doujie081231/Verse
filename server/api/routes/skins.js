@@ -489,19 +489,30 @@ module.exports = {
             const filePath = path.join(dir, skin.file);
             if (!fs.existsSync(filePath)) { sendError(res, 'Skin file missing', 404); return; }
             const skinBuf = fs.readFileSync(filePath);
-            const skinBase64 = skinBuf.toString('base64');
-            const payload = JSON.stringify({
-                variant: skin.model === 'slim' ? 'slim' : 'classic',
-                type: 'imported',
-                data: skinBase64
-            });
+            const variant = skin.model === 'slim' ? 'slim' : 'classic';
+            // Mojang 皮肤上传 API 规范：
+            //   application/json → 只支持 URL 方式 {url, variant}
+            //   multipart/form-data → 上传 PNG 文件（variant + file 字段）
+            // 之前用 application/json + {type:'imported', data} 是错误格式，
+            // Mojang 把 JSON 请求当 URL 方式处理，报 addskinByUrl.saveSkinRequest.url: must not be null
+            const boundary = '----VersePCSkinUpload' + Date.now();
+            const headerPart = Buffer.from(
+                `--${boundary}\r\n` +
+                `Content-Disposition: form-data; name="variant"\r\n\r\n${variant}\r\n` +
+                `--${boundary}\r\n` +
+                `Content-Disposition: form-data; name="file"; filename="skin.png"\r\n` +
+                `Content-Type: image/png\r\n\r\n`,
+                'utf8'
+            );
+            const endPart = Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8');
+            const multipartBody = Buffer.concat([headerPart, skinBuf, endPart]);
             const uploadResult = await new Promise((resolve) => {
                 const upReq = https.request('https://api.minecraftservices.com/minecraft/profile/skins', {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${acc.accessToken}`,
-                        'Content-Type': 'application/json',
-                        'Content-Length': Buffer.byteLength(payload)
+                        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+                        'Content-Length': multipartBody.length
                     }
                 }, (upRes) => {
                     let upBody = '';
@@ -512,7 +523,7 @@ module.exports = {
                     });
                 });
                 upReq.on('error', (e) => resolve({ status: 0, body: e.message, retryAfter: '' }));
-                upReq.write(payload);
+                upReq.write(multipartBody);
                 upReq.end();
             });
             if (uploadResult.status === 200) {

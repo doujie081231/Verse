@@ -449,6 +449,11 @@ const API = {
     configureJavaEnv: (javaHome, majorVersion) =>
         apiPost('/api/java/configure-env', { javaHome, majorVersion }),
     deleteJava: (javaHome) => apiPost('/api/java/delete', { javaHome }),
+    addManualJava: (javaPath) => apiPost('/api/java/add-manual', { javaPath }),
+    importJava: (type, path) => apiPost('/api/java/import', { type, path }),
+    getJavaImportStatus: (sessionId) => apiGet('/api/java/import-status', { sessionId }),
+    setCurrentJava: (javaPath) => apiPost('/api/java/set-current', { javaPath }),
+    removeCustomJava: (javaHome, deleteFiles = false) => apiPost('/api/java/remove-custom', { javaHome, deleteFiles }),
     getOptimizedJvmArgs: (versionId) => apiGet('/api/jvm/optimize-args', { versionId }),
     generateCds: (versionId) => apiPost('/api/jvm/generate-cds', { versionId }),
     getCdsStatus: (versionId) => apiGet('/api/jvm/cds-status', { versionId }),

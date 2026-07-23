@@ -138,39 +138,17 @@ function generateUUID() {
 
 /* 安全文件 I/O */
 
+/* 安全文件读写 - 复用 main/file-safe.js 的唯一实现（带 .bak 备份恢复）
+   原 server/utils 版无备份恢复且与 main/store 版逻辑不一致，已统一收敛 */
+const { safeWriteFileSync: _safeWriteFromFileSafe, safeReadJsonFile } = require('../main/file-safe');
 /**
- * 安全写入文件（先写临时文件再重命名，避免写入中断导致文件损坏）
+ * 安全写入文件 - 复用 file-safe 版（.bak 备份 + 原子重命名），外层包 ensureDir 保持原行为
  * @param {string} filePath - 文件路径
  * @param {string|Buffer} content - 文件内容
  */
 function safeWriteFileSync(filePath, content) {
-  try {
-    ensureDir(filePath);
-    const tmpPath = filePath + '.tmp';
-    fs.writeFileSync(tmpPath, content);
-    try { fs.unlinkSync(filePath); } catch (_) {}
-    try { fs.renameSync(tmpPath, filePath); } catch (e) {
-      try { fs.copyFileSync(tmpPath, filePath); fs.unlinkSync(tmpPath); } catch (_) {}
-    }
-  } catch (e) {
-    console.error(`[Utils] safeWriteFileSync failed: ${filePath}`, e.message);
-  }
-}
-
-/**
- * 安全读取 JSON 文件，失败时返回默认值
- * @param {string} filePath - 文件路径
- * @param {*} defaults - 默认值
- * @returns {*} 解析后的 JSON 或默认值
- */
-function safeReadJsonFile(filePath, defaults) {
-  try {
-    if (!fs.existsSync(filePath)) return defaults;
-    const data = fs.readFileSync(filePath, 'utf8');
-    return JSON.parse(data);
-  } catch (e) {
-    return defaults;
-  }
+  ensureDir(filePath);
+  _safeWriteFromFileSafe(filePath, content);
 }
 
 /* 路径安全 */

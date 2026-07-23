@@ -16,7 +16,28 @@ const PageJava = {
             <div id="installed-java-list" class="java-list">
               <div class="loading">正在检测Java...</div>
             </div>
-            <button id="refresh-java-btn" class="btn btn-secondary" style="margin-top: 12px;">刷新列表</button>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px;">
+              <button id="refresh-java-btn" class="btn btn-secondary">刷新列表</button>
+              <button id="add-manual-java-btn" class="btn btn-secondary">手动添加 Java</button>
+              <button id="import-archive-btn" class="btn btn-secondary">导入压缩包</button>
+              <button id="import-directory-btn" class="btn btn-secondary">导入文件夹</button>
+            </div>
+            <p class="hint" style="margin-top: 8px; font-size: 12px;">
+              「手动添加」：选择电脑上已有的 java.exe 加入列表（原位引用，不复制文件）<br>
+              「导入压缩包」：导入 .zip 格式的 Java 压缩包到启动器目录<br>
+              「导入文件夹」：导入已解压好的 Java 文件夹到启动器目录
+            </p>
+          </div>
+
+          <div id="java-import-progress" class="card" style="margin-top: 20px; display: none;">
+            <h3>导入进度</h3>
+            <div class="progress-container">
+              <div class="progress-bar">
+                <div id="java-import-fill" class="progress-fill" style="width: 0%"></div>
+              </div>
+              <div id="java-import-text" class="progress-text">0%</div>
+            </div>
+            <p id="java-import-message" class="hint" style="margin-top: 8px;">准备导入...</p>
           </div>
           
           <div class="card" style="margin-top: 20px;">

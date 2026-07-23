@@ -13,13 +13,11 @@ const { EventEmitter } = require('events');
 
 const PKG_VERSION = require('../package.json').version;
 
-/* 目录路径 - 可在 DATA_DIR 变更时重新计算 */
-const DEFAULT_OLD_DATA_DIR = path.join(os.homedir(), '.versepc');
-// 与 main/paths.js 对齐：便携版(portable target)运行时 exe 解压到临时目录，
-// 必须用 PORTABLE_EXECUTABLE_DIR 才能拿到真实 exe 所在目录，否则 data-config.json
-// 找不到会静默回退到 C 盘 ~/.versepc
-const APP_DIR = process.env.PORTABLE_EXECUTABLE_DIR || path.dirname(process.execPath);
-const DATA_DIR_CONFIG_FILE = path.join(APP_DIR, 'data-config.json');
+/* 目录路径 - 复用 main/paths.js 的唯一权威实现，不再自行解析
+   （曾因两份实现不一致导致便携版数据回退到 C 盘，已统一收敛到此） */
+const paths = require('../main/paths');
+const APP_DIR = paths.APP_DIR;
+const DATA_DIR_CONFIG_FILE = paths.DATA_DIR_CONFIG_FILE;
 
 /**
  * 检查字符串是否包含非 ASCII 字符
@@ -31,23 +29,6 @@ function hasNonASCII(str) {
     if (str.charCodeAt(i) > 127) return true;
   }
   return false;
-}
-
-/**
- * 解析数据目录路径，优先读取 data-config.json 配置
- * @returns {string} 数据目录绝对路径
- */
-function resolveDataDir() {
-  try {
-    if (fs.existsSync(DATA_DIR_CONFIG_FILE)) {
-      const cfg = JSON.parse(fs.readFileSync(DATA_DIR_CONFIG_FILE, 'utf8'));
-      if (cfg.dataDir && typeof cfg.dataDir === 'string' && fs.existsSync(cfg.dataDir)) {
-        return cfg.dataDir;
-      }
-    }
-  } catch (e) {}
-  if (fs.existsSync(DEFAULT_OLD_DATA_DIR)) return DEFAULT_OLD_DATA_DIR;
-  return path.join(APP_DIR, 'data');
 }
 
 /**
@@ -82,7 +63,7 @@ const ctx = {
   dirs: {
     APP_DIR,
     DATA_DIR_CONFIG_FILE,
-    DATA_DIR: resolveDataDir(),
+    DATA_DIR: paths.resolveDataDir(),
     APP_DATA_PATH: null, // 设置为 DATA_DIR
     MINECRAFT_DIR,
     MINECRAFT_DIR_ORIG,
@@ -310,7 +291,7 @@ const ctx = {
  */
 function reinitPaths() {
   const d = ctx.dirs;
-  d.DATA_DIR = resolveDataDir();
+  d.DATA_DIR = paths.resolveDataDir();
   d.APP_DATA_PATH = d.DATA_DIR;
   d.VERSIONS_DIR = path.join(d.DATA_DIR, 'versions');
   d.LIBRARIES_DIR = path.join(d.DATA_DIR, 'libraries');
@@ -519,5 +500,6 @@ const DownloadManager = {
 };
 
 ctx.DownloadManager = DownloadManager;
+ctx.reinitPaths = reinitPaths;
 
 module.exports = ctx;
