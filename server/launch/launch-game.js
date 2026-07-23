@@ -368,6 +368,14 @@ async function launchGame(versionId, settings, account, checkOnly = false) {
     const allChainLibs = scanLibsRecursive(cleanVersionId);
     const extraMissing = [];
     for (const lib of allChainLibs) {
+      // NeoForge: neoforge:*:client 是虚拟库记录（官方 Maven 返回 404，不可直接下载）
+      // 实际启动用的是 minecraft-client-patched-*.jar（installer 本地生成）
+      // 如果 patched jar 已存在，跳过这条虚拟库记录，避免误报缺失导致下载 404 失败
+      if (lib.name && lib.name.startsWith('net.neoforged:neoforge:') && lib.name.endsWith(':client')) {
+        const neoVer = lib.name.split(':')[2];
+        const patchedJar = path.join(ctx.dirs.LIBRARIES_DIR, 'net', 'neoforged', 'minecraft-client-patched', neoVer, `minecraft-client-patched-${neoVer}.jar`);
+        if (fs.existsSync(patchedJar)) continue;
+      }
       if (!fs.existsSync(lib.path)) {
         let dlUrl = lib.url;
         // 缺 url 但有 maven 坐标时，按 group 推测官方仓库

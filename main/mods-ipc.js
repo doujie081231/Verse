@@ -7,6 +7,8 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { parseJarFile, readJarEntryContent } = require('./jar-parser');
+// 统一数据目录解析，避免硬编码 ~/.versepc 导致数据回退到 C 盘
+const paths = require('./paths');
 
 /**
  * 注册所有模组相关的 IPC 处理器
@@ -173,7 +175,7 @@ function registerModsIPC({ isPathAllowed, loadStore } = {}) {
     // 获取已安装的版本列表（包含模组加载器信息和模组数量）
     ipcMain.handle("mods:getInstalledVersions", async () => {
         try {
-            const versionsDir = path.join(os.homedir(), '.versepc', 'versions');
+            const versionsDir = paths.VERSIONS_DIR;
             try { await fs.promises.access(versionsDir); } catch { return { success: true, versions: [] }; }
 
             const versions = [];
@@ -349,14 +351,13 @@ function registerModsIPC({ isPathAllowed, loadStore } = {}) {
             if (_defaultModPathCache.path && (Date.now() - _defaultModPathCache.time) < DEFAULT_MOD_PATH_TTL) {
                 return { success: true, path: _defaultModPathCache.path };
             }
-            const homeDir = os.homedir();
-            const dataDir = path.join(homeDir, '.versepc');
-            const versionsDir = path.join(dataDir, 'versions');
-            const minecraftDir = path.join(homeDir, '.minecraft');
+            const dataDir = paths.DATA_DIR;
+            const versionsDir = paths.VERSIONS_DIR;
+            const minecraftDir = path.join(os.homedir(), '.minecraft');
 
             let settings = {};
             try {
-                const content = await fs.promises.readFile(path.join(dataDir, 'settings.json'), 'utf8');
+                const content = await fs.promises.readFile(paths.SETTINGS_FILE, 'utf8');
                 settings = JSON.parse(content);
             } catch (e) {}
 
@@ -436,7 +437,7 @@ function registerModsIPC({ isPathAllowed, loadStore } = {}) {
     // 获取版本下载文件夹
     ipcMain.handle("getVersionsDir", async () => {
         try {
-            const versionsDir = path.join(os.homedir(), '.versepc', 'versions');
+            const versionsDir = paths.VERSIONS_DIR;
             return { success: true, path: versionsDir };
         } catch (e) {
             return { success: false, error: e.message };

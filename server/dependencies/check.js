@@ -282,6 +282,18 @@ async function checkDependencies(versionId, settings, externalVersionDir = null)
   for (const lib of libraries) {
     if (lib.rules && !versions.evaluateRules(lib.rules)) continue;
 
+    // NeoForge 特殊处理：net.neoforged:neoforge:<ver>:client 这条库记录在 version JSON 中，
+    // 但官方 Maven 返回 404（不可直接下载），实际启动用的是 minecraft-client-patched-<ver>.jar（installer 本地生成）
+    // 如果 patched jar 已存在，跳过这个虚拟库记录的检查，避免误报缺失导致下载失败
+    if (lib.name && lib.name.startsWith('net.neoforged:neoforge:') && lib.name.endsWith(':client')) {
+      const neoVer = lib.name.split(':')[2];
+      const patchedJarPath = path.join(ctx.dirs.LIBRARIES_DIR, 'net', 'neoforged', 'minecraft-client-patched', neoVer, `minecraft-client-patched-${neoVer}.jar`);
+      if (fs.existsSync(patchedJarPath)) {
+        libTotal++;
+        continue;
+      }
+    }
+
     const hasNatives = lib.natives && lib.natives[process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'osx' : 'linux'];
     const libNameSuffix = lib.name ? lib.name.split(':').pop() : '';
     // 新格式 native：classifier 以 natives- 开头（LWJGL 3.x+）

@@ -15,7 +15,10 @@ const PKG_VERSION = require('../package.json').version;
 
 /* 目录路径 - 可在 DATA_DIR 变更时重新计算 */
 const DEFAULT_OLD_DATA_DIR = path.join(os.homedir(), '.versepc');
-const APP_DIR = path.dirname(process.execPath);
+// 与 main/paths.js 对齐：便携版(portable target)运行时 exe 解压到临时目录，
+// 必须用 PORTABLE_EXECUTABLE_DIR 才能拿到真实 exe 所在目录，否则 data-config.json
+// 找不到会静默回退到 C 盘 ~/.versepc
+const APP_DIR = process.env.PORTABLE_EXECUTABLE_DIR || path.dirname(process.execPath);
 const DATA_DIR_CONFIG_FILE = path.join(APP_DIR, 'data-config.json');
 
 /**

@@ -173,13 +173,8 @@ async function downloadMissingDep(projectId, mcVersion, loader, modsDir) {
 
     logger.info(`下载缺失依赖: ${file.filename} (${Math.round((file.size || 0) / 1024)}KB)`);
 
-    // 下载
-    await http._dlSingle(file.url, destPath, {
-      sha1: file.hashes?.sha1 || null,
-      retries: 2,
-      timeout: 120000,
-      stallTimeout: 30000
-    });
+    // 下载：走镜像（MCIM 镜像会自动替换 cdn.modrinth.com），与资源页面下载一致
+    await http.downloadFileWithMirror(file.url, destPath, null, 2, null, 120000);
 
     // 校验
     if (utils.isJarIntact(destPath)) {

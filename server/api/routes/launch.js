@@ -251,6 +251,17 @@ module.exports = {
         const extV = extVers.find((v) => v.id === lcCleanId);
         if (extV) { lcExternalDir = extV.externalVersionDir; break; }
       }
+      // 依赖检查前先恢复 Forge/NeoForge patched jar（安装器本地生成的文件，无法直接下载）
+      try {
+        const processManager = require('../../launch/process-manager');
+        const lcVersionJson = versions.resolveVersionJson(lcCleanId, lcExternalDir);
+        if (lcVersionJson) {
+          await processManager.ensurePatchedJarIntact(lcVersionJson, lcCleanId);
+        }
+      } catch (e) {
+        console.warn(`[Launch/check] patched jar 恢复失败: ${e.message}`);
+      }
+
       const depResult = await dependencies.checkDependencies(lcCleanId, lcSettings, lcExternalDir);
       // 收集 Java 诊断信息：设置中的 Java 路径、系统 Java、内置 Java
       const _javaDiag = { settingsJavaPath: lcSettings.javaPath || '', settingsJavaExists: !!(lcSettings.javaPath && fs.existsSync(lcSettings.javaPath)) };

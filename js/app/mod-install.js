@@ -51,6 +51,14 @@ function addModFromDetail(projectId, source, safeVid, safeFid) {
       btn.classList.toggle('btn-secondary', isCurrentVersion);
       btn.classList.toggle('btn-primary', !isCurrentVersion);
     });
+    container.querySelectorAll('.mdv-header-btn.mdv-install-btn').forEach(btn => {
+      const itemVid = decodeURIComponent(atob(btn.dataset.vid || ''));
+      const isSelected = modSelectedIds.has(projectId);
+      const isCurrentVersion = isSelected && modSelectedVersions.get(projectId)?.versionId === itemVid;
+      btn.textContent = isCurrentVersion ? '已添加' : '添加';
+      btn.classList.toggle('btn-secondary', isCurrentVersion);
+      btn.classList.toggle('btn-primary', !isCurrentVersion);
+    });
   }
 }
 

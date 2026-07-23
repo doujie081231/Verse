@@ -570,8 +570,11 @@ function buildLaunchArguments(versionJson, settings, account, versionId, customG
   const _neoClientLib = (versionJson.libraries || []).find((l) =>
     l.name && /^net\.neoforged:neoforge:[^:]+:client$/.test(l.name)
   );
-  if (_neoClientLib && _neoClientLib.downloads?.artifact?.path) {
-    const _patchedJarName = path.basename(_neoClientLib.downloads.artifact.path);
+  if (_neoClientLib) {
+    // 注意：虚拟库记录的 downloads.artifact.path 指向 neoforge-<ver>-client.jar（官方 Maven 404）
+    // 实际启动用的是 minecraft-client-patched-<ver>.jar（installer 本地生成）
+    const _neoVer = _neoClientLib.name.split(':')[2];
+    const _patchedJarName = `minecraft-client-patched-${_neoVer}.jar`;
     const _ignoreListIdx = jvmArgs.findIndex((a) => typeof a === 'string' && a.startsWith('-DignoreList='));
     if (_ignoreListIdx >= 0) {
       if (!jvmArgs[_ignoreListIdx].includes(_patchedJarName)) {

@@ -421,36 +421,11 @@ async function updateGameStatus() {
           const analysisResult = await API.getExitAnalysis();
           const analysis = analysisResult.analysis;
           if (analysis && analysis.isCrash) {
-            showToast(`游戏崩溃: ${analysis.reason}`, 'error');
-            if (analysis.suggestion) {
-              setTimeout(() => showToast(`建议: ${analysis.suggestion}`, 'info'), 1000);
-            }
-            if (analysis.versionId || status.lastVersionId) {
-              const vid = analysis.versionId || status.lastVersionId;
-              setTimeout(() => {
-                const repairToast = document.createElement('div');
-                repairToast.className = 'toast warning';
-                repairToast.style.cssText = 'cursor:pointer;display:flex;align-items:center;gap:8px';
-                repairToast.innerHTML = '<span>游戏启动失败，可前往<strong>版本设置页面</strong>使用<strong>文件修复功能</strong>解决此问题</span><button style="background:var(--accent);color:#fff;border:none;border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer;white-space:nowrap">立即修复</button>';
-                repairToast.querySelector('button').addEventListener('click', () => {
-                  openVersionSettings(vid);
-                  document.querySelectorAll('.vset-nav-item[data-tab="overview"]').forEach(b => b.click());
-                  setTimeout(() => { repairFiles(); }, 500);
-                });
-                const container = document.getElementById('toast-container');
-                if (container) {
-                  container.appendChild(repairToast);
-                  setTimeout(() => {
-                    repairToast.style.transform = 'translateX(120%)';
-                    repairToast.style.opacity = '0';
-                    setTimeout(() => { if (repairToast.parentNode) repairToast.parentNode.removeChild(repairToast); }, 300);
-                  }, 8000);
-                }
-              }, 2000);
-            }
             const crashVid = analysis.versionId || status.lastVersionId;
             if (crashVid) {
               showCrashAnalysis(crashVid);
+            } else {
+              showToast(`游戏崩溃: ${analysis.reason}`, 'error');
             }
           }
         } catch (e) {
@@ -467,48 +442,110 @@ async function showCrashAnalysis(versionId) {
   try {
     const result = await API.analyzeCrash(versionId);
     if (result.found) {
-      showCrashAnalysisDialog(result);
+      showCrashAnalysisDialog(result, versionId);
+    } else {
+      showToast('游戏已退出，未检测到崩溃日志', 'info');
     }
-  } catch (e) {}
+  } catch (e) {
+    showToast('崩溃分析失败: ' + (e.message || e), 'error');
+  }
 }
 
-function showCrashAnalysisDialog(result) {
+function showCrashAnalysisDialog(result, versionId) {
   const existing = document.getElementById('crash-analysis-dialog');
   if (existing) existing.remove();
 
   const overlay = document.createElement('div');
   overlay.id = 'crash-analysis-dialog';
-  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:10001;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px)';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:10001;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);animation:crashFadeIn 0.2s ease';
 
-  const severityColors = { high: '#ef4444', medium: '#f59e0b', low: '#22c55e' };
-  const severityLabels = { high: '严重', medium: '中等', low: '轻微' };
-  const severityColor = severityColors[result.severity] || severityColors.medium;
-  const severityLabel = severityLabels[result.severity] || '中等';
+  const severityConfig = {
+    high: { color: '#ef4444', bg: 'rgba(239,68,68,0.1)', label: '严重', icon: 'M12 9v2m0 4h.01M5.07 19h13.86c1.54 0 2.5-1.67 1.73-3L13.73 4a2 2 0 00-3.46 0L3.34 16c-.77 1.33.19 3 1.73 3z' },
+    medium: { color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', label: '中等', icon: 'M12 9v2m0 4h.01M5.07 19h13.86c1.54 0 2.5-1.67 1.73-3L13.73 4a2 2 0 00-3.46 0L3.34 16c-.77 1.33.19 3 1.73 3z' },
+    low: { color: '#22c55e', bg: 'rgba(34,197,94,0.1)', label: '轻微', icon: 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z' }
+  };
+  const sev = severityConfig[result.severity] || severityConfig.medium;
+
+  const logExcerptHtml = (result.logExcerpt && result.logExcerpt.length > 0)
+    ? result.logExcerpt.map(item => {
+        const sourceColor = item.source === 'crash-report' ? '#ef4444' : item.source === 'hs_err' ? '#f59e0b' : 'var(--text-muted)';
+        const sourceLabel = item.source === 'crash-report' ? '崩溃报告' : item.source === 'hs_err' ? 'JVM崩溃' : '游戏日志';
+        return `<div style="display:flex;gap:8px;padding:4px 0;border-bottom:1px solid var(--border-color);font-family:Consolas,Monaco,monospace;font-size:12px;line-height:1.5">
+          <span style="color:${sourceColor};font-size:10px;flex-shrink:0;margin-top:2px;padding:1px 4px;border-radius:3px;background:${sourceColor}15;white-space:nowrap">${sourceLabel}</span>
+          <span style="color:var(--text-secondary);word-break:break-all">${escapeHtml(item.line)}</span>
+        </div>`;
+      }).join('')
+    : '<div style="color:var(--text-muted);font-size:12px;text-align:center;padding:12px">未提取到关键日志信息</div>';
 
   const dialog = document.createElement('div');
-  dialog.style.cssText = `width:90%;max-width:520px;background:var(--bg-secondary);border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,0.5);overflow:hidden`;
+  dialog.style.cssText = `width:92%;max-width:640px;max-height:88vh;background:var(--bg-secondary);border-radius:14px;box-shadow:0 24px 70px rgba(0,0,0,0.6);overflow:hidden;display:flex;flex-direction:column;animation:crashSlideUp 0.25s ease`;
 
   dialog.innerHTML = `
-    <div style="padding:20px 24px;border-bottom:1px solid var(--border-color);display:flex;align-items:center;justify-content:space-between">
-      <h3 style="margin:0;font-size:18px;color:var(--text-primary)">崩溃分析结果</h3>
-      <button id="crash-dialog-close" style="width:32px;height:32px;border:none;background:transparent;color:var(--text-muted);font-size:20px;cursor:pointer;border-radius:6px">×</button>
-    </div>
-    <div style="padding:24px">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
-        <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${severityColor}"></span>
-        <span style="font-size:14px;font-weight:600;color:var(--text-primary)">${escapeHtml(result.reason)}</span>
-        <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:${severityColor}20;color:${severityColor}">${escapeHtml(severityLabel)}</span>
+    <style>
+      @keyframes crashFadeIn { from { opacity:0 } to { opacity:1 } }
+      @keyframes crashSlideUp { from { opacity:0; transform:translateY(20px) } to { opacity:1; transform:translateY(0) } }
+      #crash-dialog-body::-webkit-scrollbar { width:6px }
+      #crash-dialog-body::-webkit-scrollbar-thumb { background:var(--border-color);border-radius:3px }
+      #crash-dialog-body::-webkit-scrollbar-track { background:transparent }
+      .crash-btn { transition:all 0.15s ease }
+      .crash-btn:hover { transform:translateY(-1px) }
+      .crash-btn:active { transform:translateY(0) }
+    </style>
+    <div style="padding:18px 24px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--border-color);background:${sev.bg}">
+      <div style="width:40px;height:40px;border-radius:10px;background:${sev.color}20;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <svg viewBox="0 0 24 24" fill="none" stroke="${sev.color}" stroke-width="2" style="width:22px;height:22px"><path d="${sev.icon}"/></svg>
       </div>
-      ${result.modName ? `<div style="padding:10px 14px;background:var(--bg-primary);border-radius:8px;margin-bottom:12px;font-size:13px;color:var(--text-secondary)">相关Mod: <strong style="color:var(--accent)">${escapeHtml(result.modName)}</strong></div>` : ''}
-      <div style="padding:14px;background:var(--bg-primary);border-radius:8px;border-left:4px solid var(--accent);margin-bottom:16px">
-        <div style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:6px">解决方案</div>
-        <div style="font-size:13px;color:var(--text-primary);line-height:1.6">${escapeHtml(result.solution)}</div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">
+          <h3 style="margin:0;font-size:16px;font-weight:700;color:var(--text-primary)">游戏崩溃了</h3>
+          <span style="font-size:10px;padding:2px 8px;border-radius:10px;background:${sev.color}20;color:${sev.color};font-weight:600;flex-shrink:0">${sev.label}</span>
+        </div>
+        <div style="font-size:13px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(result.reason)}</div>
       </div>
-      ${result.logFile ? `<div style="font-size:12px;color:var(--text-muted)">日志文件: ${escapeHtml(result.logFile)}</div>` : ''}
+      <button id="crash-dialog-close" class="crash-btn" style="width:32px;height:32px;border:none;background:transparent;color:var(--text-muted);font-size:18px;cursor:pointer;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center">×</button>
     </div>
-    <div style="padding:16px 24px;border-top:1px solid var(--border-color);display:flex;justify-content:flex-end;gap:8px">
-      <button id="crash-dialog-view-log" style="padding:8px 16px;border:1px solid var(--border-color);background:var(--bg-secondary);color:var(--text-primary);border-radius:6px;font-size:13px;cursor:pointer">查看日志</button>
-      <button id="crash-dialog-ok" style="padding:8px 16px;border:none;background:var(--accent);color:#fff;border-radius:6px;font-size:13px;cursor:pointer">知道了</button>
+    <div id="crash-dialog-body" style="flex:1;overflow-y:auto;padding:20px 24px">
+      ${result.modName ? `
+      <div style="margin-bottom:16px">
+        <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">相关模组</div>
+        <div style="padding:10px 14px;background:var(--bg-primary);border-radius:8px;font-size:13px;display:flex;align-items:center;gap:8px">
+          <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" style="width:16px;height:16px;flex-shrink:0"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+          <strong style="color:var(--accent)">${escapeHtml(result.modName)}</strong>
+        </div>
+      </div>` : ''}
+      ${result.crashDescription ? `
+      <div style="margin-bottom:16px">
+        <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">崩溃描述</div>
+        <div style="padding:12px 14px;background:var(--bg-primary);border-radius:8px;font-size:12px;color:var(--text-secondary);font-family:Consolas,Monaco,monospace;line-height:1.5;white-space:pre-wrap;word-break:break-all">${escapeHtml(result.crashDescription)}</div>
+      </div>` : ''}
+      <div style="margin-bottom:16px">
+        <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">解决方案</div>
+        <div style="padding:14px;background:var(--bg-primary);border-radius:8px;border-left:3px solid ${sev.color};font-size:13px;color:var(--text-primary);line-height:1.7">${escapeHtml(result.solution)}</div>
+      </div>
+      <div>
+        <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;display:flex;align-items:center;justify-content:space-between">
+          <span>错误日志摘要</span>
+          ${result.logFile ? `<span style="font-size:10px;color:var(--text-muted);font-weight:400;text-transform:none;letter-spacing:0">${escapeHtml(result.logFile)}</span>` : ''}
+        </div>
+        <div style="padding:12px 14px;background:var(--bg-primary);border-radius:8px;max-height:200px;overflow-y:auto">
+          ${logExcerptHtml}
+        </div>
+      </div>
+    </div>
+    <div style="padding:14px 24px;border-top:1px solid var(--border-color);display:flex;justify-content:flex-end;gap:8px;background:var(--bg-secondary)">
+      <button id="crash-dialog-copy" class="crash-btn" style="padding:8px 16px;border:1px solid var(--border-color);background:transparent;color:var(--text-primary);border-radius:8px;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:6px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+        复制报告
+      </button>
+      <button id="crash-dialog-repair" class="crash-btn" style="padding:8px 16px;border:1px solid var(--border-color);background:transparent;color:var(--text-primary);border-radius:8px;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:6px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>
+        文件修复
+      </button>
+      <button id="crash-dialog-view-log" class="crash-btn" style="padding:8px 16px;border:1px solid var(--border-color);background:transparent;color:var(--text-primary);border-radius:8px;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:6px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        查看完整日志
+      </button>
+      <button id="crash-dialog-ok" class="crash-btn" style="padding:8px 16px;border:none;background:var(--accent);color:#fff;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600">知道了</button>
     </div>
   `;
 
@@ -519,12 +556,37 @@ function showCrashAnalysisDialog(result) {
   overlay.addEventListener('click', (e) => { if (e.target === overlay) closeDialog(); });
   dialog.querySelector('#crash-dialog-close').addEventListener('click', closeDialog);
   dialog.querySelector('#crash-dialog-ok').addEventListener('click', closeDialog);
+
+  dialog.querySelector('#crash-dialog-copy').addEventListener('click', () => {
+    const report = `=== VersePC 崩溃报告 ===\n崩溃原因: ${result.reason}\n严重程度: ${sev.label}\n${result.modName ? '相关模组: ' + result.modName + '\n' : ''}解决方案: ${result.solution}\n${result.logFile ? '日志文件: ' + result.logFile + '\n' : ''}${result.crashDescription ? '\n崩溃描述:\n' + result.crashDescription + '\n' : ''}${result.logExcerpt && result.logExcerpt.length > 0 ? '\n错误日志摘要:\n' + result.logExcerpt.map(i => '[' + i.source + '] ' + i.line).join('\n') : ''}`;
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(report).then(() => {
+        showToast('崩溃报告已复制到剪贴板', 'success');
+      }).catch(() => {
+        showToast('复制失败，请手动选择文本', 'error');
+      });
+    } else {
+      showToast('复制失败，请手动选择文本', 'error');
+    }
+  });
+
+  dialog.querySelector('#crash-dialog-repair').addEventListener('click', () => {
+    closeDialog();
+    if (versionId) {
+      openVersionSettings(versionId);
+      document.querySelectorAll('.vset-nav-item[data-tab="overview"]').forEach(b => b.click());
+      setTimeout(() => { if (typeof repairFiles === 'function') repairFiles(); }, 500);
+    }
+  });
+
   dialog.querySelector('#crash-dialog-view-log').addEventListener('click', () => {
     closeDialog();
     if (typeof crashAnalyzerUI !== 'undefined') {
       crashAnalyzerUI.show();
     }
   });
+
+  setTimeout(() => { dialog.querySelector('#crash-dialog-ok').focus(); }, 100);
 }
 
 function showLaunchModal() {

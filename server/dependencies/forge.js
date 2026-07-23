@@ -148,13 +148,25 @@ function checkForgeCore(versionJson, versionId, externalVersionDir, result) {
         });
       }
       if (neoForgeLib) {
-        const fp = neoForgeLib.name.split(':');
-        const cl = fp.length >= 4 ? `-${fp[3]}` : '';
-        forgeCoreLibs.push({
-          name: neoForgeLib.name,
-          path: findForgeCoreFile(fp, `${fp[1]}-${fp[2]}${cl}.jar`),
-          desc: 'NeoForge核心'
-        });
+        // NeoForge: neoforge:*:client 是虚拟库记录（官方 Maven 返回 404，不可直接下载）
+        // 实际启动用的是 minecraft-client-patched-*.jar（installer 本地生成）
+        // 如果 patched jar 已存在，跳过这条虚拟库记录的检查，避免误报缺失导致无法启动
+        const isNeoClientVirtual = neoForgeLib.name.endsWith(':client');
+        let neoPatchedOk = false;
+        if (isNeoClientVirtual) {
+          const neoVer = neoForgeLib.name.split(':')[2];
+          const patchedJar = path.join(ctx.dirs.LIBRARIES_DIR, 'net', 'neoforged', 'minecraft-client-patched', neoVer, `minecraft-client-patched-${neoVer}.jar`);
+          neoPatchedOk = fs.existsSync(patchedJar) && utils.isJarIntact(patchedJar);
+        }
+        if (!isNeoClientVirtual || !neoPatchedOk) {
+          const fp = neoForgeLib.name.split(':');
+          const cl = fp.length >= 4 ? `-${fp[3]}` : '';
+          forgeCoreLibs.push({
+            name: neoForgeLib.name,
+            path: findForgeCoreFile(fp, `${fp[1]}-${fp[2]}${cl}.jar`),
+            desc: 'NeoForge核心'
+          });
+        }
       }
       if (neoFmlLib) {
         const fp = neoFmlLib.name.split(':');

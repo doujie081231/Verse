@@ -694,9 +694,28 @@ function _buildVersionItemHtml(v, idx) {
   }).join('');
 
   const safeVid = btoa(encodeURIComponent(v.id || ''));
+  const primaryFile = files[0] || {};
+  const safeFid = btoa(encodeURIComponent(primaryFile.id || ''));
+  const isMod = currentModDetailType === 'mod';
+  const isModpack = currentModDetailType === 'modpack';
+  const hasMultipleFiles = fileCount > 1;
 
-  return `<div class="mdv-group" id="mdvg-${idx}">
-    <div class="mdv-group-header" onclick="toggleMdvGroup(${idx})">
+  let primaryBtnHtml;
+  if (modMultiSelectMode && isMod) {
+    const alreadySelected = modSelectedIds.has(currentModDetailId);
+    primaryBtnHtml = `<button class="btn ${alreadySelected ? 'btn-secondary' : 'btn-primary'} btn-sm mdv-install-btn mdv-header-btn" data-vid="${safeVid}" data-fid="${safeFid}" onclick="event.stopPropagation();addModFromDetail('${escapeOnclick(currentModDetailId)}', '${escapeOnclick(currentModDetailSource)}', '${safeVid}', '${safeFid}')">${alreadySelected ? '已添加' : '添加'}</button>`;
+  } else if (isModpack) {
+    primaryBtnHtml = `<button class="btn btn-primary btn-sm mdv-header-btn" onclick="event.stopPropagation();installModpackVersion('${escapeOnclick(currentModDetailId)}', '${escapeOnclick(v.id)}')">下载</button>`;
+  } else if (isMod) {
+    primaryBtnHtml = `<button class="btn btn-primary btn-sm mdv-header-btn" onclick="event.stopPropagation();installModFile('${escapeOnclick(currentModDetailId)}', '${escapeOnclick(currentModDetailSource)}', '${escapeOnclick(v.id)}', '${escapeOnclick(primaryFile.id || '')}')">安装</button>`;
+  } else {
+    primaryBtnHtml = `<button class="btn btn-primary btn-sm mdv-header-btn" onclick="event.stopPropagation();quickInstallResourceVersion('${escapeOnclick(currentModDetailId)}', '${escapeOnclick(currentModDetailType)}', '${escapeOnclick(v.id)}')">安装</button>`;
+  }
+
+  const sizeText = fileCount > 0 ? formatNumber(Math.round((primaryFile.size || 1024) / 1024)) + ' KB' : '';
+
+  return `<div class="mdv-group${hasMultipleFiles ? '' : ' single-file'}" id="mdvg-${idx}">
+    <div class="mdv-group-header"${hasMultipleFiles ? ` onclick="toggleMdvGroup(${idx})"` : ''}>
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <span class="mdv-group-title">${escapeHtml(verNum)}</span>
         ${loaderBadges}
@@ -704,11 +723,12 @@ function _buildVersionItemHtml(v, idx) {
         ${releaseType ? `<span class="lver-badge" style="margin-left:4px">${releaseType}</span>` : ''}
       </div>
       <div style="display:flex;align-items:center;gap:10px">
-        <span style="font-size:11px;color:var(--text-muted)">${fileCount} 个文件</span>
-        <svg class="mdv-expand-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+        ${hasMultipleFiles ? `<span style="font-size:11px;color:var(--text-muted)">${fileCount} 个文件</span>` : (sizeText ? `<span style="font-size:11px;color:var(--text-muted)">${sizeText}</span>` : '')}
+        ${primaryBtnHtml}
+        ${hasMultipleFiles ? '<svg class="mdv-expand-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>' : ''}
       </div>
     </div>
-    <div class="mdv-files">
+    ${hasMultipleFiles ? `<div class="mdv-files">
       ${files.map(f => {
         const fname = f.filename || f.name || f.id;
         const size = formatNumber(Math.round((f.size || 1024) / 1024)) + ' KB';
@@ -716,14 +736,12 @@ function _buildVersionItemHtml(v, idx) {
         const stableBadge = f.releaseType === 'release' ? '<span class="lver-badge">稳定</span>' : 
                  (f.releaseType === 'beta' ? '<span class="lver-badge">测试版</span>' : '');
         const loaderIcon = getLoaderFileIcon(fname);
-        const safeFid = btoa(encodeURIComponent(f.id || ''));
-        const isMod = currentModDetailType === 'mod';
-        const isModpack = currentModDetailType === 'modpack';
+        const safeFid2 = btoa(encodeURIComponent(f.id || ''));
         let addBtn, rowOnclick;
         if (modMultiSelectMode && isMod) {
           const alreadySelected = modSelectedIds.has(currentModDetailId);
-          addBtn = `<button class="btn ${alreadySelected ? 'btn-secondary' : 'btn-primary'} btn-sm mdv-install-btn" onclick="event.stopPropagation();addModFromDetail('${escapeOnclick(currentModDetailId)}', '${escapeOnclick(currentModDetailSource)}', '${safeVid}', '${safeFid}')">${alreadySelected ? '已添加' : '添加'}</button>`;
-          rowOnclick = `addModFromDetail('${escapeOnclick(currentModDetailId)}', '${escapeOnclick(currentModDetailSource)}', '${safeVid}', '${safeFid}')`;
+          addBtn = `<button class="btn ${alreadySelected ? 'btn-secondary' : 'btn-primary'} btn-sm mdv-install-btn" onclick="event.stopPropagation();addModFromDetail('${escapeOnclick(currentModDetailId)}', '${escapeOnclick(currentModDetailSource)}', '${safeVid}', '${safeFid2}')">${alreadySelected ? '已添加' : '添加'}</button>`;
+          rowOnclick = `addModFromDetail('${escapeOnclick(currentModDetailId)}', '${escapeOnclick(currentModDetailSource)}', '${safeVid}', '${safeFid2}')`;
         } else {
           addBtn = isModpack
              ? `<button class="btn btn-primary btn-sm mdv-install-btn" onclick="event.stopPropagation();installModpackVersionSafe(this.closest('.mdv-file-item'))">下载</button>`
@@ -732,7 +750,7 @@ function _buildVersionItemHtml(v, idx) {
                : `<button class="btn btn-primary btn-sm mdv-install-btn" onclick="event.stopPropagation();installResourceVersionSafe(this.closest('.mdv-file-item'))">安装</button>`);
           rowOnclick = isModpack ? `installModpackVersionSafe(this)` : (isMod ? `installModFileSafe(this)` : `installResourceVersionSafe(this)`);
         }
-        return `<div class="mdv-file-item" data-vid="${safeVid}" data-fid="${safeFid}" onclick="${rowOnclick}">
+        return `<div class="mdv-file-item" data-vid="${safeVid}" data-fid="${safeFid2}" onclick="${rowOnclick}">
           <div class="mdv-file-icon">${loaderIcon}</div>
           <div class="mdv-file-info">
             <div class="mdv-file-name">${escapeHtml(fname)}</div>
@@ -741,7 +759,7 @@ function _buildVersionItemHtml(v, idx) {
           ${addBtn}
         </div>`;
       }).join('')}
-    </div>
+    </div>` : ''}
   </div>`;
 }
 

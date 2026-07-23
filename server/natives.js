@@ -635,6 +635,23 @@ function buildClasspath(versionJson, versionId, externalVersionDir = null) {
     const libName = lib.name || '';
     const nameSuffix = libName ? libName.split(':').pop() : '';
 
+    // NeoForge: neoforge:*:client 是虚拟库记录（官方 Maven 返回 404，不可直接下载）
+    // 实际启动用的是 minecraft-client-patched-<ver>.jar（installer 本地生成）
+    // 此处跳过虚拟库记录的常规查找（避免 fallback 到 universal jar），改为主动查找 patched jar
+    if (libName.startsWith('net.neoforged:neoforge:') && libName.endsWith(':client')) {
+      const neoVer = libName.split(':')[2];
+      const patchedRelPath = `net/neoforged/minecraft-client-patched/${neoVer}/minecraft-client-patched-${neoVer}.jar`;
+      const patchedPath = findLibFile(patchedRelPath);
+      if (patchedPath) {
+        classpath.push(patchedPath);
+        foundCount++;
+      } else {
+        missingCount++;
+        missingList.push(libName);
+      }
+      continue;
+    }
+
     // 仅跳过纯 native 条目（无 artifact）。若条目同时含 natives 和 artifact
     // （如合并后的 LWJGL 库），仍需将 artifact JAR 加入 classpath
     if (lib.natives && !lib.downloads?.artifact?.path) continue;

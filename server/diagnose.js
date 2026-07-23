@@ -103,6 +103,12 @@ function diagnoseVersion(versionId) {
                     const libNameSuffix = lib.name.split(':').pop();
                     if (libNameSuffix.startsWith('natives-')) continue;
                     if (lib.rules && !evaluateRules(lib.rules)) continue;
+                    // NeoForge: neoforge:*:client 是虚拟库记录，实际用 minecraft-client-patched-*.jar
+                    if (lib.name.startsWith('net.neoforged:neoforge:') && lib.name.endsWith(':client')) {
+                        const neoVer = lib.name.split(':')[2];
+                        const patchedJar = path.join(ctx.dirs.LIBRARIES_DIR, 'net', 'neoforged', 'minecraft-client-patched', neoVer, `minecraft-client-patched-${neoVer}.jar`);
+                        if (fs.existsSync(patchedJar)) continue;
+                    }
                     if (lib.downloads && lib.downloads.artifact) {
                         const libPath = path.join(ctx.dirs.LIBRARIES_DIR, lib.downloads.artifact.path);
                         if (!fs.existsSync(libPath)) {
@@ -293,6 +299,12 @@ async function performRepair(sessionId, versionId) {
             }
 
             if (!lib.name) continue;
+            // NeoForge: neoforge:*:client 是虚拟库记录，实际用 minecraft-client-patched-*.jar
+            if (lib.name.startsWith('net.neoforged:neoforge:') && lib.name.endsWith(':client')) {
+                const neoVer = lib.name.split(':')[2];
+                const patchedJar = path.join(ctx.dirs.LIBRARIES_DIR, 'net', 'neoforged', 'minecraft-client-patched', neoVer, `minecraft-client-patched-${neoVer}.jar`);
+                if (fs.existsSync(patchedJar)) continue;
+            }
             const libPath = resolveLibraryPath(lib.name);
             if (!libPath) continue;
 

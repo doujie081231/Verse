@@ -410,6 +410,47 @@ module.exports = {
           { pattern: 'Missing or unsupported mandatory dependencies', reason: 'Mod缺少前置', solution: '某些Mod缺少必要的前置Mod。请查看详细信息，安装缺少的前置Mod。', severity: 'medium' },
         ];
 
+        // 提取崩溃日志关键行（用于前端展示详细错误报告）
+        function extractKeyLines(content, source) {
+          if (!content) return [];
+          const lines = content.split('\n');
+          const keyLines = [];
+          const keywords = [
+            'Exception', 'Error', 'Caused by', 'at ', 'Failed', 'failed',
+            'Cannot', 'cannot', 'Missing', 'missing', 'Unable', 'unable',
+            'java.lang.', 'net.minecraft.', 'org.', 'com.', 'FATAL',
+            'Error:', 'Exception:', 'Stacktrace', 'Description:'
+          ];
+          for (let i = 0; i < lines.length && keyLines.length < 25; i++) {
+            const line = lines[i].trim();
+            if (!line || line.length > 300) continue;
+            // 跳过纯空白和分隔线
+            if (/^[-=/*#]+$/.test(line)) continue;
+            for (const kw of keywords) {
+              if (line.includes(kw)) {
+                keyLines.push({ source, line, lineNum: i + 1 });
+                break;
+              }
+            }
+          }
+          return keyLines;
+        }
+
+        const logExcerpt = [
+          ...extractKeyLines(crashContent, 'crash-report'),
+          ...extractKeyLines(hsErrContent, 'hs_err'),
+          ...extractKeyLines(latestLogContent.slice(-200), 'latest.log')
+        ].slice(0, 30);
+
+        // 提取崩溃报告的 Description 部分（如果有）
+        let crashDescription = '';
+        if (crashContent) {
+          const descMatch = crashContent.match(/Description:\s*([\s\S]*?)(?=\n\s*\n|$)/);
+          if (descMatch) {
+            crashDescription = descMatch[1].trim().slice(0, 500);
+          }
+        }
+
         let result = { found: false };
         for (const rule of crashRules) {
           if (allLog.includes(rule.pattern)) {
@@ -424,7 +465,9 @@ module.exports = {
               solution: rule.solution,
               modName: modName,
               logFile: logFile,
-              severity: rule.severity
+              severity: rule.severity,
+              logExcerpt,
+              crashDescription
             };
             break;
           }
@@ -448,7 +491,9 @@ module.exports = {
                   solution: detail || '',
                   modName: additional && additional.length > 0 ? additional.join(', ') : null,
                   logFile: logFile,
-                  severity: 'medium'
+                  severity: 'medium',
+                  logExcerpt,
+                  crashDescription
                 };
               }
             }

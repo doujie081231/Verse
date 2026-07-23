@@ -872,14 +872,14 @@ async function runPatchProcessor({ mcJarPath, clientLzmaPath, patchedJarPath, pr
     }
     console.log(`${logPrefix} 使用官方安装器: ${path.basename(installerJarPath)}`);
 
-    // 4. 调用 SimpleInstaller --install-client
+    // 4. 调用 SimpleInstaller --installClient（注意：Forge/NeoForge installer 使用驼峰参数名）
     const targetDir = ctx.dirs.DATA_DIR;
     const args = [
         '-Dfile.encoding=UTF-8',
         '-Dstdout.encoding=UTF-8',
         '-Dstderr.encoding=UTF-8',
         '-jar', installerJarPath,
-        '--install-client', targetDir
+        '--installClient', targetDir
     ];
     console.log(`${logPrefix} 目标目录: ${targetDir}`);
 

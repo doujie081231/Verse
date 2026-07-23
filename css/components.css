@@ -2375,6 +2375,10 @@
     border-color: var(--accent);
 }
 
+.mdv-group.single-file .mdv-group-header {
+    cursor: default;
+}
+
 .mdv-group-header {
     display: flex;
     align-items: center;

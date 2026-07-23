@@ -31,8 +31,8 @@ let updateDownloaded = false;       // 更新是否已下载完成
 let updateAvailableInfo = null;     // 可用的更新信息（用于弹窗通知）
 let updateDownloadedPath = null;    // 已下载的安装包路径
 
-// 更新配置文件路径
-const UPDATE_CONFIG_PATH = path.join(require('os').homedir(), '.versepc', 'update-config.json');
+// 更新配置文件路径 —— 统一走 paths.js，避免硬编码 ~/.versepc 导致数据回退到 C 盘
+const UPDATE_CONFIG_PATH = require('./paths').UPDATE_CONFIG_FILE;
 
 // 依赖注入的句柄
 let _getMainWindow = null;
