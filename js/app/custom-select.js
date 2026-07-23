@@ -304,6 +304,17 @@ function initAllCustomSelects() {
         customSelectInstances['modpack-filter-version'].setOptions([{ value: '', text: '全部' }]);
     }
 
+    if (!customSelectInstances['modpack-filter-source']) {
+        customSelectInstances['modpack-filter-source'] = new CustomSelect('modpack-filter-source-wrapper', {
+            onChange: () => {}
+        });
+        customSelectInstances['modpack-filter-source'].setOptions([
+            { value: '', text: '全部' },
+            { value: 'modrinth', text: 'Modrinth' },
+            { value: 'curseforge', text: 'CurseForge' }
+        ]);
+    }
+
     if (!customSelectInstances['datapack-filter-version']) {
         customSelectInstances['datapack-filter-version'] = new CustomSelect('datapack-filter-version-wrapper');
         customSelectInstances['datapack-filter-version'].setOptions([{ value: '', text: '全部' }]);

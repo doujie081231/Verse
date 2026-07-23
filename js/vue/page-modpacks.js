@@ -39,8 +39,22 @@ const PageModpacks = {
                   </div>
                 </div>
               </div>
+              </div>
             </div>
-          </div>
+            <div class="filter-row">
+              <div class="filter-group">
+                <label class="filter-label">下载源</label>
+                <div class="custom-select custom-select-sm" id="modpack-filter-source-wrapper">
+                  <div class="custom-select-trigger" id="modpack-filter-source-trigger">
+                    <span class="custom-select-value" id="modpack-filter-source-value">全部</span>
+                    <svg class="custom-select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                  </div>
+                  <div class="custom-select-dropdown" id="modpack-filter-source-dropdown">
+                    <div class="custom-select-options" id="modpack-filter-source-options"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
           <div id="modpack-browse-list" class="mod-list">
             <div class="loading-spinner"><div class="spinner"></div></div>
           </div>

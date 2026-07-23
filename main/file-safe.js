@@ -47,7 +47,16 @@ function safeReadJsonFile(filePath, defaults) {
   try {
     if (fs.existsSync(filePath)) {
       const raw = fs.readFileSync(filePath, 'utf8');
-      return JSON.parse(raw);
+      const data = JSON.parse(raw);
+      // [P0 FIX - 2026-07-23] 首次成功读取后立即确保 .bak 存在
+      // 之前：只有 safeWriteFileSync 会创建 .bak，首次读时没有 .bak
+      // 问题：覆盖安装恢复的 app-store.json 无 .bak，后续损坏无法恢复 → 返回 {} → 数据丢失
+      // 修复：成功读取后立刻备份，保证后续损坏时始终有 .bak 可恢复
+      const bakPath = filePath + '.bak';
+      if (!fs.existsSync(bakPath)) {
+        try { fs.copyFileSync(filePath, bakPath); } catch (_) {}
+      }
+      return data;
     }
   } catch (e) {
     console.error(`[file-safe] 文件损坏: ${filePath}`, e.message);

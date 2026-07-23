@@ -13,6 +13,7 @@ module.exports = {
         const { modpack, http, versions } = deps;
 
         const MODRINTH_API = ctx.urls.MODRINTH_API;
+        const CURSEFORGE_API = ctx.urls.CURSEFORGE_API;
         const DATA_DIR = ctx.dirs.DATA_DIR;
 
         // ====================================================================
@@ -32,12 +33,13 @@ module.exports = {
         });
 
         // ====================================================================
-        // /api/modpacks/search
+        // /api/modpacks/search - Modrinth + CurseForge 双源聚合
         // ====================================================================
         registerRoute('GET', '/api/modpacks/search', async (req, res, parsedUrl) => {
             let mpQuery = parsedUrl.query.query || '';
             const mpLoader = parsedUrl.query.loader || '';
             const mpVersion = parsedUrl.query.version || '';
+            const mpSource = parsedUrl.query.source || 'any';
             const mpLimit = parseInt(parsedUrl.query.limit || '10', 10);
             const mpOffset = parseInt(parsedUrl.query.offset || '0', 10);
 
@@ -57,20 +59,60 @@ module.exports = {
             }
 
             try {
-                const facets = [['project_type:modpack']];
-                if (mpLoader) facets.push([`categories:${mpLoader}`]);
-                if (mpVersion) facets.push([`versions:${mpVersion}`]);
-                let mpSearchUrl = `${MODRINTH_API}/search?query=${encodeURIComponent(mpQuery)}&index=relevance&limit=${mpLimit}&offset=${mpOffset}`;
-                mpSearchUrl += `&facets=${encodeURIComponent(JSON.stringify(facets))}`;
-                const mpResult = await http.cachedFetchJSON(mpSearchUrl, 60000);
-                const mpHits = (mpResult.hits || []).map(hit => ({
-                    id: hit.project_id, slug: hit.slug, title: hit.title,
-                    description: hit.description || '', author: (hit.author || '').replace(/_/g, ''),
-                    icon: hit.icon_url || '', downloads: hit.downloads || 0,
-                    categories: hit.categories || [], versions: hit.versions || [],
-                    source: 'modrinth'
-                }));
-                sendJSON(res, { hits: mpHits, total: mpResult.total_hits || mpHits.length, offset: mpOffset });
+                let allHits = [];
+
+                // --- Modrinth ---
+                if (mpSource === 'any' || mpSource === 'modrinth') {
+                    const facets = [['project_type:modpack']];
+                    if (mpLoader) facets.push([`categories:${mpLoader}`]);
+                    if (mpVersion) facets.push([`versions:${mpVersion}`]);
+                    let mrUrl = `${MODRINTH_API}/search?query=${encodeURIComponent(mpQuery)}&index=relevance&limit=${mpLimit}&offset=${mpOffset}`;
+                    mrUrl += `&facets=${encodeURIComponent(JSON.stringify(facets))}`;
+                    const mrResult = await http.cachedFetchJSON(mrUrl, 60000);
+                    const mrHits = (mrResult.hits || []).map(hit => ({
+                        id: hit.project_id, slug: hit.slug, title: hit.title,
+                        description: hit.description || '', author: (hit.author || '').replace(/_/g, ''),
+                        icon: hit.icon_url || '', downloads: hit.downloads || 0,
+                        categories: hit.categories || [], versions: hit.versions || [],
+                        source: 'modrinth'
+                    }));
+                    allHits = allHits.concat(mrHits);
+                }
+
+                // --- CurseForge ---
+                if (mpSource === 'any' || mpSource === 'curseforge') {
+                    const settings = versions.loadSettingsCached();
+                    const cfApiKey = settings.curseforgeApiKey || '$2a$10$bL4bIL5pUWqfcO7KQtnMReakwtfHbNKh6v1uTpKlzhwoueEJQnPnm';
+                    const cfHeaders = { 'x-api-key': cfApiKey };
+                    // classId 4471 = 整合包（classId 6 = mod）
+                    let cfUrl = `${CURSEFORGE_API}/mods/search?gameId=432&searchFilter=${encodeURIComponent(mpQuery)}&sortOrder=Desc&classId=4471&pageSize=${mpLimit}&index=${mpOffset}`;
+                    if (mpLoader) {
+                        const loaderMap = { forge: 1, fabric: 4, quilt: 5, neoforge: 5 };
+                        const loaderId = loaderMap[mpLoader.toLowerCase()];
+                        if (loaderId) cfUrl += `&modLoaderType=${loaderId}`;
+                    }
+                    if (mpVersion) {
+                        // CurseForge 用 gameVersion 过滤（前缀匹配，如 1.20.1 匹配 1.20）
+                        cfUrl += `&gameVersion=${encodeURIComponent(mpVersion)}`;
+                    }
+                    cfUrl += '&sortField=2';
+                    const cfResult = await http.fetchJSON(cfUrl, cfHeaders);
+                    const cfHits = (cfResult.data || []).map(mod => ({
+                        id: String(mod.id), slug: mod.slug || '', title: mod.name || 'Unknown',
+                        description: mod.summary || '', author: (mod.authors || [])[0] || 'Unknown',
+                        icon: mod.logo?.url || '', downloads: mod.downloadCount || 0,
+                        categories: (mod.categories || []).map(c => c.name || c.id || ''),
+                        versions: [], source: 'curseforge'
+                    }));
+                    allHits = allHits.concat(cfHits);
+                }
+
+                const total = allHits.length;
+                // 简单地按下载量排序（双源混合时）
+                if (mpSource === 'any') {
+                    allHits.sort((a, b) => (b.downloads || 0) - (a.downloads || 0));
+                }
+                sendJSON(res, { hits: allHits.slice(0, mpLimit), total, offset: mpOffset });
             } catch (e) {
                 sendJSON(res, { hits: [], total: 0, error: e.message });
             }

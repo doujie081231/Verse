@@ -224,7 +224,8 @@ function httpGet(urlStr, opts = {}, _redirectCount = 0) {
         statusCode: res.statusCode,
         headers: res.headers,
         contentLength: parseInt(res.headers['content-length'] || '0', 10),
-        request: req
+        request: req,
+        finalUrl: urlStr
       });
     });
     req.on('error', reject);

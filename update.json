@@ -1,11 +1,11 @@
 {
-  "version": "1.2.14",
-  "releaseDate": "2026-07-23T22:45:00Z",
-  "releaseName": "VersePC v1.2.14",
-  "releaseNotes": "## v1.2.14 更新\n\n### 修复\n- 修复覆盖安装数据被旧卸载器删除导致变为全新软件的问题（升级后备机制）\n- 修复已安装模组图标显示为默认图标的问题",
+  "version": "1.2.15",
+  "releaseDate": "2026-07-23T23:30:00Z",
+  "releaseName": "VersePC v1.2.15",
+  "releaseNotes": "## v1.2.15 更新\n\n### 优化\n- 简化分块下载逻辑（移除 worker 调度器、低速检测、分块 split），参考 dev 分支设计，60s stall 超时，避免 CDN 限速时的恶性重试循环",
   "files": {
     "win-x64": {
-      "url": "https://github.com/doujie081231/Verse/releases/download/v1.2.14/VersePC-Setup-1.2.14.exe",
+      "url": "https://github.com/doujie081231/Verse/releases/download/v1.2.15/VersePC-Setup-1.2.15.exe",
       "size": 165782716,
       "sha256": "7252006E6FB641312C6575340819223EC7B99C369F2FBA9AC504C1649DC0871A"
     }

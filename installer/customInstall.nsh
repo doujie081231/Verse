@@ -153,6 +153,27 @@ Var CONFIG_BACKUP_PATH
         Goto _data_dir_done
     _setup_new_data_dir:
         ; 新用户，数据放安装目录
+        ; [P0 FIX - 2026-07-26] 跨目录覆盖安装保护：
+        ; 若用户换了安装目录且旧目录下有 data，提示迁移以避免数据丢失
+        ; 从注册表读取旧安装路径（electron-builder 卸载条目）
+        StrCpy $3 ""
+        ClearErrors
+        ReadRegStr $1 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\com.versepc.launcher" "InstallLocation"
+        ${IfNot} ${Errors}
+          StrCpy $3 "$1"
+        ${Else}
+          ReadRegStr $2 HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\com.versepc.launcher" "InstallLocation"
+          ${IfNot} ${Errors}
+            StrCpy $3 "$2"
+          ${EndIf}
+        ${EndIf}
+        StrCmp $3 "" _create_new_data 0
+        StrCmp $3 "$INSTDIR" _create_new_data 0
+        IfFileExists "$3\data\*.*" 0 _create_new_data
+            MessageBox MB_YESNO|MB_ICONWARNING "检测到旧安装目录「$3」中存有用户数据。$\n$\n您选择了不同的安装目录「$INSTDIR」，旧数据不会被自动迁移。$\n$\n选「是」返回重选目录，选「否」丢弃旧数据继续安装。" IDYES _abort_for_olddata IDNO _create_new_data
+        _abort_for_olddata:
+            Abort "用户取消安装以保留旧数据"
+        _create_new_data:
         CreateDirectory "$INSTDIR\data"
         nsExec::ExecToLog `powershell -NoProfile -Command "[IO.File]::WriteAllText('$INSTDIR\data-config.json', (@{dataDir='$INSTDIR\data'} | ConvertTo-Json -Compress), (New-Object Text.UTF8Encoding $false))"`
         DetailPrint "数据目录设置为 $INSTDIR\data"
@@ -192,6 +213,12 @@ Var CONFIG_BACKUP_PATH
 !macro customInstall
     ; 安装完成后恢复用户数据（方案A 恢复）
     !insertmacro RestoreUserDataFromTemp
+    ; [P0 FIX - 2026-07-26] 恢复后强制重写 data-config.json 的 dataDir
+    ; 原因：备份恢复的 data-config.json 内路径可能是旧安装目录，
+    ;       换目录安装或路径变化时会导致 resolveDataDir() 解析到错误位置
+    ; 修复：始终写入当前 $INSTDIR\data，确保数据目录指向正确路径
+    nsExec::ExecToLog `powershell -NoProfile -Command "[IO.File]::WriteAllText('$INSTDIR\data-config.json', (@{dataDir='$INSTDIR\data'} | ConvertToJson -Compress), (New-Object Text.UTF8Encoding $false))"`
+    DetailPrint "data-config.json 已更新: dataDir=$INSTDIR\data"
 !macroend
 
 ; =============================================================================

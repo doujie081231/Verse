@@ -512,8 +512,8 @@ const API = {
     clearAvatarImage: () => apiPost('/api/clear-avatar'),
 
     // === 资源搜索 ===
-    searchResources: (query, type = 'modpack', loader = '', version = '', category = '', sort = 'downloads', limit = 15, offset = 0) =>
-        apiGet('/api/resources/search', { query, type, loader, version, category, sort, limit, offset }),
+    searchResources: (query, type = 'modpack', loader = '', version = '', category = '', sort = 'downloads', limit = 15, offset = 0, source = '') =>
+        apiGet('/api/resources/search', { query, type, loader, version, category, sort, limit, offset, source }),
     getResourceDetail: (projectId) => apiGet('/api/resources/detail', { projectId }),
     getResourceVersions: (projectId, loader = '', gameVersion = '') =>
         apiGet('/api/resources/versions', { projectId, loader, gameVersion }),

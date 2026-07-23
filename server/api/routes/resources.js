@@ -13,6 +13,7 @@ module.exports = {
         const { http, versions, modpack } = deps;
 
         const MODRINTH_API = ctx.urls.MODRINTH_API;
+        const CURSEFORGE_API = ctx.urls.CURSEFORGE_API;
         const DATA_DIR = ctx.dirs.DATA_DIR;
 
         // ====================================================================
@@ -27,29 +28,63 @@ module.exports = {
             const resSort = parsedUrl.query.sort || 'downloads';
             const resLimit = parseInt(parsedUrl.query.limit || '15', 10);
             const resOffset = parseInt(parsedUrl.query.offset || '0', 10);
+            const resSource = parsedUrl.query.source || '';
 
             try {
-                const facets = [[`project_type:${resType}`]];
-                if (resLoader) facets.push([`categories:${resLoader}`]);
-                if (resVersion) facets.push([`versions:${resVersion}`]);
-                if (resCategory) facets.push([`categories:${resCategory}`]);
+                let allHits = [];
 
-                const sortMap = { relevance: 'relevance', downloads: 'downloads', newest: 'newest', updated: 'updated' };
-                const sortField = sortMap[resSort] || (resQuery ? 'relevance' : 'downloads');
+                // Modrinth
+                if (!resSource || resSource === 'modrinth') {
+                    const facets = [[`project_type:${resType}`]];
+                    if (resLoader) facets.push([`categories:${resLoader}`]);
+                    if (resVersion) facets.push([`versions:${resVersion}`]);
+                    if (resCategory) facets.push([`categories:${resCategory}`]);
+                    const sortMap = { relevance: 'relevance', downloads: 'downloads', newest: 'newest', updated: 'updated' };
+                    const sortField = sortMap[resSort] || (resQuery ? 'relevance' : 'downloads');
+                    let searchUrl = `${MODRINTH_API}/search?query=${encodeURIComponent(resQuery)}&index=${sortField}&limit=${resLimit}&offset=${resOffset}`;
+                    searchUrl += `&facets=${encodeURIComponent(JSON.stringify(facets))}`;
+                    const result = await http.cachedFetchJSON(searchUrl, 60000);
+                    const mrHits = (result.hits || []).map(hit => ({
+                        id: hit.project_id, slug: hit.slug, title: hit.title,
+                        description: hit.description || '', author: (hit.author || '').replace(/_/g, ''),
+                        icon: hit.icon_url || '', downloads: hit.downloads || 0, followers: hit.followers || 0,
+                        categories: hit.categories || [], versions: hit.versions || [],
+                        dateCreated: hit.date_created || '', dateModified: hit.date_modified || '',
+                        source: 'modrinth', projectType: resType
+                    }));
+                    allHits = allHits.concat(mrHits);
+                }
 
-                let searchUrl = `${MODRINTH_API}/search?query=${encodeURIComponent(resQuery)}&index=${sortField}&limit=${resLimit}&offset=${resOffset}`;
-                searchUrl += `&facets=${encodeURIComponent(JSON.stringify(facets))}`;
+                // CurseForge (仅整合包和模组，材质包/光影等 CurseForge 没有直接对应分类)
+                if ((!resSource || resSource === 'curseforge') && (resType === 'modpack' || resType === 'mod')) {
+                    const settings = versions.loadSettingsCached();
+                    const cfApiKey = settings.curseforgeApiKey || '$2a$10$bL4bIL5pUWqfcO7KQtnMReakwtfHbNKh6v1uTpKlzhwoueEJQnPnm';
+                    const cfHeaders = { 'x-api-key': cfApiKey };
+                    // classId: 4471=整合包, 6=mod
+                    const cfClassId = resType === 'modpack' ? 4471 : 6;
+                    let cfUrl = `${CURSEFORGE_API}/mods/search?gameId=432&searchFilter=${encodeURIComponent(resQuery)}&sortOrder=Desc&classId=${cfClassId}&pageSize=${resLimit}&index=${resOffset}&sortField=2`;
+                    if (resLoader) {
+                        const loaderMap = { forge: 1, fabric: 4, quilt: 5, neoforge: 5 };
+                        const loaderId = loaderMap[resLoader.toLowerCase()];
+                        if (loaderId) cfUrl += `&modLoaderType=${loaderId}`;
+                    }
+                    if (resVersion) cfUrl += `&gameVersion=${encodeURIComponent(resVersion)}`;
+                    const cfResult = await http.fetchJSON(cfUrl, cfHeaders);
+                    const cfHits = (cfResult.data || []).map(mod => ({
+                        id: String(mod.id), slug: mod.slug || '', title: mod.name || 'Unknown',
+                        description: mod.summary || '', author: (mod.authors || [])[0] || 'Unknown',
+                        icon: mod.logo?.url || '', downloads: mod.downloadCount || 0, followers: mod.followers || 0,
+                        categories: (mod.categories || []).map(c => c.name || c.id || ''),
+                        versions: [], dateCreated: mod.dateCreated || '', dateModified: mod.dateModified || '',
+                        source: 'curseforge', projectType: resType
+                    }));
+                    allHits = allHits.concat(cfHits);
+                }
 
-                const result = await http.cachedFetchJSON(searchUrl, 60000);
-                const hits = (result.hits || []).map(hit => ({
-                    id: hit.project_id, slug: hit.slug, title: hit.title,
-                    description: hit.description || '', author: (hit.author || '').replace(/_/g, ''),
-                    icon: hit.icon_url || '', downloads: hit.downloads || 0, followers: hit.followers || 0,
-                    categories: hit.categories || [], versions: hit.versions || [],
-                    dateCreated: hit.date_created || '', dateModified: hit.date_modified || '',
-                    source: 'modrinth', projectType: resType
-                }));
-                sendJSON(res, { hits, total: result.total_hits || hits.length, offset: resOffset });
+                if (allHits.length > 1) {
+                    allHits.sort((a, b) => (b.downloads || 0) - (a.downloads || 0));
+                }
+                sendJSON(res, { hits: allHits.slice(0, resLimit), total: allHits.length, offset: resOffset });
             } catch (e) {
                 sendError(res, '搜索失败: ' + e.message);
             }

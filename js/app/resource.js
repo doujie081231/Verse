@@ -357,6 +357,14 @@ function setupResourceEvents(type) {
       loadResourceList(type);
     };
   }
+  const sourceInstance = customSelectInstances[`${prefix}-filter-source`];
+  if (sourceInstance && !sourceInstance._resourceBound) {
+    sourceInstance._resourceBound = true;
+    sourceInstance.onChange = () => {
+      resourceState[type].offset = 0;
+      loadResourceList(type);
+    };
+  }
   if (type === 'resourcepack') {
     const resolutionInstance = customSelectInstances['resourcepack-filter-resolution'];
     if (resolutionInstance && !resolutionInstance._resourceBound) {
@@ -379,9 +387,10 @@ async function loadResourceList(type) {
   const loader = getCustomSelectValue(`${prefix}-filter-loader`);
   const version = getCustomSelectValue(`${prefix}-filter-version`);
   const resolution = type === 'resourcepack' ? getCustomSelectValue('resourcepack-filter-resolution') : '';
+  const source = getCustomSelectValue(`${prefix}-filter-source`) || '';
 
   try {
-    const data = await API.searchResources(state.query, type, loader, version, resolution, 'downloads', 15, state.offset);
+    const data = await API.searchResources(state.query, type, loader, version, resolution, 'downloads', 15, state.offset, source);
     const hits = data.hits || [];
     state.total = data.total || 0;
     hits.forEach(item => _projectDataCache.set(item.id, item));
@@ -397,7 +406,9 @@ async function loadResourceList(type) {
         <div class="mod-item mod-item-clickable" onclick="openResourceDetail('${item.id}', '${type}')" onmouseenter="preloadModVersions('${item.id}', 'modrinth')">
           ${item.icon ? `<div class="mod-icon"><img src="${item.icon}" alt="" onerror="this.parentElement.remove()"></div>` : ''}
           <div class="mod-info">
-            <div class="mod-name">${escapeHtml(formatModNameWithChinese(item.slug || item.id, item.title))}</div>
+            <div class="mod-name">${escapeHtml(formatModNameWithChinese(item.slug || item.id, item.title))}
+              ${(source === 'any' || !source) ? `<span style="font-size:10px;padding:1px 5px;border-radius:3px;margin-left:6px;background:${item.source === 'curseforge' ? '#f1643620;color:#f16436;border:1px solid #f1643630' : '#4caf5020;color:#4caf50;border:1px solid #4caf5030'};font-weight:500;vertical-align:middle">${item.source === 'curseforge' ? 'CF' : 'MR'}</span>` : ''}
+            </div>
             <div class="mod-desc">${escapeHtml(item.description)}</div>
             <div class="mod-meta">
               <span>⬇ ${formatNumber(item.downloads)}</span>

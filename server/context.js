@@ -373,6 +373,7 @@ const DownloadManager = {
   activeConnections: 0,
   connectionLimit: 48,
   speedHistory: [],
+  _speedSamples: [],
   totalBytesDownloaded: 0,
   lastBytesSnapshot: 0,
   lastSnapshotTime: 0,
@@ -391,10 +392,10 @@ const DownloadManager = {
   startTime: 0,
   _speedTimer: null,
 
-  // 启动速度采样定时器
+  // 启动速度采样定时器（500ms 采样 + 滑动平均，避免短暂无数据时跳 0）
   _startSpeedTimer() {
     if (this._speedTimer) return;
-    this._speedTimer = setInterval(() => { this.refreshSpeed(); }, 100);
+    this._speedTimer = setInterval(() => { this.refreshSpeed(); }, 500);
   },
   // 停止速度采样定时器
   _stopSpeedTimer() {
@@ -403,6 +404,7 @@ const DownloadManager = {
       this._speedTimer = null;
       this.currentSpeed = 0;
       this.speedHistory = [];
+      this._speedSamples = [];
     }
   },
   acquireConnection() {
@@ -439,8 +441,12 @@ const DownloadManager = {
     }
     const elapsed = (now - this.lastSnapshotTime) / 1000;
     if (elapsed < 0.1) return;
-    this.currentSpeed = Math.round((this.totalBytesDownloaded - this.lastBytesSnapshot) / elapsed);
-    this.speedHistory.push(this.currentSpeed);
+    const instantSpeed = Math.round((this.totalBytesDownloaded - this.lastBytesSnapshot) / elapsed);
+    this._speedSamples.push(instantSpeed);
+    if (this._speedSamples.length > 5) this._speedSamples.shift();
+    const avgSpeed = Math.round(this._speedSamples.reduce((a, b) => a + b, 0) / this._speedSamples.length);
+    this.currentSpeed = avgSpeed;
+    this.speedHistory.push(avgSpeed);
     if (this.speedHistory.length > 100) this.speedHistory.shift();
     this.lastBytesSnapshot = this.totalBytesDownloaded;
     this.lastSnapshotTime = now;
@@ -484,12 +490,14 @@ const DownloadManager = {
     this.lastBytesSnapshot = 0;
     this.lastSnapshotTime = 0;
     this.speedHistory = [];
+    this._speedSamples = [];
   },
   reset() {
     this.totalBytesDownloaded = 0;
     this.lastBytesSnapshot = 0;
     this.lastSnapshotTime = 0;
     this.speedHistory = [];
+    this._speedSamples = [];
     this.currentSpeed = 0;
     this.totalFiles = 0;
     this.completedFiles = 0;

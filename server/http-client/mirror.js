@@ -124,7 +124,7 @@ async function probeMirrorsParallel(urls, timeoutMs = 1500) {
         supportsRange = false;
         fileSize = r.contentLength;
       }
-      return { url, speed, fileSize, supportsRange, ok: true };
+      return { url, finalUrl: r.finalUrl || url, speed, fileSize, supportsRange, ok: true };
     } catch (e) {
       return { url, speed: 0, fileSize: 0, supportsRange: false, ok: false };
     }
