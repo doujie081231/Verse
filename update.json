@@ -1,13 +1,13 @@
 {
-  "version": "1.1.14",
-  "releaseDate": "2026-07-16T00:00:00Z",
-  "releaseName": "VersePC v1.1.14",
-  "releaseNotes": "## v1.1.14 正式版更新\n\n### 版本管理修复\n- 修复删除版本后版本列表不刷新的问题：删除版本后页面立即更新\n- 修复 NeoForge 26.2 被错误识别为整合包导致不显示的问题\n- 修复 Forge 26.2 版本因继承链错误被过滤隐藏的问题\n\n### 加载器安装修复\n- 修复 NeoForge/Forge 26.2 安装失败问题（自动创建 launcher_profiles.json）\n- 安装器执行失败时输出详细错误信息（包含 stderr/stdout）\n- 修复 NeoForge 版本 inheritsFrom 被错误改写的问题",
+  "version": "1.2.13",
+  "releaseDate": "2026-07-23T14:00:00Z",
+  "releaseName": "VersePC v1.2.13",
+  "releaseNotes": "## v1.2.13 更新\n\n### 修复\n- 修复覆盖安装选择数据迁移后，数据被旧卸载器删除导致变为全新软件的问题",
   "files": {
     "win-x64": {
-      "url": "https://github.com/doujie081231/Verse/releases/download/v1.1.14/VersePC-Setup-1.1.14.exe",
-      "size": 163895973,
-      "sha256": "0FF44BE49475E7B2F44F5C9E15C4630836C7F8E639271D0E6E8BE2AF982DAA18"
+      "url": "https://github.com/doujie081231/Verse/releases/download/v1.2.13/VersePC-Setup-1.2.13.exe",
+      "size": 165780745,
+      "sha256": "010E55E44FAEB77FA99D11FAD2354A2AB5D91DD7D33451827C1669C6C812C4D0"
     }
   }
 }
