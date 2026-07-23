@@ -60,7 +60,7 @@ function getMirrorUrls(originalUrl) {
   const mirrorUrls = [];
   const officialUrl = originalUrl;
 
-  // 收集 BMCLAPI 镜像
+  // 收集 BMCLAPI/MCIM 镜像（cdn.modrinth.com → mod.mcimirror.top 等）
   for (const [original, mirror] of Object.entries(ctx.mirrors.BMCLAPI_MIRROR)) {
     if (originalUrl.startsWith(original)) {
       const mirrored = originalUrl.replace(original, mirror);
@@ -90,6 +90,49 @@ function getMirrorUrls(originalUrl) {
   }
 
   return urls;
+}
+
+/**
+ * 并行探测所有 URL 的速度，返回按速度降序排列的 URL 列表 + 每个 URL 的文件大小/Range 支持情况。
+ * 对标 PCL2：下载前并行测速所有镜像，选最快的源，而非串行探测或只用第一个。
+ *
+ * @param {string[]} urls - 待探测的 URL 列表
+ * @param {number} [timeoutMs=1500] - 单 URL 探测超时
+ * @returns {Promise<{url: string, speed: number, fileSize: number, supportsRange: boolean}[]>}
+ *   按速度降序排列，失败的 URL speed=0 会被排到最后
+ */
+async function probeMirrorsParallel(urls, timeoutMs = 1500) {
+  if (!urls || urls.length <= 1) {
+    return urls.map(url => ({ url, speed: Infinity, fileSize: 0, supportsRange: false }));
+  }
+  const { httpGet } = require('./request');
+  const probes = urls.map(async (url) => {
+    const start = Date.now();
+    try {
+      const r = await httpGet(url, { start: 0, end: 0, timeout: timeoutMs });
+      r.stream.destroy();
+      const elapsed = Date.now() - start;
+      // 探针只下载 1 字节（Range:0-0），速度用响应延迟倒数近似
+      // 延迟越低 = 速度越快（排序用）
+      const speed = elapsed > 0 ? 1000 / elapsed : 0;
+      let fileSize = 0, supportsRange = false;
+      if (r.statusCode === 206) {
+        supportsRange = true;
+        const crMatch = (r.headers['content-range'] || '').match(/\/(\d+)/);
+        fileSize = crMatch ? parseInt(crMatch[1], 10) : r.contentLength;
+      } else if (r.statusCode === 200) {
+        supportsRange = false;
+        fileSize = r.contentLength;
+      }
+      return { url, speed, fileSize, supportsRange, ok: true };
+    } catch (e) {
+      return { url, speed: 0, fileSize: 0, supportsRange: false, ok: false };
+    }
+  });
+  const results = await Promise.all(probes);
+  // 按速度降序（speed 越高越快），失败的排最后
+  results.sort((a, b) => b.speed - a.speed);
+  return results;
 }
 
 /**
@@ -140,5 +183,6 @@ module.exports = {
   _mirrorSuccess,
   getMirrorUrls,
   probeMirrorSpeed,
+  probeMirrorsParallel,
   getMirrorUrl
 };

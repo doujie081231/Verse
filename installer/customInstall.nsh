@@ -117,40 +117,9 @@ Var CONFIG_BACKUP_PATH
     nsExec::ExecToStack 'taskkill /F /IM VersePC.exe /T'
     Sleep 300
 
-    ; --- 覆盖安装数据保护（方案A：备份到安装目录外的临时目录）---
-    ; 旧卸载器会执行 RMDir /r $INSTDIR 或 atomicRMDir，把整个安装目录连同
-    ; 安装目录内的 ._versepc_data_backup 隐藏备份一起删掉。
-    ; 把 data 和 data-config.json 备份到 $TEMP 下，旧卸载器碰不到。
-    !insertmacro BackupUserDataToTemp
-
-    ; --- VC++ 运行库自动检测与安装 ---
-    IfFileExists "$SYSDIR\vcruntime140.dll" _vcpp_found _vcpp_missing
-    _vcpp_missing:
-        MessageBox MB_YESNO|MB_ICONQUESTION "检测到系统缺少 VC++ 运行库（Microsoft Visual C++ Redistributable）。$\n$\n这是运行 VersePC 的必要组件，是否现在自动安装？" IDYES _vcpp_install IDNO _vcpp_found
-    _vcpp_install:
-        DetailPrint "正在下载 VC++ 运行库..."
-        inetc::get /QUESTION "N" /Resume "正在下载 VC++ 运行库..." "https://aka.ms/vs/17/release/vc_redist.x64.exe" "$TEMP\vc_redist.x64.exe"
-        Pop $0
-        StrCmp $0 "OK" _vcpp_download_ok _vcpp_download_fail
-    _vcpp_download_fail:
-        MessageBox MB_OK|MB_ICONEXCLAMATION "VC++ 运行库下载失败。$\n$\n请手动安装：https://aka.ms/vs/17/release/vc_redist.x64.exe$\n$\n安装将继续，但启动器可能无法正常运行。"
-        Goto _vcpp_found
-    _vcpp_download_ok:
-        DetailPrint "正在安装 VC++ 运行库（静默安装，请稍候）..."
-        nsExec::ExecToLog '"$TEMP\vc_redist.x64.exe" /install /quiet /norestart'
-        Pop $1
-        ${If} $1 != "0"
-            MessageBox MB_OK|MB_ICONEXCLAMATION "VC++ 运行库安装未成功（代码 $1）。$\n$\n请手动安装：https://aka.ms/vs/17/release/vc_redist.x64.exe"
-        ${Else}
-            DetailPrint "VC++ 运行库安装成功"
-        ${EndIf}
-        Delete "$TEMP\vc_redist.x64.exe"
-    _vcpp_found:
-
-    ; --- 数据目录配置 ---
-    ; 仅在安装目录既没有 data-config.json，也没有从临时目录恢复的配置时才提示
-    ; 覆盖安装时配置会被 customInstall 从 $TEMP 恢复，此处跳过
-    StrCmp "$CONFIG_BACKUP_PATH" "" 0 _data_dir_done
+    ; --- 数据目录配置（含迁移）---
+    ; 必须在 BackupUserDataToTemp 之前执行：
+    ; 迁移后的数据需要被备份保护，否则旧卸载器 RMDir /r 会删掉刚迁移的数据
     IfFileExists "$INSTDIR\data-config.json" _data_dir_done 0
     IfFileExists "$PROFILE\.versepc\*.*" 0 _setup_new_data_dir
         ; 老用户，C盘有数据
@@ -176,6 +145,36 @@ Var CONFIG_BACKUP_PATH
         nsExec::ExecToLog `powershell -NoProfile -Command "@{dataDir='$INSTDIR\data'} | ConvertTo-Json -Compress | Out-File -FilePath '$INSTDIR\data-config.json' -Encoding utf8"`
         DetailPrint "数据目录设置为 $INSTDIR\data"
     _data_dir_done:
+
+    ; --- 覆盖安装数据保护（方案A：备份到安装目录外的临时目录）---
+    ; 旧卸载器会执行 RMDir /r $INSTDIR，把整个安装目录连同 data 一起删掉。
+    ; 把 data 和 data-config.json 备份到 $PROFILE 下，旧卸载器碰不到。
+    ; 注意：此处在数据迁移之后执行，确保迁移后的数据也被备份保护。
+    !insertmacro BackupUserDataToTemp
+
+    ; --- VC++ 运行库自动检测与安装 ---
+    IfFileExists "$SYSDIR\vcruntime140.dll" _vcpp_found _vcpp_missing
+    _vcpp_missing:
+        MessageBox MB_YESNO|MB_ICONQUESTION "检测到系统缺少 VC++ 运行库（Microsoft Visual C++ Redistributable）。$\n$\n这是运行 VersePC 的必要组件，是否现在自动安装？" IDYES _vcpp_install IDNO _vcpp_found
+    _vcpp_install:
+        DetailPrint "正在下载 VC++ 运行库..."
+        inetc::get /QUESTION "N" /Resume "正在下载 VC++ 运行库..." "https://aka.ms/vs/17/release/vc_redist.x64.exe" "$TEMP\vc_redist.x64.exe"
+        Pop $0
+        StrCmp $0 "OK" _vcpp_download_ok _vcpp_download_fail
+    _vcpp_download_fail:
+        MessageBox MB_OK|MB_ICONEXCLAMATION "VC++ 运行库下载失败。$\n$\n请手动安装：https://aka.ms/vs/17/release/vc_redist.x64.exe$\n$\n安装将继续，但启动器可能无法正常运行。"
+        Goto _vcpp_found
+    _vcpp_download_ok:
+        DetailPrint "正在安装 VC++ 运行库（静默安装，请稍候）..."
+        nsExec::ExecToLog '"$TEMP\vc_redist.x64.exe" /install /quiet /norestart'
+        Pop $1
+        ${If} $1 != "0"
+            MessageBox MB_OK|MB_ICONEXCLAMATION "VC++ 运行库安装未成功（代码 $1）。$\n$\n请手动安装：https://aka.ms/vs/17/release/vc_redist.x64.exe"
+        ${Else}
+            DetailPrint "VC++ 运行库安装成功"
+        ${EndIf}
+        Delete "$TEMP\vc_redist.x64.exe"
+    _vcpp_found:
 !macroend
 
 !macro customInstall

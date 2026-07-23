@@ -12,7 +12,7 @@ const ctx = require('../context');
 const utils = require('../utils');
 const { loadSettingsCached } = require('./settings');
 const { httpGet } = require('./request');
-const { getMirrorUrls } = require('./mirror');
+const { getMirrorUrls, probeMirrorsParallel } = require('./mirror');
 const { safeRename, _tryRemoveFile } = require('./file-ops');
 const { _dlSingle } = require('./download-single');
 
@@ -59,8 +59,25 @@ async function downloadFileChunked(url, destPath, options = {}) {
   }
 
   // 优先使用传入的 mirrors（已排序），否则内部生成
-  const allUrls = (mirrors && mirrors.length > 0) ? mirrors : getMirrorUrls(url);
+  const rawUrls = (mirrors && mirrors.length > 0) ? mirrors : getMirrorUrls(url);
   const _agent = customAgent || undefined;
+
+  // [P0 OPT - 2026-07-23] 并行测速所有镜像，选最快的源（对标 PCL2）
+  // 之前的问题：串行探针（1000ms × N），主 URL 返回 206 就不探测镜像，
+  // Modrinth CDN 卡住时无镜像可切。现在并行探测所有 URL，按响应延迟排序。
+  // allUrls 存储排序后的 URL 列表，allProbeResults 存储每个 URL 的元信息。
+  let allUrls = rawUrls;
+  let allProbeResults = null;
+  if (rawUrls.length > 1) {
+    try {
+      allProbeResults = await probeMirrorsParallel(rawUrls, 1500);
+      // 只保留能拿到 fileSize 的 URL（探测成功的）
+      const valid = allProbeResults.filter(r => r.fileSize > 0);
+      if (valid.length > 0) {
+        allUrls = valid.map(r => r.url);
+      }
+    } catch (e) { /* 测速失败，回退原始 URL 列表 */ }
+  }
 
   for (let ra = 0; ra <= retries; ra++) {
     if (abortSignal && abortSignal.aborted) throw new Error('下载已取消');
@@ -69,9 +86,17 @@ async function downloadFileChunked(url, destPath, options = {}) {
       const currentUrl = allUrls[urlIdx];
       try {
         let fileSize = 0, supportsRange = false, workingUrl = currentUrl;
-        // [P0 OPT - 2026-07-21] probe 超时从 2000ms 缩短到 1000ms
-        // 原因：BMCLAPI 国内镜像通常 100-300ms 响应，2000ms 浪费时间；
-        // 1000ms 足够避开网络抖动，又能快速切到下一个镜像。
+        // 如果并行测速已拿到结果，直接复用，不再重复探针
+        if (allProbeResults) {
+          const probeData = allProbeResults.find(r => r.url === currentUrl);
+          if (probeData && probeData.fileSize > 0) {
+            fileSize = probeData.fileSize;
+            supportsRange = probeData.supportsRange;
+            workingUrl = currentUrl;
+          }
+        }
+        // 测速结果不可用时，回退到单 URL 探针
+        if (fileSize <= 0) {
         const probeR = await httpGet(currentUrl, { start: 0, end: 0, timeout: 1000, agent: _agent });
         probeR.stream.destroy();
         if (probeR.statusCode === 206) {
@@ -80,9 +105,6 @@ async function downloadFileChunked(url, destPath, options = {}) {
           const crMatch = (probeR.headers['content-range'] || '').match(/\/(\d+)/);
           fileSize = crMatch ? parseInt(crMatch[1], 10) : probeR.contentLength;
         } else if (probeR.statusCode === 200) {
-          // 探针发送了 Range:0-0 却返回 200（而非 206），说明服务器实际不响应 Range 请求。
-          // 即使带 accept-ranges 头也不可信（部分 CDN 谎报），直接标记不支持，
-          // 避免后续分块下载必然失败再回退单流的浪费。
           supportsRange = false;
           fileSize = probeR.contentLength;
           workingUrl = currentUrl;
@@ -99,7 +121,6 @@ async function downloadFileChunked(url, destPath, options = {}) {
                 const crMatch = (r2.headers['content-range'] || '').match(/\/(\d+)/);
                 fileSize = crMatch ? parseInt(crMatch[1], 10) : r2.contentLength;
               } else if (r2.statusCode === 200) {
-                // 同上：返回 200 说明不支持 Range，不信任 accept-ranges 头
                 supportsRange = false;
                 fileSize = r2.contentLength;
                 workingUrl = allUrls[probeIdx];
@@ -108,13 +129,14 @@ async function downloadFileChunked(url, destPath, options = {}) {
             } catch (e) { continue; }
           }
         }
+        } // end if (fileSize <= 0) fallback
         const settings = loadSettingsCached();
         const useChunk = settings.enableChunkDownload && supportsRange && fileSize > CHUNK_THRESHOLD;
         // 不启用分块或文件过小：回退单流下载
         if (!useChunk || fileSize <= 0) {
           return await _dlSingle(workingUrl, destPath, { onProgress, sha1, timeout, abortSignal, agent: customAgent });
         }
-        // 下载前检查文件是否已存在（大小匹配则跳过，对标 PCL2 文件复用）
+        // 下载前检查文件是否已存在（大小匹配则跳过，复用文件）
         if (fs.existsSync(destPath)) {
           try {
             const existStat = fs.statSync(destPath);
@@ -166,10 +188,9 @@ async function downloadFileChunked(url, destPath, options = {}) {
         // [P0 OPT - 2026-07-22] 分块级 URL 列表 + 分块级重试
         // 之前的问题：所有分块都用同一个 workingUrl，某个 CDN 节点慢时所有分块都卡住，
         // 最后几个分块（长尾）要等 45s stallTimeout 才换源，导致 90%+ 卡住。
-        // PCL2 的做法：分块级 URL 切换，单个分块失败/卡住时立即换 URL 重试该分块。
-        // 修复：每个分块独立尝试 URL 列表，stallTimeout 从 15s 缩短到 5s（对齐 PCL2），
+        // 修复：每个分块独立尝试 URL 列表，stallTimeout 从 15s 缩短到 5s，
         // 单个分块最多重试 3 次（每次换 URL），而不是整个文件失败。
-        const CHUNK_STALL_TIMEOUT = 5000;   // 5s，分块级卡死检测（对齐 PCL2 的 5 秒无数据断开）
+        const CHUNK_STALL_TIMEOUT = 5000;   // 5s，分块级卡死检测
         const CHUNK_MAX_RETRIES = 3;        // 单个分块最多重试 3 次
 
         const dlChunk = async (c) => {
@@ -183,12 +204,21 @@ async function downloadFileChunked(url, destPath, options = {}) {
           let lastChunkErr = null;
           for (let chunkRetry = 0; chunkRetry <= CHUNK_MAX_RETRIES; chunkRetry++) {
             if (abortSignal && abortSignal.aborted) throw new Error('下载已中止');
-            // 选择 URL：重试时轮换 URL（allUrls[chunkRetry % allUrls.length]）
-            let chunkUrl = allUrls[chunkRetry % allUrls.length] || workingUrl;
-            // [P0 FIX - 2026-07-21] 重试时加 cache-buster 强制 CDN 路由到不同节点
-            // 原因：Modrinth CDN 只有 1 个 URL，allUrls 长度为 1 时每次重试都同一个 URL，
-            // 同一个慢节点重试 4 次也会失败。加 ?_cb=xxx 参数让 Cloudflare 重新路由。
-            if (chunkRetry > 0) {
+            // [P0 OPT - 2026-07-23] stall 后优先切镜像 URL，而非 cache-buster 同 URL
+            // 之前：chunkRetry % allUrls.length 轮换 + 立即加 cache-buster
+            // 问题：Modrinth CDN cache-buster 不像 Cloudflare 那样路由到不同节点，
+            // 同一慢节点重试 4 次也卡。现在：先用 allUrls 里不同的 URL（镜像优先），
+            // 一轮用完后再加 cache-buster。
+            let chunkUrl;
+            if (allUrls.length > 1) {
+              // 多 URL：stall 后切到下一个 URL（allUrls 已按测速速度排序，最快的在前）
+              chunkUrl = allUrls[(urlIdx + chunkRetry) % allUrls.length] || workingUrl;
+            } else {
+              // 单 URL：只能 cache-buster
+              chunkUrl = allUrls[0] || workingUrl;
+            }
+            // 第一轮 allUrls 用完后（chunkRetry >= allUrls.length），加 cache-buster 强制 CDN 重新路由
+            if (chunkRetry > 0 && allUrls.length > 0 && chunkRetry >= allUrls.length) {
               const sep = chunkUrl.includes('?') ? '&' : '?';
               chunkUrl = `${chunkUrl}${sep}_cb=${Date.now()}_${chunkRetry}_${c.i}`;
             }
@@ -222,7 +252,7 @@ async function downloadFileChunked(url, destPath, options = {}) {
               let chunkLowSpeedBytes = 0;
               // [P0 OPT - 2026-07-22] 分块级低速检测
               // 和单流一样，防止 CDN 滴漏导致 stall 永远不触发
-              // 关键修复：窗口从 10s 缩短到 5s（对齐 PCL2 的 5 秒检测周期）
+              // 关键修复：窗口从 10s 缩短到 5s
               // 之前 10s 窗口 + 10KB/s 阈值时，CDN 每 10s 滴漏 100KB 刚好等于阈值不触发
               const CHUNK_LOW_SPEED_THRESHOLD = 10 * 1024;  // 10KB/s
               const startChunkLowSpeed = () => {
@@ -234,7 +264,7 @@ async function downloadFileChunked(url, destPath, options = {}) {
                     return;
                   }
                   const received = dl - chunkLowSpeedBytes;
-                  const speedBps = received / 5;  // 5秒窗口（对齐 PCL2）
+                  const speedBps = received / 5;  // 5秒窗口
                   chunkLowSpeedBytes = dl;
                   if (speedBps < CHUNK_LOW_SPEED_THRESHOLD && dl > 50 * 1024) {
                     console.warn(`[MultiThread] Chunk ${c.i} low speed ${Math.round(speedBps/1024)}KB/s on ${chunkUrl.substring(0, 50)}, retry ${chunkRetry + 1}/${CHUNK_MAX_RETRIES}`);
@@ -248,7 +278,7 @@ async function downloadFileChunked(url, destPath, options = {}) {
               const resetStall = () => {
                 if (stallTimer) clearTimeout(stallTimer);
                 // [P0 OPT - 2026-07-22] 分块级 stallTimeout 从 15s 缩短到 5s
-                // 对齐 PCL2 的 5 秒无数据断开机制。5s 足够避开短暂网络抖动，
+                // 5s 足够避开短暂网络抖动，
                 // 又能快速检测到 CDN 节点卡死，立即换 URL 重试该分块。
                 stallTimer = setTimeout(() => {
                   if (!aborted) {

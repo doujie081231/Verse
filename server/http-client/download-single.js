@@ -98,7 +98,7 @@ async function _dlSingle(urlStr, destPath, options = {}) {
         // 问题：CDN 节点慢速滴漏（如 10KB/s），每秒都有数据进来重置 stall 计时器，
         // 导致 stall 永远不触发，单个 mod 卡 240s+ 不换源。
         // 修复：每 10 秒检查一次平均速度，低于 50KB/s 视为低速，换源重试。
-        // PCL2 的双源竞速能避免此问题，我们用低速检测达到类似效果。
+        // 用低速检测代替双源竞速，达到类似换源效果
         let lowSpeedCheckBytes = resumeOffset;
         let lowSpeedTimer = null;
         let totalDownloaded = resumeOffset;  // 提升到外层，供低速检测访问

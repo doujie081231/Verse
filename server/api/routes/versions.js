@@ -1245,7 +1245,7 @@ module.exports = {
         const iconFileNames = ['icon.png', 'pack.png', 'logo.png'];
         const pclLogoPath = 'PCL/Logo.png';
 
-        // 在指定目录中查找图标文件（优先 PCL Logo，再找 icon/pack/logo）
+        // 在指定目录中查找图标文件
         function _tryFindIcon(dir) {
           if (!dir || !fs.existsSync(dir)) return null;
           const pclLogo = path.join(dir, pclLogoPath);
