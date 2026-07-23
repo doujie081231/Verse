@@ -2,130 +2,84 @@
   <img src="img/icon.png" alt="VersePC Logo" width="120">
   <h1>VersePC</h1>
 </div>
+
 # VersePC - Minecraft Launcher
 
 <p align="center">
-  <b>现代化、跨平台的 Minecraft 启动器</b><br>
-  简洁美观 · 功能丰富 · 性能卓越
+  <b>好用的 Minecraft 启动器，让玩游戏变得更简单</b><br>
+  支持 Windows / macOS / Linux
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.3.41-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-1.2.1-blue" alt="Version">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey" alt="Platform">
-  <img src="https://img.shields.io/badge/license-Source%20Visible-red" alt="License">
 </p>
 
 ---
 
-## 简介
+## 它能做什么
 
-**VersePC** 是一款基于 Electron 构建的现代化 Minecraft 启动器，致力于为玩家提供流畅、美观、功能完善的游戏启动体验。支持 Windows、macOS 和 Linux 三大平台，采用自定义协议架构，无需占用端口即可实现完整的本地服务功能。
+**VersePC** 是一款专注 Minecraft 游戏体验的启动器，不用梯子就能正常用，功能齐全，界面清爽。
 
-## 功能特性
+### 启动游戏
+- 原版、Forge、Fabric、NeoForge、OptiFine，点一下就能装
+- 自动检测 Java，缺了会帮你装好
+- 支持微软账号和离线账号登录
+- 自动分配内存，不用担心内存不够或太多
 
-### 核心功能
-- **多版本管理** - 支持官方版本、Forge、Fabric、NeoForge、OptiFine 等主流加载器的一键安装与切换
-- **智能启动** - 自动检测 Java 环境，缺失时引导安装；自动选择最快的国内镜像源下载
-- **账户系统** - 支持微软账户（Microsoft Account）和离线账户登录
-- **自动更新** - 内置多源自动更新检测，支持官方网址、CDN 和 GitHub 多种下载方式
+### 模组和整合包
+- 浏览和下载模组，支持 CurseForge 和 Modrinth（不用梯子）
+- 一键导入整合包，自动下载补齐所有模组
+- 版本隔离，每个游戏版本互不干扰
+- 数据包、资源包、光影包管理
 
-### 模组与整合包
-- **模组管理** - 浏览、安装、启用/禁用模组，支持 JAR 文件解析与依赖检测
-- **整合包支持** - 一键导入 CurseForge、Modrinth 等平台整合包
-- **版本隔离** - 每个游戏版本独立运行环境，避免冲突
+### 联机功能
+- **红石联机**：不需要公网 IP，也不需要路由器设置，一键开房和朋友一起玩
+- **联机大厅**：查看公开房间，复制地址直接加入
+- **局域网联机**：支持透传和中继两种方式
 
-### 高级特性
-- **插件系统** - 可扩展的插件架构，支持自定义功能扩展
-- **主题切换** - 支持亮色/暗色主题，自适应系统设置
-- **文件浏览器** - 内置文件管理器，方便管理游戏文件
-- **代码编辑器** - 集成 Monaco Editor，支持配置文件编辑
+### 实用工具
+- **V岛**：AI 小助手，游戏里也能用快捷键呼出，有问题直接问
+- **崩溃分析**：游戏崩了会自动分析原因，告诉你问题出在哪
+- **壁纸引擎**：给启动器换个好看的背景
+- **资源管理**：下载的模组、整合包一目了然
+- **文件管理**：内置文件浏览器，不用翻文件夹
 
-### 性能优化
-- **V8 代码缓存** - 首次启动后缓存编译结果，后续启动提速 40-60%
-- **完整性自检** - 启动时检测源文件是否被篡改，保障运行安全
-- **高效协议** - 使用自定义 `versepc://` 协议替代传统 HTTP 服务器，消除端口冲突
+### 个性化
+- 亮色/暗色主题，跟着系统自动切换也行
+- 自定义背景壁纸
+- 界面布局可以调
 
 ## 系统要求
 
-| 平台 | 最低要求 | 推荐配置 |
-|------|---------|---------|
-| Windows | Windows 10 (x64) | Windows 11 |
-| macOS | macOS 10.15 (Intel/Apple Silicon) | macOS 14+ |
-| Linux | 64-bit 发行版 | Ubuntu 22.04+ / Arch |
+| 平台 | 说明 |
+|------|------|
+| Windows | Windows 10 或 11（64位） |
+| macOS | macOS 10.15 及以上（Intel / Apple Silicon） |
+| Linux | 64 位主流发行版 |
 
 
-## 技术架构
-
-```
-VersePC/
-├── main.js                  # Electron 主进程入口（窗口、IPC、协议、GPU）
-├── server.js                # 业务逻辑与 API 路由分发
-├── preload.cjs              # 安全预加载脚本
-├── index.html               # 主界面 (SPA)
-├── editor.html              # 代码编辑器
-├── css/                     # 样式文件（按功能模块拆分）
-│   ├── base.css             # 基础变量
-│   ├── layout.css           # 布局
-│   ├── versions.css         # 版本管理
-│   ├── launch.css           # 启动
-│   ├── mods.css             # 模组
-│   ├── settings.css         # 设置
-│   ├── components.css       # 组件
-│   └── themes.css           # 主题色方案
-├── js/                      # 前端脚本
-│   ├── app.js               # 前端主应用逻辑入口
-│   ├── api.js               # 后端 API 调用封装
-│   └── app/                 # 前端业务模块（27个）
-├── main/                    # 主进程模块
-│   ├── crash-log.js         # 崩溃日志
-│   ├── mods-ipc.js          # 模组 IPC 处理
-│   ├── store.js             # 持久化存储
-│   ├── updater.js           # 自动更新
-│   ├── protocol-handler.js  # 自定义协议处理
-│   └── editor-terminal.js   # 编辑器与终端
-├── server/                  # 业务逻辑模块（模块化结构）
-│   ├── api/routes/          # API 路由
-│   ├── modpack/             # 整合包模块
-│   ├── modloaders/          # 加载器模块
-│   └── launch/              # 启动模块
-├── activation/              # 激活验证模块
-├── img/                     # 图标与图片资源
-└── plugins/                 # 插件目录
-```
 
 ## 更新日志
 
-### v1.3.41
-- 代码架构重构：main.js 和 app.js 模块化拆分
-- 修复 NeoForge/Forge 安装流程
-- 修复整合包导入与启动问题
-- 优化下载源选择策略（国内优先）
-- 修复内存自动分配问题
-- 修复版本删除链路问题
+### v1.2.1 (2026-07-23)
+- CurseForge 和 Modrinth 全面接入国内镜像，不用梯子也能搜索和下载模组
+- 修复 Fabric API 选择页面的界面问题
+- 修复打开版本详情时不必要的选项显示问题
 
-### v1.0.1 (2026-06-09)
-- 新增多源自动更新检测，支持 GitHub 和夸克网盘两种下载方式
-- 修复微软账户登录功能
-- Java 下载速度优化，自动选择最快的国内镜像源
-- 启动时自动检测 Java 环境，缺失时引导安装
-- 离线账户名称输入优化
+### v1.2.0
+- 新增私人服务器页面和红石联机功能
+- 修复 NeoForge 高版本启动崩溃
+- 优化启动速度，消除启动后的卡顿感
+- 皮肤显示更稳定，支持多个皮肤源
 
-### v1.0.0 (2026-05-01)
-- 初始版本发布
-- 完整的 Minecraft 版本管理与启动功能
-- 模组与整合包支持
-- 多平台构建支持
+### v1.0.0
+- 第一版发布，支持基本的版本管理、启动和模组管理
 
-## 开源协议
+## 关于
 
-本项目为源码可见软件（Source Available），版权所有 © 2026 豆杰。保留所有权利。
-
-源码公开供学习参考，但未经明确书面许可，禁止对本软件进行逆向工程、反编译、修改、分发或用于 AI 模型训练。
-
-## 联系方式
-
-- **GitHub**: [doujie081231/versePc](https://github.com/doujie081231/versePc)
-- **问题反馈**: [议题](https://github.com/doujie081231/versePc/issues)
+- **作者**：豆杰
+- **反馈问题**：QQ频道 verselauncher.cn
 
 ---
 
