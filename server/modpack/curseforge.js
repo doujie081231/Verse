@@ -13,7 +13,8 @@ const http = require('../http-client');
 const versions = require('../versions');
 const modloaders = require('../modloaders');
 
-const { _dedupeVersionId, isModpackPathSafe, _repairCorruptedModJars, relocateMisplacedResourcePacks, resolveConcurrency, computeModTimeout, createProgressUpdater } = require('./shared');
+const { _dedupeVersionId, _cleanDownloadingResidue, isModpackPathSafe, _repairCorruptedModJars, relocateMisplacedResourcePacks, resolveConcurrency, computeModTimeout, createProgressUpdater } = require('./shared');
+const { completeModpackDependencies } = require('./dep-completion');
 
 /**
  * 导入 CurseForge 整合包（解析 manifest、安装基础版本与加载器、下载 mods 与 overrides）。
@@ -339,6 +340,9 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
     const modsDir = path.join(versionDir, 'mods');
     utils.ensureDir(path.join(modsDir, 'dummy.txt'));
 
+    // 清理上次导入失败留下的 .downloading 残留文件，避免续传死循环
+    _cleanDownloadingResidue(versionDir);
+
     const cfModFiles = cfFiles.map((f) => ({ name: `Mod #${f.projectID}`, status: 'pending', progress: 0 }));
     progress('mods', `下载 Mod 文件 (共 ${cfFiles.length} 个)...`, 50, [...overrideFiles, ...cfModFiles], '');
 
@@ -495,6 +499,8 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
         if (cfModFiles[index]) { cfModFiles[index].status = 'completed'; cfModFiles[index].progress = 100; }
         cfDownloadedCount++;
       } else if (cfModFiles[index]) {
+        // 清理当前 mod 的 .downloading 残留文件，避免下次导入续传死循环
+        try { const _tmpFile = cfModFiles[index]._destPath + '.downloading'; if (fs.existsSync(_tmpFile)) fs.unlinkSync(_tmpFile); } catch (_) {}
         if (abortSignal && abortSignal.aborted) {
           cfModFiles[index].status = 'failed'; cfModFiles[index].error = '已取消';
         } else {
@@ -588,6 +594,21 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
       console.warn(`[CurseForge] ${cfRepairResult.failed} 个模组文件损坏且无法修复，游戏启动时可能报错`);
     }
 
+    // 依赖补全：扫描所有 mod 的依赖声明，自动下载缺失的前置依赖
+    // 解决整合包作者漏写依赖 mod 导致游戏启动崩溃的问题
+    try {
+      const _cfDepLoader = fabricVerCF ? 'fabric' : (forgeVerCF ? 'forge' : (neoforgeVerCF ? 'neoforge' : 'forge'));
+      const cfDepResult = await completeModpackDependencies(versionDir, mcVersion, _cfDepLoader, settings, progress);
+      if (cfDepResult.downloaded > 0) {
+        console.log(`[CurseForge] 依赖补全: ${cfDepResult.downloaded} 个缺失依赖已自动下载`);
+      }
+      if (cfDepResult.failed > 0) {
+        console.warn(`[CurseForge] 依赖补全: ${cfDepResult.failed} 个依赖未找到: ${cfDepResult.failedDeps.join(', ')}`);
+      }
+    } catch (cfDepErr) {
+      console.warn(`[CurseForge] 依赖补全过程异常(非致命): ${cfDepErr.message}`);
+    }
+
     if (loaderVersionId && mcVersion) {
       const lt = fabricVerCF ? 'fabric' : (forgeVerCF || neoforgeVerCF ? 'forge' : null);
       const cv = fabricVerCF || forgeVerCF || neoforgeVerCF;
@@ -634,6 +655,7 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
             const CF_ASSET_PARALLEL = Math.min(parseInt(settings.maxThreads, 10) || 64, 64);
             let cfAssetDone = 0;
             const cfAssetTotal = cfMissingAssets.length;
+            progress('assets', `下载游戏资源 (0/${cfAssetTotal})`, 93, [], '');
             const runCfAssetBatch = async () => {
               while (cfMissingAssets.length > 0) {
                 if (abortSignal && abortSignal.aborted) break;
@@ -647,15 +669,14 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
                   console.warn(`[CurseForge] 资源 ${asset.name} 下载失败: ${e.message}`);
                 }
                 cfAssetDone++;
-                if (cfAssetDone % 20 === 0) {
-                  const pct = 93 + Math.round((cfAssetDone / cfAssetTotal) * 4);
-                  progress('assets', `下载资源 (${cfAssetDone}/${cfAssetTotal})`, Math.min(pct, 97), [], '');
-                }
+                const pct = 93 + Math.round((cfAssetDone / cfAssetTotal) * 4);
+                progress('assets', `下载游戏资源 (${cfAssetDone}/${cfAssetTotal})`, Math.min(pct, 97), [], '');
               }
             };
             const cfAssetPool = [];
             for (let i = 0; i < Math.min(CF_ASSET_PARALLEL, cfAssetTotal); i++) cfAssetPool.push(runCfAssetBatch());
             await Promise.all(cfAssetPool);
+            progress('assets', `游戏资源下载完成 (${cfAssetTotal}/${cfAssetTotal})`, 97, [], '');
           }
         }
       } catch (e) {

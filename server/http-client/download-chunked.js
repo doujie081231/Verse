@@ -114,6 +114,28 @@ async function downloadFileChunked(url, destPath, options = {}) {
         if (!useChunk || fileSize <= 0) {
           return await _dlSingle(workingUrl, destPath, { onProgress, sha1, timeout, abortSignal, agent: customAgent });
         }
+        // 下载前检查文件是否已存在（大小匹配则跳过，对标 PCL2 文件复用）
+        if (fs.existsSync(destPath)) {
+          try {
+            const existStat = fs.statSync(destPath);
+            if (existStat.size === fileSize) {
+              if (sha1) {
+                const actualSha1 = await utils.calculateSHA1(destPath);
+                if (actualSha1 === sha1) {
+                  console.log(`[Download] 文件已存在且 SHA1 匹配，跳过下载: ${path.basename(destPath)}`);
+                  if (onProgress) onProgress({ bytesDownloaded: existStat.size, totalBytes: fileSize, speed: 0, progress: 100, chunks: 1, activeChunks: 0 });
+                  return { size: existStat.size, path: destPath, sha1Match: true, chunks: 1 };
+                }
+                console.warn(`[Download] 文件已存在但 SHA1 不匹配，重新下载: ${path.basename(destPath)}`);
+                try { fs.unlinkSync(destPath); } catch (_) {}
+              } else {
+                console.log(`[Download] 文件已存在且大小匹配，跳过下载: ${path.basename(destPath)}`);
+                if (onProgress) onProgress({ bytesDownloaded: existStat.size, totalBytes: fileSize, speed: 0, progress: 100, chunks: 1, activeChunks: 0 });
+                return { size: existStat.size, path: destPath, chunks: 1 };
+              }
+            }
+          } catch (_) {}
+        }
         const maxC = optMaxChunks !== null ? optMaxChunks : Math.min(parseInt(settings.maxChunksPerFile, 10) || 16, 32);
         const cCount = Math.min(maxC, Math.ceil(fileSize / minChunkSize));
         const cSize = Math.ceil(fileSize / cCount);
@@ -141,13 +163,13 @@ async function downloadFileChunked(url, destPath, options = {}) {
         }
         let lastProgUpdate = Date.now();
 
-        // [P0 OPT - 2026-07-21] 分块级 URL 列表 + 分块级重试
+        // [P0 OPT - 2026-07-22] 分块级 URL 列表 + 分块级重试
         // 之前的问题：所有分块都用同一个 workingUrl，某个 CDN 节点慢时所有分块都卡住，
         // 最后几个分块（长尾）要等 45s stallTimeout 才换源，导致 90%+ 卡住。
         // PCL2 的做法：分块级 URL 切换，单个分块失败/卡住时立即换 URL 重试该分块。
-        // 修复：每个分块独立尝试 URL 列表，stallTimeout 从 45s 缩短到 15s，
+        // 修复：每个分块独立尝试 URL 列表，stallTimeout 从 15s 缩短到 5s（对齐 PCL2），
         // 单个分块最多重试 3 次（每次换 URL），而不是整个文件失败。
-        const CHUNK_STALL_TIMEOUT = 15000;  // 15s，分块级卡死检测
+        const CHUNK_STALL_TIMEOUT = 5000;   // 5s，分块级卡死检测（对齐 PCL2 的 5 秒无数据断开）
         const CHUNK_MAX_RETRIES = 3;        // 单个分块最多重试 3 次
 
         const dlChunk = async (c) => {
@@ -192,11 +214,17 @@ async function downloadFileChunked(url, destPath, options = {}) {
               let dl = resumeOffset;
               let aborted = false;
               let stallTimer = null;
-              // [P0 OPT - 2026-07-21] 分块级低速检测
-              // 和单流一样，防止 CDN 滴漏导致 stall 永远不触发
-              let chunkLowSpeedBytes = dl;
+              // [P0 FIX - 2026-07-22] chunkLowSpeedTimer/chunkLowSpeedBytes 必须用 let 声明
+              // 原因：未声明时变成隐式全局变量，多个并发 chunk 共享同一变量，
+              // 导致 chunk A 的低速检测清除 chunk B 的定时器（竞态条件）；
+              // 且严格模式下读取未声明变量抛 ReferenceError 使应用崩溃。
               let chunkLowSpeedTimer = null;
-              const CHUNK_LOW_SPEED_THRESHOLD = 10 * 1024;  // 10KB/s（分块阈值更低，避免误判）
+              let chunkLowSpeedBytes = 0;
+              // [P0 OPT - 2026-07-22] 分块级低速检测
+              // 和单流一样，防止 CDN 滴漏导致 stall 永远不触发
+              // 关键修复：窗口从 10s 缩短到 5s（对齐 PCL2 的 5 秒检测周期）
+              // 之前 10s 窗口 + 10KB/s 阈值时，CDN 每 10s 滴漏 100KB 刚好等于阈值不触发
+              const CHUNK_LOW_SPEED_THRESHOLD = 10 * 1024;  // 10KB/s
               const startChunkLowSpeed = () => {
                 if (chunkLowSpeedTimer) clearInterval(chunkLowSpeedTimer);
                 chunkLowSpeedBytes = dl;
@@ -206,7 +234,7 @@ async function downloadFileChunked(url, destPath, options = {}) {
                     return;
                   }
                   const received = dl - chunkLowSpeedBytes;
-                  const speedBps = received / 10;  // 10秒窗口
+                  const speedBps = received / 5;  // 5秒窗口（对齐 PCL2）
                   chunkLowSpeedBytes = dl;
                   if (speedBps < CHUNK_LOW_SPEED_THRESHOLD && dl > 50 * 1024) {
                     console.warn(`[MultiThread] Chunk ${c.i} low speed ${Math.round(speedBps/1024)}KB/s on ${chunkUrl.substring(0, 50)}, retry ${chunkRetry + 1}/${CHUNK_MAX_RETRIES}`);
@@ -215,16 +243,16 @@ async function downloadFileChunked(url, destPath, options = {}) {
                     if (chunkLowSpeedTimer) { clearInterval(chunkLowSpeedTimer); chunkLowSpeedTimer = null; }
                     if (_chunkReject) { try { _chunkReject(new Error(`Chunk ${c.i} low speed: ${Math.round(speedBps/1024)}KB/s`)); } catch (_) {} _chunkReject = null; }
                   }
-                }, 10000);
+                }, 5000);
               };
               const resetStall = () => {
                 if (stallTimer) clearTimeout(stallTimer);
-                // [P0 OPT - 2026-07-21] 分块级 stallTimeout 从 45s 缩短到 15s
-                // 原因：长尾问题（90%+ 卡住）的根因是最后几个分块卡在慢 CDN 节点，
-                // 45s 等待太久。15s 足够避开短暂抖动，又能快速换 URL。
+                // [P0 OPT - 2026-07-22] 分块级 stallTimeout 从 15s 缩短到 5s
+                // 对齐 PCL2 的 5 秒无数据断开机制。5s 足够避开短暂网络抖动，
+                // 又能快速检测到 CDN 节点卡死，立即换 URL 重试该分块。
                 stallTimer = setTimeout(() => {
                   if (!aborted) {
-                    console.warn(`[MultiThread] Chunk ${c.i} stall timeout (15s) on ${chunkUrl.substring(0, 50)}, retry ${chunkRetry + 1}/${CHUNK_MAX_RETRIES}`);
+                    console.warn(`[MultiThread] Chunk ${c.i} stall timeout (5s) on ${chunkUrl.substring(0, 50)}, retry ${chunkRetry + 1}/${CHUNK_MAX_RETRIES}`);
                     try { cr.stream.destroy(); } catch (_) {}
                     try { ws.destroy(); } catch (_) {}
                     if (chunkLowSpeedTimer) { clearInterval(chunkLowSpeedTimer); chunkLowSpeedTimer = null; }
@@ -359,9 +387,18 @@ async function downloadFileChunked(url, destPath, options = {}) {
 
           // 失败分块延后重试
           if (_failedChunks.length > 0) {
+            // 超过半数分块失败，说明 CDN 节点不可用，立即回退单流
+            if (_failedChunks.length > chunks.length / 2) {
+              console.warn(`[MultiThread] ${_failedChunks.length}/${chunks.length} 分块失败（超过半数），立即回退单流下载`);
+              for (const c of chunks) {
+                try { if (fs.existsSync(c.tmp)) fs.unlinkSync(c.tmp); } catch (_) {}
+              }
+              return await _dlSingle(allUrls[0] || workingUrl, destPath, {
+                onProgress, sha1, timeout: Math.min(timeout, 120000),
+                abortSignal, agent: customAgent
+              });
+            }
             console.warn(`[MultiThread] ${_failedChunks.length}/${chunks.length} 个分块失败，开始延后重试`);
-            // [P0 FIX - 2026-07-21] 重试轮数从 5 减到 3，更快回退到单流下载
-            // 原因：Modrinth CDN 单 URL，重试同一节点意义不大，3 轮足够判断是否可恢复
             const _RETRY_ROUNDS = 3;
             for (let round = 0; round < _RETRY_ROUNDS; round++) {
               if (abortSignal && abortSignal.aborted) throw new Error('下载已中止');

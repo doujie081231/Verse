@@ -643,6 +643,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
      * @returns {void}
      */
     onReconnected: (callback) => ipcRenderer.on('redstone:reconnected', (event, info) => callback(info || {})),
+    /**
+     * 拉取公开房间列表（联机大厅）
+     * @param {Object} params - { serverAddress, offset }
+     * @returns {Promise<{ok:boolean, tunnels?:Array<{id,title,description,port,online}>, serverAddress?:string, error?:string}>}
+     */
+    listPublicTunnels: (params) => ipcRenderer.invoke('redstone:public-tunnels', params),
+    /**
+     * 获取单个公开房间的模组列表
+     * @param {Object} params - { serverAddress, tunnelId }
+     * @returns {Promise<{ok:boolean, mods?:Array<string>, serverAddress?:string, error?:string}>}
+     */
+    getTunnelMods: (params) => ipcRenderer.invoke('redstone:tunnel-mods', params),
   },
 
   /**

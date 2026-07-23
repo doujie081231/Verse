@@ -285,15 +285,13 @@ module.exports = {
                         } catch (e) { console.warn(`[Modpack] 测速失败，使用默认顺序: ${e.message}`); }
 
                         // Dynamic chunk count based on file size
-                        // [P0 FIX - 2026-07-21] 恢复 32 分块，配合 allSettled + 延后重试 + 单流回退
-                        // 实测：32 分块初期速度最快(1-2MB/s)，虽可能触发 CDN 限速，
-                        // 但 allSettled 防止分块失败导致整体失败，延后重试让分块有机会恢复，
-                        // 单流回退作为最后保障。综合效果优于固定低分块数。
-                        let _maxChunks = 32;
+                        // 32 分块容易触发 CDN 并发限制（30 个连接同时请求大文件），
+                        // 降到 16 分块既能保持多线程加速，又能避免 CDN DDoS 防护
+                        let _maxChunks = 16;
                         if (fileSize > 0) {
                             if (fileSize <= 1 * 1024 * 1024) _maxChunks = 2;
-                            else if (fileSize <= 10 * 1024 * 1024) _maxChunks = 16;
-                            else _maxChunks = 32;
+                            else if (fileSize <= 10 * 1024 * 1024) _maxChunks = 8;
+                            else _maxChunks = 16;
                         }
 
                         // 单次调用，重试和镜像切换由 downloadFileChunked 内部处理

@@ -125,7 +125,8 @@ class WallpaperEngine {
         if (this.renderer && !this.renderer._brightnessCheckInterval && typeof this.renderer._startBrightnessSampling === 'function') {
             this.renderer._startBrightnessSampling();
         }
-        if (this.isRunning && !this.animationId) {
+        // 仅在非 none 模式下恢复 RAF，避免无壁纸时空转
+        if (this.isRunning && !this.animationId && this.currentMode !== 'none') {
             this.lastTime = performance.now();
             this._animate(this.lastTime);
         }
@@ -140,11 +141,17 @@ class WallpaperEngine {
 
     switchMode(mode) {
         if (this.currentMode === mode) return;
+        const wasNone = this.currentMode === 'none';
         this.currentMode = mode;
         if (this.isRunning) {
             this.transitioning = true;
             this.transitionAlpha = 0;
             this._initRenderer();
+            // 从 none 切到具体模式时，RAF 循环已停止，需要重新启动
+            if (wasNone && !this.animationId) {
+                this.lastTime = performance.now();
+                this._animate(this.lastTime);
+            }
         }
     }
 
@@ -273,6 +280,14 @@ class WallpaperEngine {
 
     _animate(timestamp) {
         if (!this.isRunning) return;
+
+        // 没有壁纸可渲染时停止 RAF 循环，避免空转浪费 CPU
+        // switchMode 切到具体模式时会重新调用 _animate 启动循环
+        if (this.currentMode === 'none' && !this.transitioning) {
+            this.animationId = null;
+            return;
+        }
+
         const dt = Math.min(timestamp - this.lastTime, 50);
         this.lastTime = timestamp;
 

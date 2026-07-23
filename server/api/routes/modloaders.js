@@ -300,5 +300,136 @@ module.exports = {
                 sendError(res, 'OptiFine安装失败: ' + e.message);
             }
         });
+
+        // ====================================================================
+        // /api/fabric-api/versions?game=1.20.1
+        // 拉取指定游戏版本可用的 Fabric API 版本列表，并标记推荐版本
+        // ====================================================================
+        registerRoute('GET', '/api/fabric-api/versions', async (req, res, parsedUrl) => {
+            const gameVersion = parsedUrl.query.game;
+            if (!gameVersion) { sendError(res, 'Missing game parameter', 400); return; }
+            try {
+                const MODRINTH_API = ctx.urls.MODRINTH_API;
+                const projectId = 'P7dR8mSH'; // fabric-api
+                const verUrl = `${MODRINTH_API}/project/${projectId}/version?game_versions=["${gameVersion}"]&loaders=["fabric"]`;
+                let rawVersions = null;
+                try {
+                    rawVersions = await http.cachedFetchJSON(verUrl, 600000);
+                } catch (e) {}
+                if (!rawVersions || rawVersions.length === 0) {
+                    // 降级：不带 game_versions 过滤
+                    try {
+                        rawVersions = await http.cachedFetchJSON(`${MODRINTH_API}/project/${projectId}/version`, 600000);
+                    } catch (e) {}
+                }
+                if (!rawVersions || !Array.isArray(rawVersions)) {
+                    sendJSON(res, { versions: [], recommended: '' });
+                    return;
+                }
+                const all = rawVersions.map((v) => {
+                    const primary = (v.files || [])[0] || {};
+                    return {
+                        versionId: v.id,
+                        versionNumber: v.version_number || v.id,
+                        name: v.name || '',
+                        gameVersions: v.game_versions || [],
+                        loaders: v.loaders || [],
+                        releaseType: v.version_type || 'release',
+                        datePublished: v.date_published || '',
+                        downloads: v.downloads || 0,
+                        filename: primary.filename || '',
+                        url: primary.url || '',
+                        size: primary.size || 0,
+                    };
+                });
+                // 过滤出支持当前游戏版本和 fabric loader 的版本
+                const compatible = all.filter(v =>
+                    Array.isArray(v.gameVersions) && v.gameVersions.includes(gameVersion)
+                    && Array.isArray(v.loaders) && v.loaders.includes('fabric')
+                );
+                const list = (compatible.length > 0 ? compatible : all)
+                    .filter(v => v.releaseType === 'release' || v.releaseType === 'beta')
+                    .filter(v => v.url);
+                // 推荐版本：最新稳定 release，没有则第一个
+                let recommended = '';
+                const releases = list.filter(v => v.releaseType === 'release');
+                if (releases.length > 0) {
+                    recommended = releases[0].versionId;
+                } else if (list.length > 0) {
+                    recommended = list[0].versionId;
+                }
+                sendJSON(res, { versions: list, recommended });
+            } catch (e) {
+                sendJSON(res, { versions: [], recommended: '', error: e.message });
+            }
+        });
+
+        // ====================================================================
+        // /api/fabric-api/install
+        // 下载指定 Fabric API 版本的 jar 文件到目标版本的 mods 目录
+        // ====================================================================
+        registerRoute('POST', '/api/fabric-api/install', async (req, res, parsedUrl) => {
+            const data = await readBody(req);
+            const { gameVersion, versionId, versionName } = data;
+            if (!gameVersion || !versionId) {
+                sendError(res, 'Missing gameVersion or versionId', 400);
+                return;
+            }
+            try {
+                const MODRINTH_API = ctx.urls.MODRINTH_API;
+                const projectId = 'P7dR8mSH';
+                const verUrl = `${MODRINTH_API}/project/${projectId}/version?game_versions=["${gameVersion}"]&loaders=["fabric"]`;
+                let rawVersions = null;
+                try {
+                    rawVersions = await http.cachedFetchJSON(verUrl, 600000);
+                } catch (e) {}
+                if (!rawVersions || rawVersions.length === 0) {
+                    rawVersions = await http.cachedFetchJSON(`${MODRINTH_API}/project/${projectId}/version`, 600000);
+                }
+                const target = (rawVersions || []).find(v => v.id === versionId);
+                if (!target) {
+                    sendError(res, '找不到指定的 Fabric API 版本', 404);
+                    return;
+                }
+                const file = (target.files || [])[0];
+                if (!file || !file.url) {
+                    sendError(res, 'Fabric API 版本没有可下载文件', 400);
+                    return;
+                }
+
+                // 模组目录优先版本隔离目录，其次全局 mods 目录
+                const versionDir = path.join(VERSIONS_DIR, versionName || `fabric-loader-${gameVersion}`);
+                let modsDir = path.join(versionDir, 'mods');
+                if (!fs.existsSync(modsDir)) {
+                    const globalModsDir = path.join(DATA_DIR, 'mods');
+                    modsDir = globalModsDir;
+                }
+                if (!fs.existsSync(modsDir)) fs.mkdirSync(modsDir, { recursive: true });
+
+                // 清理旧版本 Fabric API（fabric-api-*.jar）
+                try {
+                    const existing = fs.readdirSync(modsDir);
+                    for (const f of existing) {
+                        if (/^fabric-api(-[0-9].*)?\.jar$/i.test(f) || /^fabric-api\.jar$/i.test(f)) {
+                            try { fs.unlinkSync(path.join(modsDir, f)); } catch (e) {}
+                        }
+                    }
+                } catch (e) {}
+
+                const destPath = path.join(modsDir, file.filename);
+                await http.downloadFile(file.url, destPath, null, 3);
+
+                sendJSON(res, {
+                    success: true,
+                    filename: file.filename,
+                    path: destPath,
+                    modsDir,
+                    versionId: target.id,
+                    versionNumber: target.version_number || target.id
+                });
+            } catch (e) {
+                sendError(res, 'Fabric API 安装失败: ' + e.message);
+            }
+        });
     }
 };

@@ -233,6 +233,33 @@ async function doLaunch(versionId, versionJson, settings, account, externalVersi
 
   const nativesDir = natives.getNativesFolder(versionId);
 
+  // 启动前清理 mods 目录的 .downloading 残留文件和分块文件 (.cN)
+  // .downloading 是上次下载中断留下的半成品
+  // .cN 是分块下载未合并的碎片，文件名含 .jar 会导致 Forge ModDirTransformerDiscoverer 崩溃
+  try {
+    const modsDir = path.join(gameDir, 'mods');
+    if (fs.existsSync(modsDir)) {
+      const items = fs.readdirSync(modsDir);
+      let cleaned = 0;
+      for (const item of items) {
+        // 清理 .downloading 残留
+        if (item.endsWith('.downloading')) {
+          try { fs.unlinkSync(path.join(modsDir, item)); cleaned++; } catch (_) {}
+          continue;
+        }
+        // 清理分块残留 (.c0, .c1, ... .c31)
+        if (/\.c\d+$/.test(item)) {
+          try { fs.unlinkSync(path.join(modsDir, item)); cleaned++; } catch (_) {}
+        }
+      }
+      if (cleaned > 0) {
+        console.log(`[Launch] 清理 ${cleaned} 个下载残留文件（.downloading/.cN）`);
+      }
+    }
+  } catch (e) {
+    console.warn(`[Launch] 清理下载残留失败: ${e.message}`);
+  }
+
   // [P0 FIX - 2026-07-21] 启动前检查 missing_mods_checker.json，自动补全缺失文件
   // Better MC 等整合包内置 MissingModsChecker mod，启动时检查 config/missing_mods_checker.json
   // 列出的必需文件，缺失会弹窗阻止启动。这里在启动前主动扫描，缺的自动从 CurseForge 补下

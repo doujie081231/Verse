@@ -900,11 +900,21 @@
     display: block !important;
 }
 
+#page-version-detail.active {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    position: relative;
+}
+
 .verdetail-body {
     padding: 16px 24px;
     display: flex;
     flex-direction: column;
     gap: 24px;
+    flex: 1;
+    overflow-y: auto;
 }
 
 .verdetail-section-title {

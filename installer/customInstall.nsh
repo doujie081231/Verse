@@ -1,3 +1,5 @@
+Var DATA_BACKUP_PATH
+
 !macro customInit
     SetAutoClose false
     ${nsProcess::KillProcess} "VersePC.exe" $R0
@@ -10,6 +12,24 @@
     Sleep 500
     nsExec::ExecToStack 'taskkill /F /IM VersePC.exe /T'
     Sleep 300
+
+    ; --- 覆盖安装数据保护 ---
+    ; 在旧卸载器运行前，先把 data 目录重命名隐藏，防止被删除
+    ; 同盘重命名瞬间完成，不受文件大小影响
+    StrCpy $DATA_BACKUP_PATH ""
+    IfFileExists "$INSTDIR\data\*.*" 0 _no_data_to_backup
+        StrCpy $0 "$INSTDIR\._versepc_data_backup"
+        ; 如果上次安装失败残留了备份目录，先清理
+        IfFileExists "$0\*.*" 0 +2
+            RMDir /r "$0"
+        Rename "$INSTDIR\data" "$0"
+        IfFileExists "$0\*.*" 0 _backup_failed
+            StrCpy $DATA_BACKUP_PATH "$0"
+            DetailPrint "已保护用户数据目录"
+            Goto _no_data_to_backup
+        _backup_failed:
+            DetailPrint "警告：用户数据目录保护失败，覆盖安装可能导致数据丢失"
+    _no_data_to_backup:
 
     ; --- VC++ 运行库自动检测与安装 ---
     IfFileExists "$SYSDIR\vcruntime140.dll" _vcpp_found _vcpp_missing
@@ -64,6 +84,22 @@
         nsExec::ExecToLog `powershell -NoProfile -Command "@{dataDir='$INSTDIR\data'} | ConvertTo-Json -Compress | Out-File -FilePath '$INSTDIR\data-config.json' -Encoding utf8"`
         DetailPrint "数据目录设置为 $INSTDIR\data"
     _data_dir_done:
+!macroend
+
+!macro customInstall
+    ; 安装完成后恢复用户数据
+    StrCmp "$DATA_BACKUP_PATH" "" _no_data_restore 0
+    IfFileExists "$DATA_BACKUP_PATH\*.*" 0 _no_data_restore
+        ; 如果安装过程中创建了 data 目录（新装器写入），先删除
+        IfFileExists "$INSTDIR\data\*.*" 0 +2
+            RMDir /r "$INSTDIR\data"
+        Rename "$DATA_BACKUP_PATH" "$INSTDIR\data"
+        IfFileExists "$INSTDIR\data\*.*" 0 _restore_failed
+            DetailPrint "已恢复用户数据目录"
+            Goto _no_data_restore
+        _restore_failed:
+            DetailPrint "警告：用户数据目录恢复失败，数据仍在 $INSTDIR\._versepc_data_backup"
+    _no_data_restore:
 !macroend
 
 !macro customUnInit

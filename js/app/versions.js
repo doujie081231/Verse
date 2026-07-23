@@ -614,6 +614,13 @@ function openVersionDetail(versionId, versionUrl, versionType) {
   if (loaderVersionSection) loaderVersionSection.style.display = 'none';
   document.getElementById('loader-version-list').innerHTML = '';
   
+  // 重置 Fabric API 区域：打开版本详情页时默认隐藏，避免上次选中 Fabric 后残留显示
+  // 只有用户主动点击 Fabric 加载器卡片后才会显示（见 selectLoaderCard）
+  const fabricApiSection = document.getElementById('fabric-api-section-detail');
+  if (fabricApiSection) fabricApiSection.style.display = 'none';
+  const fabricApiPicker = document.getElementById('fabric-api-picker-detail');
+  if (fabricApiPicker) fabricApiPicker.style.display = 'none';
+  
   loadLoaderVersions(versionId);
 }
 
@@ -655,6 +662,40 @@ function selectLoaderCard(loaderType) {
   } else {
     document.getElementById('loader-version-section').style.display = 'none';
     selectedLoaderVersion = '';
+  }
+  
+  // Fabric 类型时显示 Fabric API 区域，其他类型隐藏
+  const apiSection = document.getElementById('fabric-api-section-detail');
+  if (apiSection) {
+    if (loaderType === 'fabric' && currentVersionDetail) {
+      apiSection.style.display = '';
+      // 重置选择状态，点击卡片时懒加载版本列表
+      _fabricApiDetailId = '';
+      _fabricApiDetailText = '不安装';
+      _fabricApiDetailLoadedFor = '';
+      _fabricApiDetailVersions = [];
+      const cardText = document.getElementById('fabric-api-card-text-detail');
+      if (cardText) { cardText.textContent = '不安装'; cardText.style.color = 'var(--text-muted)'; }
+    } else {
+      apiSection.style.display = 'none';
+    }
+  }
+  // 非 Fabric 或切换加载器时隐藏 picker 视图
+  if (loaderType !== 'fabric') {
+    const picker = document.getElementById('fabric-api-picker-detail');
+    if (picker) {
+      picker.style.display = 'none';
+      const pageContainer = document.getElementById('page-version-detail');
+      if (pageContainer && picker.parentElement !== pageContainer) {
+        pageContainer.appendChild(picker);
+      }
+    }
+    const body = document.getElementById('pvd-body');
+    if (body) body.style.display = '';
+    const main = document.getElementById('pvd-main');
+    if (main) main.style.display = '';
+    const footer = document.getElementById('pvd-footer');
+    if (footer) footer.style.display = '';
   }
 }
 
@@ -727,7 +768,8 @@ function confirmInstallVersion() {
     }
     loaderInfo = {
       type: selectedLoaderType,
-      version: selectedLoaderVersion
+      version: selectedLoaderVersion,
+      fabricApiId: (selectedLoaderType === 'fabric' && _fabricApiDetailId) ? _fabricApiDetailId : ''
     };
   }
   
@@ -746,6 +788,12 @@ async function installVersionWithLoader(versionUrl, versionId, loaderInfo, downl
     const result = await API.installVersion(versionUrl, versionId, loaderInfo, downloadSource, customName);
     if (result.success) {
       currentInstallSessionId = result.sessionId;
+      // 如果有 Fabric API 待安装，保存信息供安装完成后使用
+      if (loaderInfo && loaderInfo.fabricApiId) {
+        _pendingFabricApiAfterInstall = { gameVersion: versionId, apiId: loaderInfo.fabricApiId, versionId: '' };
+      } else {
+        _pendingFabricApiAfterInstall = null;
+      }
       showInstallModal(versionId);
       pollInstallProgress(result.sessionId);
     } else if (result.alreadyInstalled) {
@@ -959,6 +1007,23 @@ async function pollInstallProgress(sessionId) {
       if (data.status === 'completed') {
         showToast(data.versionId + ' 安装完成！', 'success');
         currentInstallSessionId = null;
+        // 安装完成后如果有待安装的 Fabric API，自动安装
+        if (_pendingFabricApiAfterInstall) {
+          const fa = _pendingFabricApiAfterInstall;
+          _pendingFabricApiAfterInstall = null;
+          dlManager.update(taskId, { message: '正在安装 Fabric API...' });
+          try {
+            const installedId = data.versionId || fa.versionId || '';
+            const apiResult = await API.installFabricApi(fa.gameVersion, fa.apiId, installedId);
+            if (apiResult.success) {
+              showToast('Fabric API 已一并安装！', 'success');
+            } else {
+              showToast('Fabric API 安装失败：' + (apiResult.error || '未知错误'), 'warning', 5000);
+            }
+          } catch (e) {
+            showToast('Fabric API 安装失败：' + e.message, 'warning', 5000);
+          }
+        }
         await loadVersions(true);
         return;
       }
@@ -1197,6 +1262,13 @@ function openModLoaderModal(gameVersion) {
 
 function closeModLoaderModal() {
   hideModal('modloader-modal');
+  // 重置 Fabric API 选择视图状态
+  const pickerView = document.getElementById('fabric-api-picker-view');
+  if (pickerView) pickerView.style.display = 'none';
+  const formGroups = document.querySelectorAll('#modloader-modal .modal-body > .form-group');
+  formGroups.forEach(g => g.style.display = '');
+  const footer = document.querySelector('#modloader-modal .modal-footer');
+  if (footer) footer.style.display = '';
 }
 
 async function loadModLoaderVersions() {
@@ -1217,6 +1289,17 @@ async function loadModLoaderVersions() {
       modloaderVersionCustomSelect.setOptions(options);
       const stable = versions.find(v => v.stable);
       if (stable) modloaderVersionCustomSelect.setValue(stable.version);
+      // 游戏版本变化时重置 Fabric API 选择状态（列表在点击卡片时懒加载）
+      _fabricApiPickerLoadedFor = '';
+      _fabricApiSelectedId = '';
+      _fabricApiSelectedText = '';
+      _fabricApiRecommendedId = '';
+      _fabricApiVersionsCache = [];
+      const cardText = document.getElementById('fabric-api-card-text');
+      if (cardText) {
+        cardText.textContent = '不安装';
+        cardText.style.color = 'var(--text-muted)';
+      }
     } else if (currentLoaderType === 'forge') {
       const versions = await API.getModLoaderVersions(gameVersion, 'forge');
       const options = versions.map(v => ({
@@ -1234,12 +1317,159 @@ async function loadModLoaderVersions() {
       if (versions.length > 0) modloaderVersionCustomSelect.setValue(versions[0].version);
     }
   } catch (e) { modloaderVersionCustomSelect.setOptions([{ value: '', text: '加载失败' }]); }
+
+  // 非 Fabric 类型时隐藏 Fabric API 区域
+  const apiSection = document.getElementById('fabric-api-section');
+  if (apiSection) {
+    apiSection.style.display = (currentLoaderType === 'fabric' && gameVersion) ? '' : 'none';
+  }
+}
+
+let _fabricApiVersionsCache = []; // 当前游戏版本的 Fabric API 版本列表
+let _fabricApiSelectedId = '';    // 用户选中的版本 ID（空表示不安装）
+let _fabricApiSelectedText = '';  // 用户选中的版本显示文本
+let _fabricApiPickerLoadedFor = ''; // 已加载过的游戏版本（避免重复请求）
+let _fabricApiRecommendedId = ''; // 推荐版本 ID
+
+// 点击 Fabric API 卡片，进入版本选择视图
+function openFabricApiPicker() {
+  const gameVersion = modloaderGameVersionCustomSelect ? modloaderGameVersionCustomSelect.getValue() : '';
+  if (!gameVersion) {
+    showToast('请先选择游戏版本', 'error');
+    return;
+  }
+  // 隐藏主表单，显示选择视图
+  const formGroups = document.querySelectorAll('#modloader-modal .modal-body > .form-group');
+  formGroups.forEach(g => g.style.display = 'none');
+  const pickerView = document.getElementById('fabric-api-picker-view');
+  if (pickerView) pickerView.style.display = '';
+  // 底部按钮隐藏（选择视图不需要安装按钮）
+  const footer = document.querySelector('#modloader-modal .modal-footer');
+  if (footer) footer.style.display = 'none';
+
+  // 如果游戏版本变了或没加载过，重新加载
+  if (_fabricApiPickerLoadedFor !== gameVersion) {
+    loadFabricApiVersions(gameVersion);
+  }
+}
+
+// 从 Fabric API 选择视图返回主表单
+function backFromFabricApiPicker() {
+  const pickerView = document.getElementById('fabric-api-picker-view');
+  if (pickerView) pickerView.style.display = 'none';
+  const formGroups = document.querySelectorAll('#modloader-modal .modal-body > .form-group');
+  formGroups.forEach(g => g.style.display = '');
+  // Fabric 类型时确保 Fabric API 区域可见
+  if (currentLoaderType === 'fabric') {
+    const apiSection = document.getElementById('fabric-api-section');
+    if (apiSection) apiSection.style.display = '';
+  }
+  const footer = document.querySelector('#modloader-modal .modal-footer');
+  if (footer) footer.style.display = '';
+}
+
+// 拉取并渲染 Fabric API 版本列表
+async function loadFabricApiVersions(gameVersion) {
+  const listEl = document.getElementById('fabric-api-list');
+  if (!listEl) return;
+  listEl.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">加载中...</div>';
+
+  try {
+    const data = await API.getFabricApiVersions(gameVersion);
+    _fabricApiVersionsCache = data.versions || [];
+    _fabricApiRecommendedId = data.recommended || '';
+    _fabricApiPickerLoadedFor = gameVersion;
+    if (_fabricApiVersionsCache.length === 0) {
+      listEl.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">该游戏版本暂无可用的 Fabric API</div>';
+      return;
+    }
+    // 首次加载时默认选中推荐版本
+    if (!_fabricApiSelectedId && _fabricApiRecommendedId) {
+      const rec = _fabricApiVersionsCache.find(v => v.versionId === _fabricApiRecommendedId);
+      if (rec) {
+        const typeLabel = rec.releaseType === 'release' ? '稳定' : (rec.releaseType === 'beta' ? '测试' : rec.releaseType);
+        _fabricApiSelectedId = rec.versionId;
+        _fabricApiSelectedText = `${rec.versionNumber} (${typeLabel})`;
+        // 同步主表单卡片显示
+        const cardText = document.getElementById('fabric-api-card-text');
+        if (cardText) {
+          cardText.textContent = _fabricApiSelectedText;
+          cardText.style.color = 'var(--text-primary)';
+        }
+      }
+    }
+    renderFabricApiList();
+  } catch (e) {
+    listEl.innerHTML = '<div style="padding:20px;text-align:center;color:#ff4d4f">加载失败：' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+// 渲染 Fabric API 版本列表（包含"不安装"选项）
+function renderFabricApiList() {
+  const listEl = document.getElementById('fabric-api-list');
+  if (!listEl) return;
+  const items = [];
+  // 第一项：不安装
+  items.push(`
+    <div class="fabric-api-item${_fabricApiSelectedId === '' ? ' selected' : ''}" onclick="selectFabricApiVersion('', '不安装')" style="padding:12px 14px;border:1px solid ${_fabricApiSelectedId === '' ? 'var(--accent)' : 'var(--border-color)'};border-radius:8px;background:${_fabricApiSelectedId === '' ? 'rgba(99,102,241,0.08)' : 'var(--bg-secondary)'};cursor:pointer;display:flex;align-items:center;justify-content:space-between;transition:all 0.2s">
+      <div>
+        <div style="font-size:14px;font-weight:500;color:var(--text-primary)">不安装 Fabric API</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:2px">仅安装 Fabric 加载器，不安装 API</div>
+      </div>
+      ${_fabricApiSelectedId === '' ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;color:var(--accent)"><polyline points="20 6 9 17 4 12"/></svg>' : ''}
+    </div>
+  `);
+  _fabricApiVersionsCache.forEach(v => {
+    const isSelected = v.versionId === _fabricApiSelectedId;
+    const typeLabel = v.releaseType === 'release' ? '稳定' : (v.releaseType === 'beta' ? '测试' : v.releaseType);
+    const date = v.datePublished ? v.datePublished.substring(0, 10) : '';
+    const isRecommended = v.versionId === _fabricApiRecommendedId;
+    items.push(`
+      <div class="fabric-api-item${isSelected ? ' selected' : ''}" onclick="selectFabricApiVersion('${escapeHtml(v.versionId)}', '${escapeHtml(v.versionNumber + ' (' + typeLabel + ')')}')" style="padding:12px 14px;border:1px solid ${isSelected ? 'var(--accent)' : 'var(--border-color)'};border-radius:8px;background:${isSelected ? 'rgba(99,102,241,0.08)' : 'var(--bg-secondary)'};cursor:pointer;display:flex;align-items:center;justify-content:space-between;transition:all 0.2s" onmouseover="if(!this.classList.contains('selected'))this.style.borderColor='var(--accent)'" onmouseout="if(!this.classList.contains('selected'))this.style.borderColor='var(--border-color)'">
+        <div style="min-width:0">
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="font-size:14px;font-weight:500;color:var(--text-primary)">${escapeHtml(v.versionNumber)}</span>
+            ${isRecommended ? '<span style="font-size:10px;padding:1px 6px;border-radius:4px;background:var(--accent);color:#fff;font-weight:500">推荐</span>' : ''}
+          </div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:2px">${escapeHtml(typeLabel)}${date ? ' · ' + date : ''}</div>
+        </div>
+        ${isSelected ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;color:var(--accent);flex-shrink:0"><polyline points="20 6 9 17 4 12"/></svg>' : ''}
+      </div>
+    `);
+  });
+  listEl.innerHTML = items.join('');
+}
+
+// 选中某个 Fabric API 版本（或空字符串=不安装），回到主表单
+function selectFabricApiVersion(versionId, versionText) {
+  _fabricApiSelectedId = versionId;
+  _fabricApiSelectedText = versionText;
+  // 更新主表单卡片显示
+  const cardText = document.getElementById('fabric-api-card-text');
+  if (cardText) {
+    cardText.textContent = versionId ? versionText : '不安装';
+    cardText.style.color = versionId ? 'var(--text-primary)' : 'var(--text-muted)';
+  }
+  backFromFabricApiPicker();
 }
 
 async function installModLoader() {
   const gameVersion = modloaderGameVersionCustomSelect ? modloaderGameVersionCustomSelect.getValue() : '';
   const loaderVersion = modloaderVersionCustomSelect ? modloaderVersionCustomSelect.getValue() : '';
   if (!gameVersion) { showToast('请选择游戏版本', 'error'); return; }
+
+  // 读取 Fabric API 选项（来自二级页面选择）
+  let installFabricApi = false;
+  let fabricApiVersionId = '';
+  if (currentLoaderType === 'fabric' && _fabricApiSelectedId) {
+    installFabricApi = true;
+    fabricApiVersionId = _fabricApiSelectedId;
+  }
+
+  const installBtn = document.getElementById('modloader-install-btn');
+  const originalText = installBtn ? installBtn.textContent : '';
+  if (installBtn) { installBtn.disabled = true; installBtn.textContent = '安装中...'; }
+
   try {
     let result;
     const loaderNames = { fabric: 'Fabric', forge: 'Forge', neoforge: 'NeoForge' };
@@ -1263,7 +1493,27 @@ async function installModLoader() {
         else if (currentLoaderType === 'neoforge') installedId = `${gameVersion}-neoforge-${loaderVersion}`;
         else installedId = `${gameVersion}-${currentLoaderType}-${loaderVersion}`;
       }
-      showToast(`${loaderNames[currentLoaderType] || currentLoaderType} 安装成功！`, 'success');
+
+      // Fabric 安装成功后，按需安装 Fabric API
+      let apiOk = true;
+      if (installFabricApi && currentLoaderType === 'fabric') {
+        if (installBtn) installBtn.textContent = '正在安装 Fabric API...';
+        try {
+          const apiResult = await API.installFabricApi(gameVersion, fabricApiVersionId, installedId);
+          if (!apiResult.success) {
+            apiOk = false;
+            showToast(`Fabric API 安装失败：${apiResult.error || '未知错误'}`, 'error', 5000);
+          }
+        } catch (e) {
+          apiOk = false;
+          showToast(`Fabric API 安装失败：${e.message}`, 'error', 5000);
+        }
+      }
+
+      const msg = apiOk
+        ? `${loaderNames[currentLoaderType] || currentLoaderType} 安装成功！${installFabricApi ? ' Fabric API 已一并安装' : ''}`
+        : `${loaderNames[currentLoaderType] || currentLoaderType} 安装成功，但 Fabric API 安装失败`;
+      showToast(msg, apiOk ? 'success' : 'warning', 4000);
       closeModLoaderModal();
       await loadVersions(true);
       if (launchVersionCustomSelect) {
@@ -1274,5 +1524,152 @@ async function installModLoader() {
     } else {
       showToast(result.error || '安装失败', 'error');
     }
-  } catch (e) { showToast('安装失败', 'error'); }
+  } catch (e) {
+    showToast('安装失败：' + (e.message || ''), 'error');
+  } finally {
+    if (installBtn) { installBtn.disabled = false; installBtn.textContent = originalText; }
+  }
+}
+
+// ============================================================
+// 版本详情页 Fabric API 选择功能
+// ============================================================
+let _fabricApiDetailVersions = [];  // 版本详情页的 Fabric API 版本列表
+let _fabricApiDetailId = '';        // 用户选中的版本 ID（空=不安装）
+let _fabricApiDetailText = '不安装'; // 用户选中的版本显示文本
+let _fabricApiDetailLoadedFor = '';  // 已加载过的游戏版本
+let _fabricApiDetailRecommendedId = ''; // 推荐版本 ID
+let _pendingFabricApiAfterInstall = null; // 安装完成后待安装的 Fabric API
+
+// 点击 Fabric API 卡片，进入版本选择视图
+function openFabricApiDetailPicker() {
+  const gameVersion = currentVersionDetail ? currentVersionDetail.id : '';
+  if (!gameVersion) return;
+
+  // 隐藏主区域，显示选择视图
+  const body = document.getElementById('pvd-body');
+  if (body) body.style.display = 'none';
+  const main = document.getElementById('pvd-main');
+  if (main) main.style.display = 'none';
+  const footer = document.getElementById('pvd-footer');
+  if (footer) footer.style.display = 'none';
+
+  // 把 picker 移到 body 下，避免 .page.active 的 transform:translateZ(0) 和
+  // .content-area 的 will-change:transform 创建包含块导致 position:fixed 失效
+  const picker = document.getElementById('fabric-api-picker-detail');
+  if (picker) {
+    if (picker.parentElement !== document.body) {
+      document.body.appendChild(picker);
+    }
+    picker.style.display = '';
+  }
+
+  // 如果游戏版本变了或没加载过，重新加载
+  if (_fabricApiDetailLoadedFor !== gameVersion) {
+    loadFabricApiDetailVersions(gameVersion);
+  }
+}
+
+// 从 Fabric API 选择视图返回主区域
+function backFromFabricApiDetailPicker() {
+  const picker = document.getElementById('fabric-api-picker-detail');
+  if (picker) {
+    picker.style.display = 'none';
+    // 把 picker 移回版本详情页容器，避免 Vue 重新渲染时残留孤儿节点
+    const pageContainer = document.getElementById('page-version-detail');
+    if (pageContainer && picker.parentElement !== pageContainer) {
+      pageContainer.appendChild(picker);
+    }
+  }
+  const body = document.getElementById('pvd-body');
+  if (body) body.style.display = '';
+  const main = document.getElementById('pvd-main');
+  if (main) main.style.display = '';
+  const footer = document.getElementById('pvd-footer');
+  if (footer) footer.style.display = '';
+}
+
+// 拉取 Fabric API 版本列表（版本详情页）
+async function loadFabricApiDetailVersions(gameVersion) {
+  const listEl = document.getElementById('fabric-api-list-detail');
+  if (!listEl) return;
+  listEl.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">加载中...</div>';
+
+  try {
+    const data = await API.getFabricApiVersions(gameVersion);
+    _fabricApiDetailVersions = data.versions || [];
+    _fabricApiDetailRecommendedId = data.recommended || '';
+    _fabricApiDetailLoadedFor = gameVersion;
+    if (_fabricApiDetailVersions.length === 0) {
+      listEl.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">该游戏版本暂无可用的 Fabric API</div>';
+      return;
+    }
+    // 首次加载时默认选中推荐版本
+    if (!_fabricApiDetailId && _fabricApiDetailRecommendedId) {
+      const rec = _fabricApiDetailVersions.find(v => v.versionId === _fabricApiDetailRecommendedId);
+      if (rec) {
+        const typeLabel = rec.releaseType === 'release' ? '稳定' : (rec.releaseType === 'beta' ? '测试' : rec.releaseType);
+        _fabricApiDetailId = rec.versionId;
+        _fabricApiDetailText = `${rec.versionNumber} (${typeLabel})`;
+        // 同步卡片显示
+        const cardText = document.getElementById('fabric-api-card-text-detail');
+        if (cardText) {
+          cardText.textContent = _fabricApiDetailText;
+          cardText.style.color = 'var(--text-primary)';
+        }
+      }
+    }
+    renderFabricApiDetailList();
+  } catch (e) {
+    listEl.innerHTML = '<div style="padding:20px;text-align:center;color:#ff4d4f">加载失败：' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+// 渲染 Fabric API 版本列表（版本详情页）
+function renderFabricApiDetailList() {
+  const listEl = document.getElementById('fabric-api-list-detail');
+  if (!listEl) return;
+  const items = [];
+  // 第一项：不安装
+  items.push(`
+    <div class="fabric-api-item${_fabricApiDetailId === '' ? ' selected' : ''}" onclick="selectFabricApiDetailVersion('', '不安装')" style="padding:12px 14px;border:1px solid ${_fabricApiDetailId === '' ? 'var(--accent)' : 'var(--border-color)'};border-radius:8px;background:${_fabricApiDetailId === '' ? 'rgba(99,102,241,0.08)' : 'var(--bg-secondary)'};cursor:pointer;display:flex;align-items:center;justify-content:space-between;transition:all 0.2s">
+      <div>
+        <div style="font-size:14px;font-weight:500;color:var(--text-primary)">不安装 Fabric API</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:2px">仅安装 Fabric 加载器，不安装 API</div>
+      </div>
+      ${_fabricApiDetailId === '' ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;color:var(--accent)"><polyline points="20 6 9 17 4 12"/></svg>' : ''}
+    </div>
+  `);
+  _fabricApiDetailVersions.forEach(v => {
+    const isSelected = v.versionId === _fabricApiDetailId;
+    const typeLabel = v.releaseType === 'release' ? '稳定' : (v.releaseType === 'beta' ? '测试' : v.releaseType);
+    const date = v.datePublished ? v.datePublished.substring(0, 10) : '';
+    const isRecommended = v.versionId === _fabricApiDetailRecommendedId;
+    items.push(`
+      <div class="fabric-api-item${isSelected ? ' selected' : ''}" onclick="selectFabricApiDetailVersion('${escapeHtml(v.versionId)}', '${escapeHtml(v.versionNumber + ' (' + typeLabel + ')')}')" style="padding:12px 14px;border:1px solid ${isSelected ? 'var(--accent)' : 'var(--border-color)'};border-radius:8px;background:${isSelected ? 'rgba(99,102,241,0.08)' : 'var(--bg-secondary)'};cursor:pointer;display:flex;align-items:center;justify-content:space-between;transition:all 0.2s" onmouseover="if(!this.classList.contains('selected'))this.style.borderColor='var(--accent)'" onmouseout="if(!this.classList.contains('selected'))this.style.borderColor='var(--border-color)'">
+        <div style="min-width:0">
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="font-size:14px;font-weight:500;color:var(--text-primary)">${escapeHtml(v.versionNumber)}</span>
+            ${isRecommended ? '<span style="font-size:10px;padding:1px 6px;border-radius:4px;background:var(--accent);color:#fff;font-weight:500">推荐</span>' : ''}
+          </div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:2px">${escapeHtml(typeLabel)}${date ? ' · ' + date : ''}</div>
+        </div>
+        ${isSelected ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;color:var(--accent);flex-shrink:0"><polyline points="20 6 9 17 4 12"/></svg>' : ''}
+      </div>
+    `);
+  });
+  listEl.innerHTML = items.join('');
+}
+
+// 选中某个 Fabric API 版本（版本详情页），回到主视图
+function selectFabricApiDetailVersion(versionId, versionText) {
+  _fabricApiDetailId = versionId;
+  _fabricApiDetailText = versionText || '不安装';
+  // 更新卡片显示
+  const cardText = document.getElementById('fabric-api-card-text-detail');
+  if (cardText) {
+    cardText.textContent = versionId ? versionText : '不安装';
+    cardText.style.color = versionId ? 'var(--text-primary)' : 'var(--text-muted)';
+  }
+  backFromFabricApiDetailPicker();
 }

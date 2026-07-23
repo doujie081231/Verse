@@ -1055,8 +1055,11 @@ async function handleSkinUpload(input) {
 }
 
 // 微软账户：应用本地皮肤到 Minecraft 官方服务器
+let _applyingMsSkin = false;
 async function applyMsSkin(skinId) {
   if (!_currentDetailAccount || _currentDetailAccount.type !== 'microsoft') return;
+  if (_applyingMsSkin) return; // 防止重复点击导致连续请求触发 Mojang 429
+  _applyingMsSkin = true;
   showToast('正在上传到 Minecraft 官方…', 'info');
   try {
     const resp = await fetch('/api/ms-skins/apply', {
@@ -1076,11 +1079,15 @@ async function applyMsSkin(skinId) {
       showToast('皮肤已应用到账户', 'success');
     } else if (result.needRelogin) {
       showToast('登录已过期，请重新登录微软账户', 'error');
+    } else if (result.rateLimited) {
+      showToast(result.error, 'error', 5000);
     } else {
       showToast(result.error || '应用失败', 'error');
     }
   } catch (e) {
     showToast('应用失败', 'error');
+  } finally {
+    _applyingMsSkin = false;
   }
 }
 

@@ -19,6 +19,120 @@ const typeIcons = {
   resourcepack: '🎨', shader: '☀️'
 };
 
+// 整合包命名弹窗：让用户自定义版本名称，与下载版本时的命名弹窗保持一致
+// 支持回调形式和 Promise 形式（不传 onConfirm 时返回 Promise）
+function showImportNameModal(defaultName, onConfirm) {
+  const existing = document.getElementById('import-name-modal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'import-name-modal';
+  modal.className = 'modal-overlay';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:10001;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.5);';
+
+  const card = document.createElement('div');
+  card.style.cssText = 'max-width:420px;width:90%;background:var(--bg-secondary);border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,0.3);overflow:hidden;';
+
+  card.innerHTML = `
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
+      <span style="font-size:15px;font-weight:600;color:var(--text-primary);">设置版本名称</span>
+      <button id="inm-close" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:18px;padding:4px;">✕</button>
+    </div>
+    <div style="padding:20px;">
+      <div style="margin-bottom:12px;">
+        <label style="display:block;font-size:13px;color:var(--text-secondary);margin-bottom:6px;">版本名称</label>
+        <input id="inm-input" type="text" value="${defaultName.replace(/"/g, '&quot;')}"
+          style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-primary);color:var(--text-primary);font-size:14px;outline:none;box-sizing:border-box;" />
+        <div id="inm-hint" style="margin-top:6px;font-size:12px;color:var(--text-muted);"></div>
+      </div>
+      <div id="inm-warn" style="display:none;padding:10px 12px;border-radius:8px;background:rgba(255,193,7,0.1);border:1px solid rgba(255,193,7,0.3);margin-bottom:12px;">
+        <span style="font-size:13px;color:#e6a817;">⚠ 已有相同名称的版本</span>
+      </div>
+    </div>
+    <div style="padding:12px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px;">
+      <button id="inm-cancel" style="padding:8px 20px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text-primary);cursor:pointer;font-size:13px;">取消</button>
+      <button id="inm-confirm" style="padding:8px 20px;border-radius:8px;border:none;background:var(--accent);color:#fff;cursor:pointer;font-size:13px;font-weight:500;">确认安装</button>
+    </div>
+  `;
+
+  modal.appendChild(card);
+  document.body.appendChild(modal);
+
+  const input = document.getElementById('inm-input');
+  const hint = document.getElementById('inm-hint');
+  const warn = document.getElementById('inm-warn');
+  const confirmBtn = document.getElementById('inm-confirm');
+
+  // 当未传 onConfirm 时，使用 Promise 模式
+  const usePromise = typeof onConfirm !== 'function';
+  let _resolve = null;
+
+  async function checkName() {
+    const name = input.value.trim();
+    if (!name) {
+      hint.textContent = '';
+      warn.style.display = 'none';
+      confirmBtn.disabled = true;
+      confirmBtn.style.opacity = '0.5';
+      return;
+    }
+    try {
+      const result = await API.checkVersionName(name);
+      if (result.exists) {
+        warn.style.display = 'block';
+        hint.textContent = '';
+        confirmBtn.disabled = true;
+        confirmBtn.style.opacity = '0.5';
+        confirmBtn.style.cursor = 'not-allowed';
+      } else {
+        warn.style.display = 'none';
+        hint.textContent = '✓ 名称可用';
+        confirmBtn.disabled = false;
+        confirmBtn.style.opacity = '1';
+        confirmBtn.style.cursor = 'pointer';
+      }
+    } catch (e) {
+      warn.style.display = 'none';
+      hint.textContent = '';
+      confirmBtn.disabled = false;
+      confirmBtn.style.opacity = '1';
+      confirmBtn.style.cursor = 'pointer';
+    }
+  }
+
+  input.addEventListener('input', checkName);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !confirmBtn.disabled) confirmBtn.click();
+  });
+
+  function closeModal(result) {
+    modal.remove();
+    if (usePromise && _resolve) {
+      _resolve(result);
+    } else if (!usePromise && onConfirm) {
+      onConfirm(result);
+    }
+  }
+
+  document.getElementById('inm-close').onclick = () => closeModal(null);
+  document.getElementById('inm-cancel').onclick = () => closeModal(null);
+  modal.onclick = (e) => { if (e.target === modal) closeModal(null); };
+
+  confirmBtn.onclick = async () => {
+    const name = input.value.trim();
+    if (!name || confirmBtn.disabled) return;
+    closeModal(name);
+  };
+
+  checkName();
+  input.focus();
+  input.select();
+
+  if (usePromise) {
+    return new Promise((resolve) => { _resolve = resolve; });
+  }
+}
+
 function getImportStageText(msg) {
   if (!msg) return '处理中...';
   if (msg.includes('download') || msg.includes('下载')) return '下载整合包内容...';
@@ -39,65 +153,69 @@ async function importModpackFromFile() {
     const result = await API.selectModpackFile();
     if (result && result.filePath) {
       const filePath = result.filePath;
-      window._modpackImporting = true;
-      try {
-        var sessionId = 'local-modpack-' + Date.now();
-        var taskId = 'modpack-' + sessionId;
-        if (_useVIsland) {
-          DynamicIsland.show(result.name || '整合包导入');
-        } else if (typeof dlManager !== 'undefined') {
-          dlManager.add(taskId, result.name || '整合包导入', 'modpack', sessionId, '');
-        }
-        if (window.electronAPI?.onImportProgress) {
-          if (window.electronAPI.removeImportProgressListener) window.electronAPI.removeImportProgressListener();
-          window.electronAPI.onImportProgress(function (data) {
-            var stageText = getImportStageText(data.message);
-            var pct = data.progress || 0;
-            var filesMapped = null;
-            if (data.files && data.files.length > 0) {
-              var totalSpeed = 0;
-              for (var i = 0; i < data.files.length; i++) {
-                var f = data.files[i];
-                if ((f.status === 'downloading' || f.s === 'downloading') && (f.speed || f.sp || 0) > 0) totalSpeed += (f.speed || f.sp || 0);
+      // 用文件名（去掉扩展名）作为默认版本名
+      const fileBaseName = (result.name || result.filePath).replace(/\.(mrpack|zip|cursemodpack)$/i, '');
+      showImportNameModal(fileBaseName, async function(customName) {
+        window._modpackImporting = true;
+        try {
+          var sessionId = 'local-modpack-' + Date.now();
+          var taskId = 'modpack-' + sessionId;
+          if (_useVIsland) {
+            DynamicIsland.show(result.name || '整合包导入');
+          } else if (typeof dlManager !== 'undefined') {
+            dlManager.add(taskId, result.name || '整合包导入', 'modpack', sessionId, '');
+          }
+          if (window.electronAPI?.onImportProgress) {
+            if (window.electronAPI.removeImportProgressListener) window.electronAPI.removeImportProgressListener();
+            window.electronAPI.onImportProgress(function (data) {
+              var stageText = getImportStageText(data.message);
+              var pct = data.progress || 0;
+              var filesMapped = null;
+              if (data.files && data.files.length > 0) {
+                var totalSpeed = 0;
+                for (var i = 0; i < data.files.length; i++) {
+                  var f = data.files[i];
+                  if ((f.status === 'downloading' || f.s === 'downloading') && (f.speed || f.sp || 0) > 0) totalSpeed += (f.speed || f.sp || 0);
+                }
+                filesMapped = data.files.map(function (f) {
+                  return { name: f.name || f.filename || f.n || '', status: f.status || f.s || 'pending', progress: f.progress || f.p || 0, speed: f.speed || f.sp || 0 };
+                });
               }
-              filesMapped = data.files.map(function (f) {
-                return { name: f.name || f.filename || f.n || '', status: f.status || f.s || 'pending', progress: f.progress || f.p || 0, speed: f.speed || f.sp || 0 };
-              });
-            }
+              if (_useVIsland) {
+                DynamicIsland.update({ progress: pct, status: 'downloading', message: stageText, name: result.name || '整合包导入', speed: totalSpeed || data.speed || 0, files: filesMapped || [], stageHistory: data.stageHistory || [], currentFile: data.currentFile || '' });
+              } else if (typeof dlManager !== 'undefined') {
+                var speedText = '';
+                if (totalSpeed > 0) {
+                  speedText = totalSpeed > 1024 * 1024 ? ' | ' + (totalSpeed / 1024 / 1024).toFixed(1) + ' MB/s' : ' | ' + (totalSpeed / 1024).toFixed(0) + ' KB/s';
+                }
+                var u = { progress: pct, status: 'downloading', message: stageText + speedText, stageHistory: data.stageHistory || [], currentFile: data.currentFile || '' };
+                if (filesMapped) u.files = filesMapped;
+                dlManager.update(taskId, u);
+              }
+            });
+          }
+          if (!_useVIsland) showToast('正在导入整合包...', 'info');
+          const importResult = await window.electronAPI.importModpack(filePath, customName);
+          if (importResult && importResult.success) {
             if (_useVIsland) {
-              DynamicIsland.update({ progress: pct, status: 'downloading', message: stageText, name: result.name || '整合包导入', speed: totalSpeed || data.speed || 0, files: filesMapped || [], stageHistory: data.stageHistory || [], currentFile: data.currentFile || '' });
+              DynamicIsland.update({ progress: 100, status: 'completed', message: '导入完成' });
             } else if (typeof dlManager !== 'undefined') {
-              var speedText = '';
-              if (totalSpeed > 0) {
-                speedText = totalSpeed > 1024 * 1024 ? ' | ' + (totalSpeed / 1024 / 1024).toFixed(1) + ' MB/s' : ' | ' + (totalSpeed / 1024).toFixed(0) + ' KB/s';
-              }
-              var u = { progress: pct, status: 'downloading', message: stageText + speedText, stageHistory: data.stageHistory || [], currentFile: data.currentFile || '' };
-              if (filesMapped) u.files = filesMapped;
-              dlManager.update(taskId, u);
+              dlManager.update(taskId, { status: 'completed', progress: 100, message: '导入完成' });
             }
-          });
-        }
-        if (!_useVIsland) showToast('正在导入整合包...', 'info');
-        const importResult = await window.electronAPI.importModpack(filePath, '');
-        if (importResult && importResult.success) {
-          if (_useVIsland) {
-            DynamicIsland.update({ progress: 100, status: 'completed', message: '导入完成' });
-          } else if (typeof dlManager !== 'undefined') {
-            dlManager.update(taskId, { status: 'completed', progress: 100, message: '导入完成' });
+            if (!_useVIsland) showToast(`整合包 "${importResult.name || '未知'}" 导入成功！`, 'success');
+          } else {
+            var errMsg = importResult?.error || '未知错误';
+            if (_useVIsland) {
+              DynamicIsland.update({ status: 'failed', message: errMsg });
+            } else if (typeof dlManager !== 'undefined') {
+              dlManager.update(taskId, { status: 'failed', progress: 100, message: errMsg, stageHistory: importResult?.stageHistory || [] });
+            }
+            if (!_useVIsland) showToast(`导入失败: ${errMsg}`, 'error');
           }
-          if (!_useVIsland) showToast(`整合包 "${importResult.name || '未知'}" 导入成功！`, 'success');
-        } else {
-          var errMsg = importResult?.error || '未知错误';
-          if (_useVIsland) {
-            DynamicIsland.update({ status: 'failed', message: errMsg });
-          } else if (typeof dlManager !== 'undefined') {
-            dlManager.update(taskId, { status: 'failed', progress: 100, message: errMsg, stageHistory: importResult?.stageHistory || [] });
-          }
-          if (!_useVIsland) showToast(`导入失败: ${errMsg}`, 'error');
+        } finally {
+          window._modpackImporting = false;
         }
-      } finally {
-        window._modpackImporting = false;
-      }
+      });
     }
   } catch (e) {
     showToast('导入失败: ' + (e.message || ''), 'error');
@@ -120,47 +238,51 @@ document.addEventListener('drop', (e) => {
       filePath = window.electronAPI.getDroppedFilePath(file);
     }
     if (filePath) {
-      window._modpackImporting = true;
-      var _vi = typeof DynamicIsland !== 'undefined' && DynamicIsland.isEnabled();
-      var sessionId = 'local-modpack-' + Date.now();
-      var taskId = 'modpack-' + sessionId;
-      if (_vi) {
-        DynamicIsland.show(name || '整合包导入');
-      } else if (typeof dlManager !== 'undefined') {
-        dlManager.add(taskId, name || '整合包导入', 'modpack', sessionId, '');
-      }
-      if (window.electronAPI?.onImportProgress) {
-        if (window.electronAPI.removeImportProgressListener) window.electronAPI.removeImportProgressListener();
-        window.electronAPI.onImportProgress(function (data) {
-          var stageText = getImportStageText(data.message);
-          var pct = data.progress || 0;
-          if (_vi) {
-            var filesMapped = data.files ? data.files.map(function (f) { return { name: f.name || f.filename || f.n || '', status: f.status || f.s || 'pending', progress: f.progress || f.p || 0, speed: f.speed || f.sp || 0 }; }) : [];
-            DynamicIsland.update({ progress: pct, status: 'downloading', message: stageText, name: name || '整合包导入', speed: data.speed || 0, files: filesMapped, stageHistory: data.stageHistory || [], currentFile: data.currentFile || '' });
-          } else if (typeof dlManager !== 'undefined') {
-            dlManager.update(taskId, { progress: pct, status: 'downloading', message: stageText, stageHistory: data.stageHistory || [], currentFile: data.currentFile || '' });
-          }
-        });
-      }
-      if (!_vi) showToast('正在导入整合包...', 'info');
-      window.electronAPI.importModpack(filePath, '').then(result => {
-        window._modpackImporting = false;
-        if (result && result.success) {
-          if (_vi) { DynamicIsland.update({ progress: 100, status: 'completed', message: '导入完成' }); }
-          else if (typeof dlManager !== 'undefined') { dlManager.update(taskId, { status: 'completed', progress: 100, message: '导入完成' }); }
-          if (!_vi) showToast(`整合包 "${result.name || '未知'}" 导入成功！`, 'success');
-        } else {
-          var errMsg = result?.error || '未知错误';
-          if (_vi) { DynamicIsland.update({ status: 'failed', message: errMsg }); }
-          else if (typeof dlManager !== 'undefined') { dlManager.update(taskId, { status: 'error', message: errMsg }); }
-          if (!_vi) showToast(`导入失败: ${errMsg}`, 'error');
+      // 用文件名（去掉扩展名）作为默认版本名
+      const fileBaseName = (file.name || '').replace(/\.(mrpack|zip|cursemodpack)$/i, '');
+      showImportNameModal(fileBaseName, function(customName) {
+        window._modpackImporting = true;
+        var _vi = typeof DynamicIsland !== 'undefined' && DynamicIsland.isEnabled();
+        var sessionId = 'local-modpack-' + Date.now();
+        var taskId = 'modpack-' + sessionId;
+        if (_vi) {
+          DynamicIsland.show(name || '整合包导入');
+        } else if (typeof dlManager !== 'undefined') {
+          dlManager.add(taskId, name || '整合包导入', 'modpack', sessionId, '');
         }
-      }).catch(err => {
-        window._modpackImporting = false;
-        var catchMsg = err.message || '';
-        if (_vi) { DynamicIsland.update({ status: 'failed', message: catchMsg }); }
-        else if (typeof dlManager !== 'undefined') { dlManager.update(taskId, { status: 'error', message: catchMsg }); }
-        if (!_vi) showToast('导入失败: ' + catchMsg, 'error');
+        if (window.electronAPI?.onImportProgress) {
+          if (window.electronAPI.removeImportProgressListener) window.electronAPI.removeImportProgressListener();
+          window.electronAPI.onImportProgress(function (data) {
+            var stageText = getImportStageText(data.message);
+            var pct = data.progress || 0;
+            if (_vi) {
+              var filesMapped = data.files ? data.files.map(function (f) { return { name: f.name || f.filename || f.n || '', status: f.status || f.s || 'pending', progress: f.progress || f.p || 0, speed: f.speed || f.sp || 0 }; }) : [];
+              DynamicIsland.update({ progress: pct, status: 'downloading', message: stageText, name: name || '整合包导入', speed: data.speed || 0, files: filesMapped, stageHistory: data.stageHistory || [], currentFile: data.currentFile || '' });
+            } else if (typeof dlManager !== 'undefined') {
+              dlManager.update(taskId, { progress: pct, status: 'downloading', message: stageText, stageHistory: data.stageHistory || [], currentFile: data.currentFile || '' });
+            }
+          });
+        }
+        if (!_vi) showToast('正在导入整合包...', 'info');
+        window.electronAPI.importModpack(filePath, customName).then(result => {
+          window._modpackImporting = false;
+          if (result && result.success) {
+            if (_vi) { DynamicIsland.update({ progress: 100, status: 'completed', message: '导入完成' }); }
+            else if (typeof dlManager !== 'undefined') { dlManager.update(taskId, { status: 'completed', progress: 100, message: '导入完成' }); }
+            if (!_vi) showToast(`整合包 "${result.name || '未知'}" 导入成功！`, 'success');
+          } else {
+            var errMsg = result?.error || '未知错误';
+            if (_vi) { DynamicIsland.update({ status: 'failed', message: errMsg }); }
+            else if (typeof dlManager !== 'undefined') { dlManager.update(taskId, { status: 'error', message: errMsg }); }
+            if (!_vi) showToast(`导入失败: ${errMsg}`, 'error');
+          }
+        }).catch(err => {
+          window._modpackImporting = false;
+          var catchMsg = err.message || '';
+          if (_vi) { DynamicIsland.update({ status: 'failed', message: catchMsg }); }
+          else if (typeof dlManager !== 'undefined') { dlManager.update(taskId, { status: 'error', message: catchMsg }); }
+          if (!_vi) showToast('导入失败: ' + catchMsg, 'error');
+        });
       });
     }
   }
@@ -438,17 +560,21 @@ async function openResourceDetail(projectId, type) {
 // 全局变量：当前整合包详情的目标版本
 async function quickInstallResource(projectId, type) {
   if (type === 'modpack') {
-    showToast('正在下载整合包，将创建为新版本...', 'info');
-    try {
-      const result = await API.downloadResource('', projectId, type, '');
-      if (result.success) {
-        showModpackInstallModal(result.fileName, result.sessionId);
-      } else {
-        showToast(result.error || '安装失败', 'error');
+    // 整合包需要创建新版本，先弹窗让用户自定义版本名
+    const defaultName = (typeof currentModDetailData !== 'undefined' && (currentModDetailData?.title || currentModDetailData?.name)) || projectId;
+    showImportNameModal(defaultName, async function(customName) {
+      showToast('正在下载整合包，将创建为新版本...', 'info');
+      try {
+        const result = await API.downloadResource('', projectId, type, '', '', customName);
+        if (result.success) {
+          showModpackInstallModal(result.fileName, result.sessionId);
+        } else {
+          showToast(result.error || '安装失败', 'error');
+        }
+      } catch (e) {
+        showToast('安装失败', 'error');
       }
-    } catch (e) {
-      showToast('安装失败', 'error');
-    }
+    });
   } else {
     showToast('请选择保存文件夹...', 'info');
     try {

@@ -28,6 +28,33 @@ function _dedupeVersionId(baseName) {
     return candidate;
 }
 
+// 清理 mods 目录下的 .downloading 残留临时文件
+// 下载中断/失败时 .downloading 文件会残留，续传时基于错误偏移量追加导致 SHA1 必然失败
+// 必须在导入开始和下载失败时清理，避免死循环
+function _cleanDownloadingResidue(versionDir) {
+    const modsDir = path.join(versionDir, 'mods');
+    if (!fs.existsSync(modsDir)) return { cleaned: 0 };
+    let cleaned = 0;
+    try {
+        const items = fs.readdirSync(modsDir);
+        for (const item of items) {
+            if (item.endsWith('.downloading')) {
+                const fullPath = path.join(modsDir, item);
+                try {
+                    fs.unlinkSync(fullPath);
+                    cleaned++;
+                } catch (e) {
+                    logger.warn(`清理 .downloading 残留失败: ${item} - ${e.message}`);
+                }
+            }
+        }
+    } catch (e) {}
+    if (cleaned > 0) {
+        logger.info(`已清理 ${cleaned} 个 .downloading 残留文件`);
+    }
+    return { cleaned };
+}
+
 // 整合包导入后修复损坏的JAR文件
 // AdmZip解压大型JAR或特殊压缩格式时可能产生损坏文件
 async function _repairCorruptedModJars(versionDir) {
@@ -43,10 +70,16 @@ async function _repairCorruptedModJars(versionDir) {
             if (stat.isDirectory()) { scanDir(fullPath); continue; }
             if (!item.toLowerCase().endsWith('.jar')) continue;
             if (stat.size < 100) { corruptedJars.push({ path: fullPath, reason: 'too_small' }); continue; }
-            // 扫描阶段用轻量 isJarIntact（只读 PK 头 + EOCD 尾 + 中央目录头）
-            // isJarIntactDeep 会 AdmZip 解压所有条目，340 个 jar 耗时 100s+，是 repair 主要瓶颈
-            // 下载阶段已通过 SHA1 严格校验，结构级损坏由 isJarIntact 即可检测
-            if (!utils.isJarIntact(fullPath)) { corruptedJars.push({ path: fullPath, reason: 'corrupted' }); }
+            // 轻量校验：ZIP 头 + EOCD 尾 + 中央目录头
+            if (!utils.isJarIntact(fullPath)) {
+                corruptedJars.push({ path: fullPath, reason: 'structure_corrupted' });
+                continue;
+            }
+            // 深度校验：用 AdmZip 读取所有条目数据，检测内部 entry 损坏
+            // 如 "invalid entry size" 这类轻量校验检测不到的损坏
+            if (!utils.isJarIntactDeep(fullPath)) {
+                corruptedJars.push({ path: fullPath, reason: 'entry_corrupted' });
+            }
         }
     }
     scanDir(modsDir);
@@ -60,9 +93,6 @@ async function _repairCorruptedModJars(versionDir) {
         try {
             const tempDir = jar.path + '_repair_tmp';
             if (fs.existsSync(tempDir)) fs.rmSync(tempDir, { recursive: true, force: true });
-            // [P0 FIX - 2026-07-21] 不预先创建 tempDir
-            // PowerShell 5.1 的 Expand-Archive 遇到已存在的目标目录会报 "DirectoryExist" 错误
-            // 即使加 -Force 也无效（PS 5.1 的 bug），让 Expand-Archive 自己创建目录
             const tempDirParent = path.dirname(tempDir);
             if (!fs.existsSync(tempDirParent)) fs.mkdirSync(tempDirParent, { recursive: true });
 
@@ -92,7 +122,6 @@ async function _repairCorruptedModJars(versionDir) {
                 const { execSync } = require('child_process');
                 const tempDir2 = jar.path + '_unzip_tmp';
                 if (fs.existsSync(tempDir2)) fs.rmSync(tempDir2, { recursive: true, force: true });
-                // 同上：不预先创建目录，让 unzip 自己创建
                 const tempDir2Parent = path.dirname(tempDir2);
                 if (!fs.existsSync(tempDir2Parent)) fs.mkdirSync(tempDir2Parent, { recursive: true });
                 try {
@@ -113,11 +142,12 @@ async function _repairCorruptedModJars(versionDir) {
         }
         if (fixed) { repaired++; }
         else {
-            // [P0 FIX - 2026-07-21] 修复失败时保留原文件，不删除
-            // 下载阶段已通过 SHA1 严格校验，文件内容正确
-            // isJarIntact 的 EOCD 位置检查可能误判带数字签名或有尾部数据的 JAR
-            // 保留文件让游戏自己决定能否加载，好过直接删除导致 mod 缺失
-            logger.warn(`[Modpack] JAR 文件结构异常但保留: ${path.basename(jar.path)} (已通过 SHA1 校验)`);
+            // 内部损坏无法修复的 JAR：删除损坏文件
+            // 保留会导致 Java 加载时抛出 ZipException/NoSuchFileException 崩溃
+            // 删除后 missing_mods_checker 会在启动前检查时自动补全（如果配置了的话）
+            // 或者用户重新导入整合包时 _cleanDownloadingResidue 会清理残留
+            try { fs.unlinkSync(jar.path); } catch (_) {}
+            logger.warn(`[Modpack] JAR 文件损坏已删除: ${path.basename(jar.path)} (${jar.reason})`);
             failed++;
         }
     }
@@ -304,6 +334,19 @@ function _extractCurseForgeFileId(url) {
     return m ? parseInt(m[1], 10) : null;
 }
 
+// 构造 CurseForge CDN 直链，绕过被墙的 API
+// CurseForge 的文件下载 CDN 链接格式固定，无需 API Key：
+// https://edge.forgecdn.net/files/{fileId前4位}/{fileId后3位去前导零}/{fileName}
+// 例如 fileId=5010620, fileName=FallingTree-1.20.1-4.3.4.jar
+//      -> https://edge.forgecdn.net/files/5010/620/FallingTree-1.20.1-4.3.4.jar
+function _buildCurseForgeCDNUrl(fileId, fileName) {
+    const idStr = String(fileId);
+    if (idStr.length < 4) return null;
+    const part1 = idStr.substring(0, 4);
+    const part2 = parseInt(idStr.substring(4), 10) || 0;
+    return `https://edge.forgecdn.net/files/${part1}/${part2}/${fileName}`;
+}
+
 /**
  * 在版本目录中查找是否已存在匹配 pattern 的文件，避免重复下载。
  * @param {string} destDir - 目标目录（如 mods/resourcepacks）
@@ -480,14 +523,28 @@ async function _downloadMissingModsCheckerFiles(zipOrItems, versionDir, settings
             }
 
             const info = fileInfoMap[item.fileId];
-            if (!info || !info.downloadUrl) {
-                logger.warn(`[MissingMods] 无法获取下载链接: ${item.displayName} (fileId=${item.fileId})`);
-                failedItems.push({ ...item, error: 'CurseForge 未返回下载链接' });
-                failed++;
-                return;
+            let downloadUrl;
+            let fileName;
+            let expectedSize = 0;
+            if (info && info.downloadUrl) {
+                downloadUrl = info.downloadUrl;
+                fileName = info.fileName || item.pattern || `${item.displayName}.jar`;
+                expectedSize = info.fileLength || 0;
+            } else {
+                // CurseForge API 被墙或未返回信息，直接构造 CDN 直链
+                // CDN 格式：https://edge.forgecdn.net/files/{fileId前4位}/{fileId后3位}/{fileName}
+                // edge.forgecdn.net 在国内可直连，无需 API Key
+                fileName = item.pattern || (info && info.fileName) || `${item.displayName}.jar`;
+                downloadUrl = _buildCurseForgeCDNUrl(item.fileId, fileName);
+                if (downloadUrl) {
+                    logger.log(`[MissingMods] API 不可用，使用 CDN 直链: ${item.displayName} -> ${downloadUrl}`);
+                } else {
+                    logger.warn(`[MissingMods] 无法获取下载链接: ${item.displayName} (fileId=${item.fileId})`);
+                    failedItems.push({ ...item, error: 'CurseForge API 不可用且无法构造 CDN 直链' });
+                    failed++;
+                    return;
+                }
             }
-
-            const fileName = info.fileName || item.pattern || `${item.displayName}.jar`;
             const destDir = path.join(versionDir, item.destination);
             if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
             const destPath = path.join(destDir, fileName);
@@ -498,7 +555,7 @@ async function _downloadMissingModsCheckerFiles(zipOrItems, versionDir, settings
                 return;
             }
 
-            const timeout = computeModTimeout(info.fileLength || 0);
+            const timeout = computeModTimeout(expectedSize);
             const perTryAbort = new AbortController();
             const perTryTimeout = setTimeout(() => { try { perTryAbort.abort(); } catch (_) {} },
                 Math.max(120000, timeout + 30000));
@@ -507,7 +564,7 @@ async function _downloadMissingModsCheckerFiles(zipOrItems, versionDir, settings
             }
 
             try {
-                const allUrls = http.getMirrorUrls(info.downloadUrl);
+                const allUrls = http.getMirrorUrls(downloadUrl);
                 let ok = false;
                 for (const mirrorUrl of allUrls) {
                     if (ok || perTryAbort.signal.aborted) break;
@@ -605,8 +662,7 @@ async function _downloadMissingModsCheckerFiles(zipOrItems, versionDir, settings
         const stillMissing = [];
         for (const item of pending) {
             const info = fileInfoMap[item.fileId];
-            if (!info) continue;
-            const fileName = info.fileName || item.pattern || `${item.displayName}.jar`;
+            const fileName = (info && info.fileName) || item.pattern || `${item.displayName}.jar`;
             const destDir = path.join(versionDir, item.destination);
             const destPath = path.join(destDir, fileName);
             // 文件不存在或大小为 0，加入重试列表
@@ -635,14 +691,22 @@ async function _downloadMissingModsCheckerFiles(zipOrItems, versionDir, settings
         // 串行重试（避免并发再次触发杀软扫描）
         for (const item of stillMissing) {
             if (abortSignal && abortSignal.aborted) break;
-            // 复用 downloadOne 逻辑，但它会计数，所以临时包装
             const info = fileInfoMap[item.fileId];
-            if (!info || !info.downloadUrl) continue;
-            const fileName = info.fileName || item.pattern || `${item.displayName}.jar`;
+            let retryUrl;
+            let fileName;
+            if (info && info.downloadUrl) {
+                retryUrl = info.downloadUrl;
+                fileName = info.fileName || item.pattern || `${item.displayName}.jar`;
+            } else {
+                // API 不可用时，用 CDN 直链
+                fileName = item.pattern || (info && info.fileName) || `${item.displayName}.jar`;
+                retryUrl = _buildCurseForgeCDNUrl(item.fileId, fileName);
+                if (!retryUrl) continue;
+            }
             const destDir = path.join(versionDir, item.destination);
             if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
             const destPath = path.join(destDir, fileName);
-            const allUrls = http.getMirrorUrls(info.downloadUrl);
+            const allUrls = http.getMirrorUrls(retryUrl);
             let retryOk = false;
             for (const mirrorUrl of allUrls) {
                 if (retryOk) break;
@@ -692,6 +756,7 @@ async function _downloadMissingModsCheckerFiles(zipOrItems, versionDir, settings
 
 module.exports = {
     _dedupeVersionId,
+    _cleanDownloadingResidue,
     _repairCorruptedModJars,
     isModpackPathSafe,
     _extractOverridesWithVerification,

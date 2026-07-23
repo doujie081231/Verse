@@ -6,7 +6,7 @@
  */
 const PageVersionDetail = {
   template: `
-        <div class="page-header" style="gap:12px;padding:16px 24px">
+        <div id="pvd-main" class="page-header" style="gap:12px;padding:16px 24px">
           <button class="btn btn-icon" onclick="navigateToPage('versions')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px"><path d="M15 18l-6-6 6-6"/></svg>
           </button>
@@ -16,7 +16,7 @@ const PageVersionDetail = {
             <span id="verdetail-meta" class="verdetail-meta"></span>
           </div>
         </div>
-        <div class="verdetail-body">
+        <div id="pvd-body" class="verdetail-body">
           <div class="verdetail-section">
             <div class="verdetail-section-title">下载源</div>
             <div class="download-source-list" id="download-source-list">
@@ -86,6 +86,18 @@ const PageVersionDetail = {
                 <div class="loader-card-check"></div>
               </div>
             </div>
+            <div id="fabric-api-section-detail" class="verdetail-section" style="display:none;margin-top:12px">
+              <div class="verdetail-section-title" style="display:flex;align-items:center;justify-content:space-between">
+                <span>Fabric API（可选）</span>
+              </div>
+              <div class="fabric-api-card-detail" id="fabric-api-card-detail" onclick="openFabricApiDetailPicker()" style="padding:12px 14px;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-secondary);cursor:pointer;display:flex;align-items:center;justify-content:space-between;transition:border-color 0.2s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border-color)'">
+                <div style="display:flex;align-items:center;gap:10px;min-width:0">
+                  <span style="width:8px;height:8px;border-radius:50%;background:var(--accent);flex-shrink:0"></span>
+                  <span id="fabric-api-card-text-detail" style="font-size:14px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">不安装</span>
+                </div>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--text-muted);flex-shrink:0"><polyline points="9 18 15 12 9 6"></polyline></svg>
+              </div>
+            </div>
             <div id="loader-version-section" style="display:none;margin-top:12px">
               <div class="verdetail-section-title">选择版本</div>
               <div class="loader-version-list" id="loader-version-list">
@@ -94,7 +106,19 @@ const PageVersionDetail = {
             </div>
           </div>
         </div>
-        <div class="verdetail-footer">
+        <div id="fabric-api-picker-detail" style="display:none;position:absolute;top:0;left:0;width:100%;height:100%;padding:24px;z-index:100;background:var(--bg-primary);box-sizing:border-box;display:flex;flex-direction:column">
+          <div id="pvd-fabric-header" style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+            <button class="btn btn-secondary btn-sm" onclick="backFromFabricApiDetailPicker()" style="display:flex;align-items:center;gap:4px">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><polyline points="15 18 9 12 15 6"></polyline></svg>
+              返回
+            </button>
+            <h4 style="margin:0;font-size:15px;font-weight:600">选择 Fabric API 版本</h4>
+          </div>
+          <div id="fabric-api-list-detail" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:6px;min-height:0">
+            <div style="padding:20px;text-align:center;color:var(--text-muted)">加载中...</div>
+          </div>
+        </div>
+        <div id="pvd-footer" class="verdetail-footer">
           <button class="btn btn-secondary" onclick="navigateToPage('versions')">取消</button>
           <button class="btn btn-primary btn-lg" onclick="confirmInstallVersion()">确认下载</button>
         </div>

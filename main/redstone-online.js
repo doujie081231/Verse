@@ -156,15 +156,23 @@ async function registerApikey(serverAddress, apikey) {
 }
 
 /** 创建隧道 */
-async function createTunnel(serverAddress, apikey, maxPlayers, title, isOpen, allowOffline) {
-  let url = `http://${serverAddress}:${HTTP_PORT}/tunnels?maxPlayers=${maxPlayers}`;
-  if (title) url += `&title=${encodeURIComponent(title)}`;
-  if (isOpen) url += `&isOpen=true`;
-  if (allowOffline) url += `&allowOffline=true`;
-  const resp = await httpRequest('POST', url, {
-    headers: { Authorization: apikey },
-    timeout: 10000,
-  });
+async function createTunnel(serverAddress, apikey, title, description, publicAccess, allowOffline) {
+  // 新接口：publicAccess 必传（0=不公开，1=公开），不再需要 maxPlayer
+  // 公开房间时需要 body: { title, description, online }
+  // online: true=仅正版, false=允许离线（与 allowOffline 相反）
+  const url = `http://${serverAddress}:${HTTP_PORT}/tunnels?publicAccess=${publicAccess ? 1 : 0}`;
+  const headers = { Authorization: apikey };
+  let body = null;
+  if (publicAccess) {
+    body = JSON.stringify({
+      title: String(title || '').slice(0, 8),
+      description: String(description || '').slice(0, 100),
+      online: !allowOffline // online=true 表示仅正版，与 allowOffline 相反
+    });
+    headers['Content-Type'] = 'application/json';
+    headers['Content-Length'] = Buffer.byteLength(body);
+  }
+  const resp = await httpRequest('POST', url, { headers, timeout: 10000, body });
   if (resp.statusCode >= 200 && resp.statusCode < 300) {
     const obj = JSON.parse(resp.body);
     return { ok: true, listenPort: obj.listenPort, tunnelId: obj.tunnelId };
@@ -172,10 +180,7 @@ async function createTunnel(serverAddress, apikey, maxPlayers, title, isOpen, al
   // 429：已有隧道 → 先 DELETE 再重试一次
   if (resp.statusCode === 429) {
     await closeTunnel(serverAddress, apikey).catch(() => {});
-    const resp2 = await httpRequest('POST', url, {
-      headers: { Authorization: apikey },
-      timeout: 10000,
-    });
+    const resp2 = await httpRequest('POST', url, { headers, timeout: 10000, body });
     if (resp2.statusCode >= 200 && resp2.statusCode < 300) {
       const obj = JSON.parse(resp2.body);
       return { ok: true, listenPort: obj.listenPort, tunnelId: obj.tunnelId };
@@ -183,6 +188,88 @@ async function createTunnel(serverAddress, apikey, maxPlayers, title, isOpen, al
     throw new Error(`create tunnel retry failed: ${resp2.statusCode} ${resp2.body}`);
   }
   throw new Error(`create tunnel failed: ${resp.statusCode} ${resp.body}`);
+}
+
+/** 拉取公开房间列表 */
+async function listPublicTunnels(serverAddress, offset = 0) {
+  // 新接口 docs: ?offset=Number, 无需 API key 认证
+  // 但部分服务端可能仍用旧参数 from 且需要鉴权，先尝试多组合，失败后降级
+  let error = null;
+
+  // 尝试 1: 新接口无认证，尝试 offset 和 from 两种参数名
+  for (const paramName of ['offset', 'from']) {
+    try {
+      const url = `http://${serverAddress}:${HTTP_PORT}/tunnels/list?${paramName}=${parseInt(offset, 10) || 0}`;
+      const resp = await httpRequest('GET', url, { timeout: 8000 });
+      if (resp.statusCode >= 200 && resp.statusCode < 300) {
+        writeDebug(`[listPublicTunnels] OK with ?${paramName}=${offset}`);
+        return JSON.parse(resp.body);
+      }
+      error = `list tunnels failed: ${resp.statusCode} ${resp.body ? resp.body.slice(0, 200) : '(empty)'}`;
+      writeDebug(`[listPublicTunnels] ?${paramName}=${offset} -> ${resp.statusCode} ${(resp.body || '').slice(0, 100)}`);
+    } catch (e) {
+      error = `list tunnels error: ${e.message}`;
+      writeDebug(`[listPublicTunnels] ?${paramName}=${offset} -> ${e.message}`);
+    }
+  }
+
+  // 尝试 2: 加 apikey 再试一次
+  try {
+    const url = `http://${serverAddress}:${HTTP_PORT}/tunnels/list?offset=${parseInt(offset, 10) || 0}`;
+    const resp = await httpRequest('GET', url, {
+      headers: { Authorization: state.apikey },
+      timeout: 8000,
+    });
+    if (resp.statusCode >= 200 && resp.statusCode < 300) {
+      writeDebug('[listPublicTunnels] OK with apikey');
+      return JSON.parse(resp.body);
+    }
+    writeDebug(`[listPublicTunnels] with apikey -> ${resp.statusCode} ${(resp.body || '').slice(0, 100)}`);
+  } catch (e) {
+    writeDebug(`[listPublicTunnels] with apikey -> ${e.message}`);
+  }
+
+  throw new Error(error);
+}
+
+/** 获取单个公开房间的模组列表 */
+async function getTunnelMods(serverAddress, tunnelId) {
+  let error = null;
+  // 尝试无认证
+  try {
+    const url = `http://${serverAddress}:${HTTP_PORT}/tunnels/mods?id=${parseInt(tunnelId, 10) || 0}`;
+    const resp = await httpRequest('GET', url, { timeout: 8000 });
+    if (resp.statusCode >= 200 && resp.statusCode < 300) {
+      return JSON.parse(resp.body);
+    }
+    if (resp.statusCode === 404) {
+      return { mods: [] };
+    }
+    error = `get tunnel mods failed: ${resp.statusCode} ${resp.body ? resp.body.slice(0, 200) : '(empty)'}`;
+    writeDebug(`[getTunnelMods] no auth -> ${resp.statusCode} ${(resp.body || '').slice(0, 100)}`);
+  } catch (e) {
+    error = `get tunnel mods error: ${e.message}`;
+    writeDebug(`[getTunnelMods] no auth -> ${e.message}`);
+  }
+  // 尝试加 apikey
+  try {
+    const url = `http://${serverAddress}:${HTTP_PORT}/tunnels/mods?id=${parseInt(tunnelId, 10) || 0}`;
+    const resp = await httpRequest('GET', url, {
+      headers: { Authorization: state.apikey },
+      timeout: 8000,
+    });
+    if (resp.statusCode >= 200 && resp.statusCode < 300) {
+      writeDebug('[getTunnelMods] OK with apikey');
+      return JSON.parse(resp.body);
+    }
+    if (resp.statusCode === 404) {
+      return { mods: [] };
+    }
+    writeDebug(`[getTunnelMods] with apikey -> ${resp.statusCode}`);
+  } catch (e) {
+    writeDebug(`[getTunnelMods] with apikey -> ${e.message}`);
+  }
+  throw new Error(error);
 }
 
 /** 关闭隧道 */
@@ -217,7 +304,7 @@ function readLineFromStream(stream, callback) {
 
 /**
  * 启动红石联机隧道
- * @param {Object} params - { serverAddress, maxPlayers, gamePort }
+ * @param {Object} params - { serverAddress, gamePort, title, description, publicAccess, allowOffline }
  * @param {(msg:string)=>void} onLog - 日志回调
  * @param {Object} [options] - { isReconnect: boolean } 是否为自动重连路径
  * @returns {Promise<{ok:boolean, address?:string, listenPort?:number, error?:string}>}
@@ -229,10 +316,12 @@ async function startTunnel(params, onLog, options = {}) {
     return { ok: false, error: '隧道已在运行中，请先关闭' };
   }
   const serverAddress = params.serverAddress;
-  const maxPlayers = Math.min(8, Math.max(1, parseInt(params.maxPlayers) || 8));
   const gamePort = Math.max(1, parseInt(params.gamePort) || 25565);
   const title = String(params.title || '').trim().slice(0, 8);
-  const isOpen = params.isOpen !== false;
+  const description = String(params.description || '').trim().slice(0, 100);
+  // publicAccess: 是否公开房间（对应文档的 publicAccess=0/1）
+  // 兼容旧字段 isOpen：isOpen=true 表示对外开放
+  const publicAccess = params.publicAccess !== undefined ? !!params.publicAccess : (params.isOpen !== false);
   const allowOffline = !!params.allowOffline;
 
   state.stopping = false;
@@ -241,7 +330,7 @@ async function startTunnel(params, onLog, options = {}) {
 
   // 保存参数和日志回调供自动重连使用（仅首次启动路径保存，重连路径复用已有值）
   if (!isReconnect) {
-    state._lastParams = { serverAddress, maxPlayers, gamePort, title, isOpen, allowOffline };
+    state._lastParams = { serverAddress, gamePort, title, description, publicAccess, allowOffline };
     state._onLog = onLog;
     state._reconnectAttempts = 0;
     state._reconnecting = false;
@@ -331,8 +420,8 @@ async function startTunnel(params, onLog, options = {}) {
       }
     } else if (firstLine === 'OK WAITING' || firstLine.startsWith('OK WAITING')) {
       // 6. 需要创建隧道
-      log('正在创建隧道（最大人数: ' + maxPlayers + '）...');
-      const result = await createTunnel(serverAddress, state.apikey, maxPlayers, title, isOpen, allowOffline);
+      log(publicAccess ? '正在创建公开房间...' : '正在创建私人隧道...');
+      const result = await createTunnel(serverAddress, state.apikey, title, description, publicAccess, allowOffline);
       listenPort = result.listenPort;
       log('隧道已创建，端口: ' + listenPort);
 
@@ -374,7 +463,8 @@ async function startTunnel(params, onLog, options = {}) {
       serverAddress,
       address: serverAddress + ':' + listenPort,
       title,
-      isOpen,
+      description,
+      publicAccess,
       allowOffline,
     };
 
@@ -1035,7 +1125,8 @@ function registerRedstoneOnlineIPC() {
       address: state.tunnel ? state.tunnel.address : null,
       listenPort: state.tunnel ? state.tunnel.listenPort : null,
       title: state.tunnel ? state.tunnel.title : '',
-      isOpen: state.tunnel ? state.tunnel.isOpen : true,
+      description: state.tunnel ? state.tunnel.description : '',
+      publicAccess: state.tunnel ? state.tunnel.publicAccess : true,
       allowOffline: state.tunnel ? state.tunnel.allowOffline : false,
       apikey: state.apikey,
       servers: state.servers,
@@ -1043,6 +1134,43 @@ function registerRedstoneOnlineIPC() {
       reconnectAttempt: state._reconnectAttempts,
       reconnectMaxAttempts: state._reconnectMaxAttempts,
     };
+  });
+
+  // 拉取公开房间列表（联机大厅）
+  // 参数: { serverAddress, offset }
+  ipcMain.handle('redstone:public-tunnels', async (event, params) => {
+    try {
+      const p = params || {};
+      const serverAddress = p.serverAddress || (state.servers[0] && state.servers[0].address);
+      if (!serverAddress) {
+        return { ok: false, error: '未指定服务器节点', tunnels: [] };
+      }
+      // 确保 apikey 已加载（listPublicTunnels 降级时可能需要）
+      if (!state.apikey) state.apikey = loadOrCreateApikey();
+      const data = await listPublicTunnels(serverAddress, p.offset || 0);
+      return { ok: true, tunnels: data.tunnels || [], serverAddress };
+    } catch (e) {
+      writeDebug(`[public-tunnels handler] ERROR: ${e.message}`);
+      return { ok: false, error: e.message, tunnels: [] };
+    }
+  });
+
+  // 获取单个公开房间的模组列表
+  // 参数: { serverAddress, tunnelId }
+  ipcMain.handle('redstone:tunnel-mods', async (event, params) => {
+    try {
+      const p = params || {};
+      const serverAddress = p.serverAddress || (state.servers[0] && state.servers[0].address);
+      if (!serverAddress) {
+        return { ok: false, error: '未指定服务器节点', mods: [] };
+      }
+      if (!state.apikey) state.apikey = loadOrCreateApikey();
+      const data = await getTunnelMods(serverAddress, p.tunnelId);
+      return { ok: true, mods: data.mods || [], serverAddress };
+    } catch (e) {
+      writeDebug(`[tunnel-mods handler] ERROR: ${e.message}`);
+      return { ok: false, error: e.message, mods: [] };
+    }
   });
 }
 

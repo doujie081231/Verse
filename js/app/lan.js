@@ -539,21 +539,20 @@ async function redstoneStart() {
 
     const titleInput = document.getElementById('redstone-room-title');
     const title = (titleInput ? titleInput.value : '').trim().slice(0, 8);
-    const isOpen = document.getElementById('redstone-is-open') ? document.getElementById('redstone-is-open').checked : true;
+    const publicAccess = document.getElementById('redstone-is-open') ? document.getElementById('redstone-is-open').checked : true;
     const allowOffline = document.getElementById('redstone-allow-offline') ? document.getElementById('redstone-allow-offline').checked : false;
-    const maxPlayers = 8;
 
     _redstoneRunning = true;
     if (btn) { btn.textContent = '正在开启...'; btn.disabled = true; }
     updateRedstoneStatus('正在连接...', 'connecting');
     addRedstoneLog('选择服务器: ' + server.name + ' (' + server.address + ')');
-    addRedstoneLog('最大人数: ' + maxPlayers);
+    addRedstoneLog('带宽上限: 4 Mbps，约支持 5-8 人');
     if (title) addRedstoneLog('房间标题: ' + title);
 
     try {
         const r = await window.electronAPI.redstoneOnline.start({
-            serverAddress: server.address, maxPlayers: maxPlayers, gamePort: gamePort,
-            title: title, isOpen: isOpen, allowOffline: allowOffline,
+            serverAddress: server.address, gamePort: gamePort,
+            title: title, publicAccess: publicAccess, allowOffline: allowOffline,
         });
         if (r && r.ok) {
             document.getElementById('redstone-connected-info').style.display = '';
@@ -646,9 +645,10 @@ async function redstoneInitPage() {
             }
             const isOpenInput = document.getElementById('redstone-is-open');
             const isOpenSwitch = document.getElementById('redstone-is-open-switch');
-            if (isOpenInput && status.isOpen !== undefined) {
-                isOpenInput.checked = status.isOpen;
-                if (isOpenSwitch) isOpenSwitch.classList.toggle('active', status.isOpen);
+            const isOpenValue = status.publicAccess !== undefined ? status.publicAccess : status.isOpen;
+            if (isOpenInput && isOpenValue !== undefined) {
+                isOpenInput.checked = isOpenValue;
+                if (isOpenSwitch) isOpenSwitch.classList.toggle('active', isOpenValue);
             }
             const allowOfflineInput = document.getElementById('redstone-allow-offline');
             const allowOfflineSwitch = document.getElementById('redstone-allow-offline-switch');

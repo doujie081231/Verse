@@ -349,6 +349,12 @@ const API = {
     },
     installFabric: (gameVersion, loaderVersion = '') =>
         apiPost('/api/fabric/install', { gameVersion, loaderVersion }, 120000),
+    getFabricApiVersions: async (gameVersion) => {
+        const result = await apiGet('/api/fabric-api/versions', { game: gameVersion });
+        return result || { versions: [], recommended: '' };
+    },
+    installFabricApi: (gameVersion, versionId, versionName = '') =>
+        apiPost('/api/fabric-api/install', { gameVersion, versionId, versionName }, 120000),
     getForgeVersions: async (game) => {
         const result = await apiGet('/api/forge/versions', { game });
         return result && result.versions ? result.versions : (Array.isArray(result) ? result : []);

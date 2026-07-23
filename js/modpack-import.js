@@ -74,6 +74,14 @@
             return;
         }
 
+        // 先弹窗让用户自定义版本名称，与下载版本时的命名弹窗保持一致
+        let customName = '';
+        if (typeof showImportNameModal === 'function') {
+            const fileBaseName = (file.name || '').replace(/\.(mrpack|zip|cursemodpack)$/i, '');
+            customName = await showImportNameModal(fileBaseName);
+            if (!customName) return; // 用户取消
+        }
+
         window._modpackImporting = true;
         var _useVIsland = typeof DynamicIsland !== 'undefined' && DynamicIsland.isEnabled();
 
@@ -137,12 +145,12 @@
         try {
             let result;
             if (window.electronAPI && window.electronAPI.importModpack) {
-                result = await window.electronAPI.importModpack(filePath, '');
+                result = await window.electronAPI.importModpack(filePath, customName);
             } else {
                 const resp = await fetch('/api/modpack/import', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ filePath, targetVersion: '' })
+                    body: JSON.stringify({ filePath, targetVersion: customName })
                 });
                 result = await resp.json();
             }

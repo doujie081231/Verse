@@ -318,10 +318,10 @@
             <svg class="nav-icon-svg"><use href="#icon-explore"/></svg>
             <span>实验性</span>
           </button>
-          <button class="nav-btn nav-btn-experimental" data-page="private-server" title="私人服务器">
+          <button class="nav-btn nav-btn-experimental" data-page="private-server" title="一起玩">
             <span class="nav-btn-experimental-badge">实验</span>
             <svg class="nav-icon-svg"><use href="#icon-server"/></svg>
-            <span>私人服务器</span>
+            <span>一起玩</span>
           </button>
         </div>
         <div class="sidebar-footer">
@@ -575,9 +575,23 @@
     <div id="toast-container" class="toast-container"></div>
   </div>
 
+  <!-- ====================================================================== -->
+  <!-- 前端脚本加载（三层架构）                                                 -->
+  <!--                                                                        -->
+  <!-- 1. js/utils.js / js/api.js  底层工具：API 封装、字符串处理             -->
+  <!-- 2. js/app/*.js             页面交互逻辑：响应点击、调 API、操作 DOM    -->
+  <!--    - 不写 HTML 模板（模板在 js/vue/ 里）                                -->
+  <!--    - 工具类：utils.js / ui-components.js / custom-select.js 等          -->
+  <!--    - 业务类：versions.js / launch.js / mod-browse.js 等                -->
+  <!-- 3. js/vue/*.js             页面结构层：Vue template 字符串              -->
+  <!--    - 只放 HTML 模板，逻辑全部调用 js/app/*.js 里的函数                 -->
+  <!--    - 新增页面一律走 vue/，不再在 app/ 里堆 HTML 字符串                  -->
+  <!-- ====================================================================== -->
   <script src="js/utils.js" defer></script>
   <script src="js/api.js" defer></script>
   <script src="js/wallpaper-engine.js" defer></script>
+
+  <!-- 页面交互逻辑层（js/app/）：响应点击、调 API、操作 DOM -->
   <script src="js/app/lan.js" defer></script>
   <script src="js/app/private-server.js" defer></script>
   <script src="js/app/favorites.js" defer></script>
@@ -614,7 +628,9 @@
   <script src="v-island/dynamic-island.js" defer></script>
   <script src="js/modpack-import.js" defer></script>
   <script src="js/updater-ui.js" defer></script>
-  <!-- Vue 3 渐进式改造：引入 Vue + 首页组件 -->
+
+  <!-- 页面结构层（js/vue/）：Vue template 字符串，逻辑调用 js/app/*.js -->
+  <!-- 引入 Vue 3 运行时 -->
   <script src="node_modules/vue/dist/vue.global.prod.js" defer></script>
   <script src="js/vue/page-home.js" defer></script>
   <script src="js/vue/page-versions.js" defer></script>

@@ -382,3 +382,68 @@
         margin-top: 4px;
     }
 }
+
+/* ===== 顶级标签：我的服务器 / 联机大厅 ===== */
+.ps-top-tabs {
+    display: flex;
+    gap: 4px;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius);
+    padding: 3px;
+    margin-bottom: 16px;
+    width: fit-content;
+}
+
+.ps-top-tab {
+    padding: 7px 18px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-radius: 7px;
+    font-size: 14px;
+    font-weight: 500;
+    transition: color var(--transition), background-color var(--transition);
+}
+
+.ps-top-tab:hover {
+    color: var(--text-secondary);
+}
+
+.ps-top-tab.active {
+    background: var(--accent);
+    color: var(--accent-text);
+}
+
+/* ===== 联机大厅房间卡片角标 ===== */
+.lobby-badge {
+    display: inline-block;
+    padding: 1px 7px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 500;
+    margin-left: 6px;
+    vertical-align: 2px;
+    line-height: 1.6;
+}
+
+.lobby-badge.online {
+    background: rgba(16, 185, 129, 0.15);
+    color: var(--green, #10b981);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.lobby-badge.offline {
+    background: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+/* 联机大厅卡片地址可点击 */
+.lobby-card .ps-card-address[data-addr] {
+    cursor: pointer;
+}
+
+.lobby-card .ps-card-address[data-addr]:hover {
+    color: var(--accent);
+}

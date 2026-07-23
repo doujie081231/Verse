@@ -13,7 +13,8 @@ const http = require('../http-client');
 const versions = require('../versions');
 const modloaders = require('../modloaders');
 
-const { _dedupeVersionId, isModpackPathSafe, _repairCorruptedModJars, relocateMisplacedResourcePacks, resolveConcurrency, computeModTimeout, createProgressUpdater, _downloadMissingModsCheckerFiles } = require('./shared');
+const { _dedupeVersionId, _cleanDownloadingResidue, isModpackPathSafe, _repairCorruptedModJars, relocateMisplacedResourcePacks, resolveConcurrency, computeModTimeout, createProgressUpdater, _downloadMissingModsCheckerFiles } = require('./shared');
+const { completeModpackDependencies } = require('./dep-completion');
 
 /**
  * 导入 Modrinth (.mrpack) 整合包（解析 manifest、安装基础版本与加载器、下载 mods 与 overrides）。
@@ -628,6 +629,9 @@ async function _importMrpack(zip, manifestEntry, filePath, progress, targetVersi
     const modsDir = path.join(versionDir, 'mods');
     utils.ensureDir(path.join(modsDir, 'dummy.txt'));
 
+    // 清理上次导入失败留下的 .downloading 残留文件，避免续传死循环
+    _cleanDownloadingResidue(versionDir);
+
     const modFiles = filesList.map((f) => {
       const downloads = f.downloads || [];
       const fileName = path.basename(f.path || (downloads[0] || 'unknown'));
@@ -724,7 +728,7 @@ async function _importMrpack(zip, manifestEntry, filePath, progress, targetVersi
         for (const tryUrl of allUrls) {
           if (downloaded || (abortSignal && abortSignal.aborted)) break;
           try {
-            if (fileSize > 10 * 1024 * 1024) {
+            if (fileSize > 1 * 1024 * 1024) {
               // [P0 OPT - 2026-07-21] 传入 mirrors 参数，让分块下载内部能做分块级 URL 切换
               // 之前不传 mirrors，分块只用一个 URL，遇到慢 CDN 节点时所有分块都卡住
               await http.downloadFileChunked(tryUrl, destPath, {
@@ -911,6 +915,8 @@ async function _importMrpack(zip, manifestEntry, filePath, progress, targetVersi
           if (modFiles[index]) { modFiles[index].status = 'completed'; modFiles[index].progress = 100; }
           okCount++;
         } else {
+          // 清理当前 mod 的 .downloading 残留文件，避免下次导入续传死循环
+          try { const _tmpFile = destPath + '.downloading'; if (fs.existsSync(_tmpFile)) fs.unlinkSync(_tmpFile); } catch (_) {}
           if (abortSignal && abortSignal.aborted) {
             if (modFiles[index]) { modFiles[index].status = 'failed'; modFiles[index].error = '已取消'; }
           } else {
@@ -980,6 +986,21 @@ async function _importMrpack(zip, manifestEntry, filePath, progress, targetVersi
       console.warn(`[mrpack] ${repairResult.failed} 个模组文件损坏且无法修复，游戏启动时可能报错`);
     }
 
+    // 依赖补全：扫描所有 mod 的依赖声明，自动下载缺失的前置依赖
+    // 解决整合包作者漏写依赖 mod 导致游戏启动崩溃的问题
+    try {
+      const _depLoader = fabricVer ? 'fabric' : (forgeVer ? 'forge' : (neoforgeVer ? 'neoforge' : 'forge'));
+      const depResult = await completeModpackDependencies(versionDir, mcVersion, _depLoader, settings, progress);
+      if (depResult.downloaded > 0) {
+        console.log(`[mrpack] 依赖补全: ${depResult.downloaded} 个缺失依赖已自动下载`);
+      }
+      if (depResult.failed > 0) {
+        console.warn(`[mrpack] 依赖补全: ${depResult.failed} 个依赖未找到: ${depResult.failedDeps.join(', ')}`);
+      }
+    } catch (depErr) {
+      console.warn(`[mrpack] 依赖补全过程异常(非致命): ${depErr.message}`);
+    }
+
     if (loaderVersionId && mcVersion) {
       const lt = fabricVer ? 'fabric' : (forgeVer || neoforgeVer ? 'forge' : null);
       const cv = fabricVer || forgeVer || neoforgeVer;
@@ -1026,6 +1047,7 @@ async function _importMrpack(zip, manifestEntry, filePath, progress, targetVersi
             const ASSET_PARALLEL = Math.min(parseInt(settings.maxThreads, 10) || 64, 64);
             let assetDone = 0;
             const assetTotal = missingAssets.length;
+            progress('assets', `下载游戏资源 (0/${assetTotal})`, 93, [], '');
             const runAssetBatch = async () => {
               while (missingAssets.length > 0) {
                 if (abortSignal && abortSignal.aborted) break;
@@ -1039,15 +1061,14 @@ async function _importMrpack(zip, manifestEntry, filePath, progress, targetVersi
                   console.warn(`[mrpack] 资源 ${asset.name} 下载失败: ${e.message}`);
                 }
                 assetDone++;
-                if (assetDone % 20 === 0) {
-                  const pct = 93 + Math.round((assetDone / assetTotal) * 4);
-                  progress('assets', `下载资源 (${assetDone}/${assetTotal})`, Math.min(pct, 97), [], '');
-                }
+                const pct = 93 + Math.round((assetDone / assetTotal) * 4);
+                progress('assets', `下载游戏资源 (${assetDone}/${assetTotal})`, Math.min(pct, 97), [], '');
               }
             };
             const assetPool = [];
             for (let i = 0; i < Math.min(ASSET_PARALLEL, assetTotal); i++) assetPool.push(runAssetBatch());
             await Promise.all(assetPool);
+            progress('assets', `游戏资源下载完成 (${assetTotal}/${assetTotal})`, 97, [], '');
           }
         }
       } catch (e) {
@@ -1138,6 +1159,27 @@ async function _importMrpack(zip, manifestEntry, filePath, progress, targetVersi
       targetVersion: targetVersion || ''
     };
     fs.writeFileSync(path.join(versionDir, 'pack-info.json'), JSON.stringify(packInfo, null, 2));
+
+    // 保存 mrpack 原始清单到版本目录，供启动前的 mods 完整性检查使用
+    // 缺失 mods 时 checkDependencies 会自动补下，避免"导入成功但实际少文件"的盲区
+    try {
+      const manifestForCheck = {
+        format: manifest.format || 1,
+        game: manifest.game || 'minecraft',
+        versionId: manifest.versionId || '',
+        name: manifest.name || packName,
+        dependencies: manifest.dependencies || {},
+        files: (manifest.files || []).map((f) => ({
+          path: f.path,
+          hashes: f.hashes || {},
+          downloads: f.downloads || [],
+          fileSize: f.fileSize || 0
+        }))
+      };
+      fs.writeFileSync(path.join(versionDir, 'mrpack-manifest.json'), JSON.stringify(manifestForCheck, null, 2));
+    } catch (e) {
+      console.warn(`[mrpack] 保存清单文件失败(非致命): ${e.message}`);
+    }
 
     if (_backupDir && fs.existsSync(_backupDir)) {
       try { fs.rmSync(_backupDir, { recursive: true, force: true }); } catch (e) {}

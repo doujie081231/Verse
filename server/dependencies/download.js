@@ -268,12 +268,43 @@ async function downloadMissingDependencies(missingFiles, onProgress, versionJson
         ctx.DownloadManager.completedFiles++;
       }
     } catch (e) {
-      const errorMsg = `${file.name}: 下载失败 (${e.message})`;
-      errors.push(errorMsg);
-      failedFiles.push({ name: file.name, url: file.url, path: file.path, error: e.message });
-      console.error(`[下载] 下载失败: ${file.name} - URL: ${file.url} - 错误: ${e.message}`);
-      failed++;
-      ctx.DownloadManager.failedFiles++;
+      // mod 类型：mrpack 清单中可能提供多个下载源（downloads 数组），依次重试
+      // 这解决单个 CDN 节点故障导致的 mod 缺失问题
+      let modRetrySuccess = false;
+      if (file.type === 'mod' && Array.isArray(file.urls) && file.urls.length > 1) {
+        for (const altUrl of file.urls) {
+          if (altUrl === file.url) continue;  // 跳过已失败的 URL
+          try {
+            await http.downloadFileWithMirror(altUrl, file.path, null, 2);
+            if (file.sha1) {
+              const actualSha1 = await utils.calculateSHA1(file.path);
+              if (actualSha1 !== file.sha1) {
+                http._tryRemoveFile(file.path);
+                continue;
+              }
+            } else if (file.path.endsWith('.jar') && !utils.isJarIntact(file.path)) {
+              http._tryRemoveFile(file.path);
+              continue;
+            }
+            modRetrySuccess = true;
+            console.log(`[下载] mod 备用源成功: ${file.name} <- ${altUrl}`);
+            break;
+          } catch (e2) {
+            console.warn(`[下载] mod 备用源失败: ${file.name} - ${altUrl} - ${e2.message}`);
+          }
+        }
+      }
+      if (modRetrySuccess) {
+        completed++;
+        ctx.DownloadManager.completedFiles++;
+      } else {
+        const errorMsg = `${file.name}: 下载失败 (${e.message})`;
+        errors.push(errorMsg);
+        failedFiles.push({ name: file.name, url: file.url, path: file.path, error: e.message });
+        console.error(`[下载] 下载失败: ${file.name} - URL: ${file.url} - 错误: ${e.message}`);
+        failed++;
+        ctx.DownloadManager.failedFiles++;
+      }
     } finally {
       activeDownloads.delete(downloadId);
       activeCount--;

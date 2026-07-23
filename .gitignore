@@ -7,6 +7,8 @@ dist-installer/
 dist-build/
 dist-v2/
 dist-packager/
+dist_release/
+dist_old_*/
 output/
 release/
 build/

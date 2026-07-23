@@ -1,4 +1,22 @@
 /**
+ * app.js - VersePC 前端总装入口
+ * ============================================================================
+ * 前端三层架构（详见 index.html 顶部注释）：
+ *   1. js/utils.js + js/api.js     底层工具
+ *   2. js/app/*.js                 页面交互逻辑（本文件所在目录）
+ *   3. js/vue/*.js                 页面结构层（Vue template 字符串）
+ *
+ * 本文件职责：
+ *   - 集中存放全局状态变量（currentVersionTab / allVersions / _favorites 等）
+ *   - DOMContentLoaded 启动入口（调用 init / initSettingsPages / renderSponsors）
+ *   - 不写具体页面逻辑（分散在 js/app/ 各子文件中）
+ *
+ * 边界约定（新增功能时务必遵守）：
+ *   - HTML 模板 → js/vue/page-xxx.js
+ *   - 交互逻辑  → js/app/xxx.js
+ *   - 全局状态  → 本文件
+ *   - 通用工具  → js/app/utils.js / ui-components.js / custom-select.js
+ *
  * VersePC - Minecraft Launcher
  * Copyright (c) 2026 豆杰. All Rights Reserved.
  *
@@ -8,30 +26,6 @@
  *
  * This software is proprietary and confidential.
  * Any unauthorized reproduction or distribution is prohibited.
- */
-
-/**
- * app.js - VersePC 前端主应用逻辑
- * ============================================================================
- * 所有渲染进程(前端)的UI交互逻辑，是用户界面的核心控制器。
- *
- * 核心功能：
- * 1. 版本管理 - 版本列表加载、渲染、筛选、选择
- * 2. 启动流程 - 启动按钮处理、启动模态框、进度轮询/SSE监听
- * 3. 模组管理 - 模组搜索、安装、详情、多选操作
- * 4. 系统设置 - Java路径/内存/窗口/语言/下载等设置
- * 5. 账户管理 - Microsoft/离线登录、皮肤显示
- * 6. Java管理 - Java运行时下载、切换、自动检测
- * 7. 整合包 - Modrinth/CurseForge整合包浏览和安装
- * 8. 地图/Saves - 存档和世界管理
- * 9. 资源下载 - 光影/材质/数据包等资源下载
- * 10. 界面框架 - Toast通知、Modal对话框、页面导航
- *
- * 架构说明：
- * - 单页面应用(SPA)架构，通过页面切换实现多视图
- * - 全局状态变量管理应用数据
- * - 通过 API 对象调用后端接口
- * - DOM缓存(domCache)优化频繁的DOM查询
  */
 
 /* 全局状态变量 - 应用数据状态中心 */

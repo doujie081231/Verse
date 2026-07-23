@@ -505,12 +505,13 @@ module.exports = {
                     }
                 }, (upRes) => {
                     let upBody = '';
+                    const retryAfter = upRes.headers['retry-after'] || '';
                     upRes.on('data', c => upBody += c);
                     upRes.on('end', () => {
-                        resolve({ status: upRes.statusCode, body: upBody });
+                        resolve({ status: upRes.statusCode, body: upBody, retryAfter });
                     });
                 });
-                upReq.on('error', (e) => resolve({ status: 0, body: e.message }));
+                upReq.on('error', (e) => resolve({ status: 0, body: e.message, retryAfter: '' }));
                 upReq.write(payload);
                 upReq.end();
             });
@@ -530,6 +531,20 @@ module.exports = {
                 sendJSON(res, { success: true, skinUrl: newSkinUrl });
             } else if (uploadResult.status === 401) {
                 sendJSON(res, { success: false, error: '登录已过期，请重新登录微软账户', needRelogin: true }, 401);
+            } else if (uploadResult.status === 429) {
+                // Mojang 皮肤上传速率限制：每个账户每分钟只能上传一次
+                // 注意：此限制是账户级别的，无论在 VersePC、minecraft.net 网站还是游戏内上传都算
+                console.warn(`[Skin Upload] 429 rate limited. Retry-After=${uploadResult.retryAfter}, body=${uploadResult.body}`);
+                let waitSeconds = 60;
+                if (uploadResult.retryAfter) {
+                    const parsed = parseInt(uploadResult.retryAfter, 10);
+                    if (!isNaN(parsed) && parsed > 0) waitSeconds = parsed;
+                }
+                const waitMinutes = Math.ceil(waitSeconds / 60);
+                const errMsg = waitMinutes > 1
+                    ? `操作过于频繁，Mojang 限制每分钟只能更换一次皮肤，请 ${waitMinutes} 分钟后再试`
+                    : `操作过于频繁，Mojang 限制每分钟只能更换一次皮肤，请 ${waitSeconds} 秒后再试`;
+                sendJSON(res, { success: false, error: errMsg, rateLimited: true, retryAfter: waitSeconds }, 429);
             } else {
                 let errMsg = `上传失败 (HTTP ${uploadResult.status})`;
                 try { const e = JSON.parse(uploadResult.body); if (e.errorMessage) errMsg = e.errorMessage; } catch (_) {}

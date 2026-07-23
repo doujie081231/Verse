@@ -43,6 +43,7 @@ async function checkDependencies(versionId, settings, externalVersionDir = null)
     assets: { ok: true, missing: [], total: 0, message: '' },
     parentVersion: { ok: true, message: '' },
     forgeCore: { ok: true, missing: [], message: '' },
+    mrpackMods: { ok: true, missing: [], total: 0, message: '' },
     ready: false,
     missingFiles: []
   };
@@ -541,6 +542,67 @@ async function checkDependencies(versionId, settings, externalVersionDir = null)
   // Forge / NeoForge 核心库检查（含 inheritsFrom 链识别、新版格式检测、核心库校验）
   forgeCore.checkForgeCore(versionJson, versionId, externalVersionDir, result);
 
+  // mrpack 整合包 mods 完整性检查：对比 mrpack-manifest.json 与 mods 目录实际文件
+  // 解决"导入返回成功但实际有 mod 下载失败"的盲区，启动前自动发现并补下缺失 mod
+  try {
+    const versionDir = externalVersionDir || path.join(ctx.dirs.VERSIONS_DIR, versionId);
+    const manifestPath = path.join(versionDir, 'mrpack-manifest.json');
+    if (fs.existsSync(manifestPath)) {
+      const mrpackManifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+      const manifestFiles = Array.isArray(mrpackManifest.files) ? mrpackManifest.files : [];
+      // 只检查 mods/ 目录下的文件（shaderpacks/resourcepacks 不在本次范围）
+      const modEntries = manifestFiles.filter((f) => f.path && f.path.startsWith('mods/'));
+      result.mrpackMods.total = modEntries.length;
+      for (const entry of modEntries) {
+        const fileName = path.basename(entry.path);
+        const destPath = path.join(versionDir, entry.path);
+        let needRecheck = false;
+        if (!fs.existsSync(destPath)) {
+          needRecheck = true;
+        } else {
+          // 文件存在时做轻量校验：大小匹配 + JAR 结构完整
+          const expectedSize = entry.fileSize || 0;
+          const expectedSha1 = entry.hashes && entry.hashes.sha1;
+          try {
+            const stat = fs.statSync(destPath);
+            if (expectedSize > 0 && stat.size !== expectedSize) {
+              needRecheck = true;
+            } else if (destPath.endsWith('.jar') && !utils.isJarIntact(destPath)) {
+              needRecheck = true;
+            } else if (expectedSha1) {
+              // 大小匹配且 JAR 完整时再做 SHA1 校验（流式异步）
+              const actualSha1 = await utils.calculateSHA1(destPath);
+              if (actualSha1 !== expectedSha1) needRecheck = true;
+            }
+          } catch (_) {
+            needRecheck = true;
+          }
+        }
+        if (needRecheck) {
+          // 取第一个下载 URL 作为补下源
+          const dlUrl = (entry.downloads && entry.downloads[0]) || '';
+          result.mrpackMods.missing.push({
+            type: 'mod',
+            url: dlUrl,
+            path: destPath,
+            sha1: (entry.hashes && entry.hashes.sha1) || '',
+            size: entry.fileSize || 0,
+            name: fileName,
+            // 提供全部下载 URL 供 downloadMissingDependencies 做镜像重试
+            urls: entry.downloads || []
+          });
+        }
+      }
+      result.mrpackMods.ok = result.mrpackMods.missing.length === 0;
+      if (result.mrpackMods.missing.length > 0) {
+        result.mrpackMods.message = `${result.mrpackMods.missing.length} 个 Mod 文件缺失或损坏`;
+        result.missingFiles.push(...result.mrpackMods.missing);
+      }
+    }
+  } catch (e) {
+    console.warn(`[DepCheck] mrpack mods 检查异常(非致命): ${e.message}`);
+  }
+
   // 资源文件检查：索引文件 + objects 文件
   if (versionJson.assetIndex) {
     const assetIndexInfo = versionJson.assetIndex;
@@ -619,7 +681,7 @@ async function checkDependencies(versionId, settings, externalVersionDir = null)
   // 汇总所有检查项，得到 ready 标志
   result.ready = result.java.ok && result.versionJson.ok && result.mainJar.ok
     && result.libraries.ok && result.natives.ok && result.parentVersion.ok
-    && result.assets.ok && result.forgeCore.ok;
+    && result.assets.ok && result.forgeCore.ok && result.mrpackMods.ok;
 
   // 写入缓存，LRU 淘汰：超过 50 项时删除最旧
   ctx.caches._depCheckCache.set(_cacheKey, { result, ts: Date.now() });

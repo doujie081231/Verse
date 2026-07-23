@@ -1,9 +1,16 @@
-/* page-home.js - 首页 Vue 组件（渐进式改造第一步）
- * 原则：
+/* page-home.js - 首页 Vue 组件（页面结构层）
+ * ============================================================================
+ * 前端三层架构（详见 index.html 顶部注释）：
+ *   - 本文件只负责 HTML 模板（Vue template 字符串）
+ *   - 交互逻辑全部调用 js/app/*.js 里的函数
+ *   - 全局状态变量在 js/app.js
+ *
+ * 改动原则：
  *   1. CSS 一行不动（class 名保留原样）
  *   2. HTML 结构原样搬运（标签、层级、id 全部不变）
  *   3. JS 函数全部复用（navigateToPage 等仍来自 js/app/*.js）
  *   4. 仅 onclick → @click 这类最小改动
+ *   5. 新增页面交互逻辑请写到 js/app/ 对应文件，不要堆在本文件
  */
 const PageHome = {
   template: `
