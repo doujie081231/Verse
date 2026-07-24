@@ -703,6 +703,19 @@ function buildLaunchArguments(versionJson, settings, account, versionId, customG
   const classpathStr = Array.isArray(classpath) ? classpath.join(cpSeparator) : classpath;
   jvmArgs.push('-cp', classpathStr);
 
+  // NeoForge: 添加 -DlibraryDirectory 参数，告诉 NeoForge 的 locator 去哪里查找库文件。
+  // 背景：NeoForge 的 ProductionClientProviderLocator 通过 --fml.neoForgeVersion 参数
+  // 在 libraryDirectory 中查找 neoforge-<ver>-universal.jar（含 neoforge mod manifest），
+  // 加载为 neoforge mod。若缺少此参数，locator 找不到 universal jar，报 "neoforge [MISSING]"。
+  // 参考 PCL 的启动命令，该参数必须在 -cp 之后、mainClass 之前。
+  const _isNeoForge = (versionJson.mainClass || '').includes('bootstraplauncher') ||
+    (versionJson.arguments?.game || []).some((a) => typeof a === 'string' && a === '--fml.neoForgeVersion');
+  if (_isNeoForge) {
+    const _libDir = isExternal && externalRoot ? path.join(externalRoot, 'libraries') : ctx.dirs.LIBRARIES_DIR;
+    jvmArgs.push(`-DlibraryDirectory=${_libDir}`);
+    console.log(`[Launch] NeoForge: 已添加 -DlibraryDirectory=${_libDir}`);
+  }
+
   // 第三方登录：注入 authlib-injector javaagent
   if (account?.type === 'thirdparty' && account?.serverUrl) {
     const aiDir3 = path.join(ctx.dirs.DATA_DIR, 'authlib-injector');
