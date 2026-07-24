@@ -529,27 +529,6 @@ ipcMain.handle('get-memory-info', async () => {
   }
 });
 
-// 性能诊断：返回所有 Electron 子进程的 CPU/内存占用
-// 用于排查"CPU 持续 100%"等问题，定位是主进程/渲染进程/GPU 进程中的哪个在占 CPU
-ipcMain.handle('get-process-metrics', async () => {
-  try {
-    const metrics = app.getAppMetrics();
-    const cpuCount = os.cpus().length;
-    return metrics.map((m) => ({
-      pid: m.pid,
-      type: m.type,                              // Browser/GPU/Renderer/Zygote/Utility 等
-      name: m.name || '',                         // 进程名（如 'Main Process'、'GPU Process'）
-      cpuPercent: m.cpu ? Number((m.cpu.percentCPUUsage * 100 / cpuCount).toFixed(1)) : 0, // 归一化到总 CPU 百分比
-      cpuCores: m.cpu ? Number(m.cpu.percentCPUUsage.toFixed(2)) : 0,                      // 单核百分比（可能 >100%）
-      idleWakeups: m.cpu ? m.cpu.idleWakeupsPerSecond : 0,
-      memoryKB: m.memory ? m.memory.workingSetSize : 0,                                     // 工作集大小（KB）
-      creationTime: m.creationTime
-    })).sort((a, b) => b.cpuPercent - a.cpuPercent);
-  } catch (e) {
-    return [];
-  }
-});
-
 ipcMain.handle('memory-optimize', async () => {
   if (process.platform !== 'win32') {
     return { success: false, error: '内存优化功能仅支持 Windows 系统' };

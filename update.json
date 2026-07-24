@@ -1,13 +1,13 @@
 {
-  "version": "1.2.16",
-  "releaseDate": "2026-07-24T23:30:00Z",
-  "releaseName": "VersePC v1.2.16",
-  "releaseNotes": "## v1.2.16 更新\n\n### 修复\n- 彻底修复 NSIS 安装包打包问题（安装包大小异常仅 0.37MB 的严重 bug）\n- 修复安装脚本中 PowerShell $false 未转义导致的解析错误\n- 修复 NSIS 消息框标志 MB_ICONWARNING 不兼容导致的编译失败\n\n### 优化\n- 降低空闲 CPU 占用：游戏状态轮询改为动态间隔（运行时 3 秒，空闲 15 秒）\n- 移除 GPU 后台节流相关开关，避免不必要的资源消耗\n- 修正 IS_BETA 构建时占位符替换逻辑",
+  "version": "1.2.17",
+  "releaseDate": "2026-07-25T00:30:00Z",
+  "releaseName": "VersePC v1.2.17",
+  "releaseNotes": "## v1.2.17 更新\n\n### 修复\n- 彻底修复 NSIS 安装包打包问题（安装包大小异常仅 0.37MB 的严重 bug）\n- 修复安装脚本中 PowerShell $false 未转义导致的解析错误\n- 修复 NSIS 消息框标志 MB_ICONWARNING 不兼容导致的编译失败\n\n### 优化\n- 降低空闲 CPU 占用：游戏状态轮询改为动态间隔（运行时 3 秒，空闲 15 秒）\n- 移除 GPU 后台节流相关开关，避免不必要的资源消耗\n- 修正 IS_BETA 构建时占位符替换逻辑\n- 移除设置页面的性能诊断面板（内部调试用，已不再需要）",
   "files": {
     "win-x64": {
-      "url": "https://github.com/doujie081231/Verse/releases/download/v1.2.16/VersePC-Setup-1.2.16.exe",
-      "size": 160796121,
-      "sha256": "91C3FA310A4832D72EEE29B7ADA4702A1D0B06689F5509B1B49C89306EB7A117"
+      "url": "https://github.com/doujie081231/Verse/releases/download/v1.2.17/VersePC-Setup-1.2.17.exe",
+      "size": 160794780,
+      "sha256": "EA95330E38EE22E9E088211A7347AD0E0BE7EE918D51772A48BDB97BBF6306A6"
     }
   }
 }

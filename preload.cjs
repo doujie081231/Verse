@@ -452,9 +452,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** 获取内存信息 */
   getMemoryInfo: () => ipcRenderer.invoke('get-memory-info'),
 
-  /** 获取所有 Electron 子进程的 CPU/内存占用（性能诊断用） */
-  getProcessMetrics: () => ipcRenderer.invoke('get-process-metrics'),
-
   /**
    * TTS 语音合成（基于 msedge-tts，主进程合成 MP3 音频返回）
    * @namespace tts
