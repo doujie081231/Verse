@@ -385,29 +385,84 @@ module.exports = {
         }
 
         // 崩溃特征规则表：匹配关键字符串给出原因与解决方案
+        // 按类别分组：JVM/内存/驱动/模组/文件系统/网络/通用
         const crashRules = [
-          { pattern: 'java.lang.OutOfMemoryError', reason: '内存不足', solution: '建议增加分配内存或减少模组数量。当前分配的内存可能不足以支撑游戏运行。', severity: 'high' },
-          { pattern: 'The driver does not appear to support OpenGL', reason: '显卡不支持OpenGL', solution: '请更新显卡驱动，或确认您的显卡支持OpenGL。老旧显卡可能无法运行Minecraft。', severity: 'high' },
-          { pattern: 'Pixel format not accelerated', reason: '显卡驱动不支持', solution: '显卡驱动不支持所需的像素格式。请更新显卡驱动至最新版本。', severity: 'high' },
-          { pattern: "Couldn't set pixel format", reason: '显卡驱动不支持', solution: '显卡驱动不支持所需的像素格式。请更新显卡驱动至最新版本。', severity: 'high' },
-          { pattern: 'Unsupported class file major version', reason: 'Java版本不兼容', solution: '当前Java版本过低，无法运行该版本的游戏或Mod。请安装更高版本的Java。', severity: 'high' },
-          { pattern: 'Unsupported major.minor version', reason: 'Java版本不兼容', solution: '当前Java版本过低，无法运行该版本的游戏或Mod。请安装更高版本的Java。', severity: 'high' },
-          { pattern: 'because module java.base does not export', reason: 'Java版本过高', solution: '当前Java版本过高，导致与游戏不兼容。请降低Java版本（推荐Java 8或11）。', severity: 'high' },
-          { pattern: 'NoSuchFieldException: ucp', reason: 'Java版本过高', solution: '当前Java版本过高，导致与游戏不兼容。请降低Java版本（推荐Java 8或11）。', severity: 'high' },
-          { pattern: 'Open J9 is not supported', reason: '使用OpenJ9', solution: 'Minecraft不支持OpenJ9虚拟机。请更换为HotSpot JVM（如Oracle JDK或OpenJDK HotSpot）。', severity: 'high' },
-          { pattern: 'The directories below appear to be extracted jar files', reason: 'Mod文件被解压', solution: '检测到Mod文件被解压到mods文件夹中。请删除解压后的文件夹，直接放入.jar文件。', severity: 'medium' },
-          { pattern: 'LoaderExceptionModCrash', reason: 'Mod导致崩溃', solution: '某个Mod导致了游戏崩溃。请查看详细信息中的Mod名称，尝试删除或更新该Mod。', severity: 'medium', modExtract: /Caught exception from (\S+)/ },
-          { pattern: 'Caught exception from ', reason: 'Mod导致崩溃', solution: '某个Mod导致了游戏崩溃。请查看详细信息中的Mod名称，尝试删除或更新该Mod。', severity: 'medium', modExtract: /Caught exception from (\S+)/ },
-          { pattern: 'Found duplicate mods', reason: 'Mod重复安装', solution: '检测到重复安装的Mod。请检查mods文件夹，删除重复的Mod文件。', severity: 'medium' },
-          { pattern: 'DuplicateModsFoundException', reason: 'Mod重复安装', solution: '检测到重复安装的Mod。请检查mods文件夹，删除重复的Mod文件。', severity: 'medium' },
-          { pattern: 'Incompatible mods found', reason: 'Mod互不兼容', solution: '检测到互不兼容的Mod。请查看详细信息，删除冲突的Mod之一。', severity: 'medium' },
-          { pattern: 'Shaders Mod detected. Please remove it', reason: 'ShadersMod与OptiFine冲突', solution: 'ShadersMod与OptiFine冲突。OptiFine已内置光影支持，请删除ShadersMod。', severity: 'medium' },
-          { pattern: '1282: Invalid operation', reason: '光影或资源包导致OpenGL错误', solution: '光影或资源包导致了OpenGL错误。请尝试移除当前光影或更换低分辨率资源包。', severity: 'medium' },
-          { pattern: 'Maybe try a lower resolution resourcepack', reason: '材质过大', solution: '当前使用的资源包分辨率过高，导致内存不足。请尝试使用更低分辨率的资源包。', severity: 'medium' },
+          // === JVM 与内存 ===
+          { pattern: 'java.lang.OutOfMemoryError', reason: '内存不足（OutOfMemoryError）', solution: 'Minecraft 可用内存不足。建议在启动设置中增加最大内存分配。如果已分配 8GB+，可以尝试减少模组数量或降低资源包分辨率。', severity: 'high' },
           { pattern: 'Out of Memory Error', reason: '内存不足', solution: 'JVM层面内存不足。建议增加分配内存或减少模组数量。', severity: 'high' },
-          { pattern: 'The system is out of physical RAM', reason: '内存不足', solution: '系统物理内存不足。建议关闭其他程序释放内存，或增加分配的内存。', severity: 'high' },
-          { pattern: 'Cannot find launch target fmlclient', reason: 'Forge安装不完整', solution: 'Forge安装不完整，缺少必要的启动文件。请重新安装Forge。', severity: 'high' },
-          { pattern: 'Missing or unsupported mandatory dependencies', reason: 'Mod缺少前置', solution: '某些Mod缺少必要的前置Mod。请查看详细信息，安装缺少的前置Mod。', severity: 'medium' },
+          { pattern: 'The system is out of physical RAM', reason: '系统物理内存不足', solution: '系统物理内存不足。建议关闭其他程序释放内存，或增加分配的内存。', severity: 'high' },
+          { pattern: 'Could not reserve enough space', reason: '无法分配足够的内存空间', solution: '系统无法为 JVM 分配请求的内存。尝试减少分配内存，或关闭其他占用内存的程序。', severity: 'high' },
+          { pattern: 'Could not create the Java Virtual Machine', reason: '无法创建JVM', solution: 'JVM 创建失败，可能原因：1）Java路径指向非64位版本 2）分配内存超过系统可用量。请在设置中检查和调整 Java 路径与最大内存。', severity: 'high' },
+          { pattern: 'java.lang.StackOverflowError', reason: '栈溢出', solution: '游戏出现了无限的递归调用或循环。通常是模组问题，尝试更新到最新版本或移除最近添加的模组。', severity: 'medium' },
+          { pattern: 'java.lang.NullPointerException', reason: '空指针异常', solution: '某个模组尝试访问未初始化的对象。通常是模组不兼容或配置错误，尝试更新到最新版本或移除最近添加的模组。', severity: 'medium' },
+          { pattern: 'java.lang.ArrayIndexOutOfBoundsException', reason: '数组越界', solution: '游戏数据索引超出范围。通常与模组数据生成或存档损坏有关，尝试备份存档后重新生成区域。', severity: 'medium' },
+          { pattern: 'java.lang.StringIndexOutOfBoundsException', reason: '字符串索引越界', solution: '模组处理文本数据时越界。常出现在汉化资源包或模组语言文件问题，尝试更新模组或移除汉化资源包。', severity: 'medium' },
+          { pattern: 'java.lang.ClassNotFoundException', reason: '类找不到', solution: 'Java类文件缺失。通常是模组文件损坏或下载不完整，尝试删除对应模组后重新下载。', severity: 'high' },
+          { pattern: 'java.lang.NoClassDefFoundError', reason: '类定义找不到', solution: 'Java类文件定义缺失。通常是模组升级后遗留旧文件或缺少前置模组，检查并安装所有必需的前置模组。', severity: 'high' },
+          { pattern: 'java.lang.NoSuchMethodError', reason: '方法找不到', solution: '模组版本不兼容。通常是模组需要特定版本的另一个模组，请检查模组版本兼容性。', severity: 'medium' },
+          { pattern: 'java.lang.IllegalAccessError', reason: '非法访问错误', solution: '模组尝试访问被禁止的类/方法。常发生在 Java 17+ 上运行旧版模组，尝试升级模组或使用较低版本的 Java。', severity: 'high' },
+          { pattern: 'java.lang.reflect.InvocationTargetException', reason: '反射调用异常', solution: '模组通过反射调用其他模组方法时出错。通常是模组兼容性问题，尝试更新到最新版本。', severity: 'medium' },
+          { pattern: 'java.lang.ConcurrentModificationException', reason: '并发修改异常', solution: '多线程同时修改数据。可能与优化模组或核心模组冲突有关，尝试移除最近添加的性能优化模组。', severity: 'medium' },
+          { pattern: 'Module java.base does not export', reason: 'Java模块访问限制', solution: '当前 Java 版本过高（Java 17+）导致与旧版代码不兼容。需要添加 JVM 启动参数 --add-exports/--add-opens，或降级 Java 版本。', severity: 'high' },
+          { pattern: 'because module java.base does not export', reason: 'Java版本过高导致模块限制', solution: '当前Java版本过高，导致与游戏不兼容。请降低Java版本（推荐Java 8或11）。', severity: 'high' },
+          { pattern: 'NoSuchFieldException: ucp', reason: 'Java版本过高', solution: '当前Java版本过高，导致与游戏不兼容。请降低Java版本（推荐Java 8或11）。', severity: 'high' },
+          { pattern: 'Unsupported class file major version', reason: 'Java版本不兼容（版本过高）', solution: '当前Java版本过低，无法运行该版本的游戏或模组。请安装更高版本的Java。\n例如: 1.17+ 需要 Java 17, 1.12-1.16 需要 Java 8。', severity: 'high' },
+          { pattern: 'Unsupported major.minor version', reason: 'Java版本不兼容（版本过高）', solution: '当前Java版本过低，无法运行该版本的游戏或模组。请安装更高版本的Java。', severity: 'high' },
+          { pattern: 'Open J9 is not supported', reason: '不支持的JVM实现', solution: 'Minecraft 不支持 OpenJ9 虚拟机。请在设置中更换为 HotSpot JVM（如 Oracle JDK、OpenJDK HotSpot、Adoptium Temurin）。', severity: 'high' },
+          { pattern: 'java.lang.ArithmeticException', reason: '算术异常', solution: '数学运算出错（如除零错误）。通常是模组数据配置错误，检查最近安装的模组配置。', severity: 'medium' },
+          { pattern: 'java.lang.ClassCastException', reason: '类型转换异常', solution: 'Java类类型转换失败。当模组期望一种类型但收到另一种类型时发生。通常由模组版本不匹配或冲突引起。', severity: 'medium' },
+
+          // === 显卡/OpenGL/窗口 ===
+          { pattern: 'The driver does not appear to support OpenGL', reason: '显卡不支持OpenGL', solution: '请更新显卡驱动，或确认您的显卡支持OpenGL。部分集成显卡或老旧显卡可能无法运行Minecraft 1.17+。', severity: 'high' },
+          { pattern: 'Pixel format not accelerated', reason: '显卡驱动加速失败', solution: '显卡驱动不支持所需的像素格式。请更新显卡驱动至最新版本。NVIDIA用户可尝试在控制面板中将Javaw设置为高性能显卡。', severity: 'high' },
+          { pattern: "Couldn't set pixel format", reason: '像素格式设置失败', solution: '显卡驱动不支持所需的像素格式。请更新显卡驱动至最新版本。', severity: 'high' },
+          { pattern: '1282: Invalid operation', reason: 'OpenGL错误', solution: '光影或资源包导致了OpenGL错误。请尝试：1）移除当前光影 2）更换低分辨率资源包 3）更新显卡驱动。', severity: 'medium' },
+          { pattern: 'Maybe try a lower resolution resourcepack', reason: '材质过大', solution: '当前使用的资源包分辨率过高，导致内存不足。请尝试使用更低分辨率（如 32x/16x）的资源包。', severity: 'medium' },
+          { pattern: 'GLFW error', reason: 'GLFW窗口创建失败', solution: '游戏窗口创建失败。检查：1）显卡驱动是否最新 2）分辨率设置是否超出显示器支持范围 3）是否开启了全屏独占模式。', severity: 'high' },
+          { pattern: 'WGL: The driver does not appear to support OpenGL', reason: '显卡驱动不支持OpenGL', solution: '显卡驱动问题或OpenGL版本过低。请更新显卡驱动，Windows用户请确保已安装DirectX和VC++运行库。', severity: 'high' },
+          { pattern: 'Failed to create window', reason: '窗口创建失败', solution: 'Minecraft游戏窗口创建失败。尝试：1）在启动设置中修改分辨率 2）关闭全屏模式 3）更新显卡驱动。', severity: 'high' },
+          { pattern: 'Could not initialize class org.lwjgl', reason: 'LWJGL初始化失败', solution: 'LWJGL（游戏图形库）初始化失败。通常是显卡驱动问题或缺少必要的系统运行库，请更新显卡驱动和VC++运行库。', severity: 'high' },
+
+          // === 模组加载 ===
+          { pattern: 'LoaderExceptionModCrash', reason: '模组导致崩溃', solution: '某个模组导致了游戏崩溃。请查看下方的错误日志摘要中的模组名称，尝试删除或更新该模组。', severity: 'medium', modExtract: /Caught exception from (\S+)/ },
+          { pattern: 'Caught exception from ', reason: '模组异常', solution: '某个模组导致了游戏崩溃。请查看下方的错误日志摘要中的模组名称，尝试删除或更新该模组。', severity: 'medium', modExtract: /Caught exception from (\S+)/ },
+          { pattern: 'Found duplicate mods', reason: '模组重复安装', solution: '检测到重复安装的模组。请检查 mods 文件夹，删除重复的模组文件（保留较新的版本）。', severity: 'medium' },
+          { pattern: 'DuplicateModsFoundException', reason: '模组重复安装', solution: '检测到重复安装的模组。请检查 mods 文件夹，删除重复的模组文件。', severity: 'medium' },
+          { pattern: 'Incompatible mods found', reason: '模组互不兼容', solution: '检测到互不兼容的模组。请查看详细信息，删除冲突的模组之一。', severity: 'medium' },
+          { pattern: 'Missing or unsupported mandatory dependencies', reason: '模组缺少前置', solution: '某些模组缺少必要的前置模组。请查看下方的错误日志摘要，安装缺少的前置模组。', severity: 'medium' },
+          { pattern: 'Mod File {}, requires a dependency on', reason: '模组缺少前置', solution: '模组依赖的前置模组缺失。请安装所需的前置模组到 mods 文件夹。', severity: 'medium' },
+          { pattern: 'Mixin apply failed', reason: 'Mixin注入失败', solution: '模组的 Mixin 注入失败。通常是不兼容的模组正在修改同一段游戏代码，尝试更新或移除冲突模组。', severity: 'medium' },
+          { pattern: 'mixin conflict', reason: 'Mixin冲突', solution: '两个或多个模组尝试修改同一段游戏代码导致冲突。尝试移除最近安装的模组之一。', severity: 'medium' },
+          { pattern: 'Failed to load mixin', reason: 'Mixin加载失败', solution: '模组的 Mixin 配置加载失败。可能是模组文件损坏或不完整，尝试重新下载该模组。', severity: 'medium' },
+          { pattern: 'net.minecraftforge.fml.loading.FMLPaths', reason: 'Forge路径加载错误', solution: 'Forge 路径初始化失败。检查游戏目录权限，尝试在版本设置中执行文件修复。', severity: 'medium' },
+          { pattern: 'fmlclient', reason: 'Forge启动目标缺失', solution: 'Forge安装不完整，缺少必要的启动文件。请重新安装 Forge。', severity: 'high' },
+          { pattern: 'Cannot find launch target', reason: '启动目标缺失', solution: '模组加载器启动目标缺失。请重新安装当前使用的加载器（Forge/Fabric/Quilt/NeoForge）。', severity: 'high' },
+          { pattern: 'Shaders Mod detected. Please remove it', reason: 'ShadersMod与OptiFine冲突', solution: 'ShadersMod（旧版光影模组）与 OptiFine（或 Embeddium/Oculus）冲突。新的光影支持已内置，请删除 ShadersMod。', severity: 'medium' },
+          { pattern: 'The directories below appear to be extracted jar files', reason: '模组文件被解压', solution: '检测到模组文件被解压到 mods 文件夹中。请删除这些解压后的文件夹，只保留 .jar 文件。', severity: 'medium' },
+          { pattern: 'NeoForge has detected a mod that is not working correctly', reason: 'NeoForge兼容性问题', solution: 'NeoForge 检测到不兼容的模组。请更新提示中提到的模组至最新版本。', severity: 'medium' },
+
+          // === 文件系统 ===
+          { pattern: 'ZipException', reason: 'JAR文件损坏', solution: '某个模组或库文件（.jar）已损坏。通常由下载中断或磁盘错误引起。\n解决方法：1）在版本设置中执行文件修复 2）删除错误提示中的文件让启动器重新下载 3）检查硬盘健康状态。', severity: 'high' },
+          { pattern: 'invalid stream header', reason: 'JAR文件损坏', solution: '模组或库文件的 ZIP/JAR 头部损坏。请删除对应文件并重新下载。', severity: 'high' },
+          { pattern: 'Unexpected error reading file', reason: '文件读取错误', solution: '游戏读取文件时出错。检查：1）硬盘是否有坏道 2）文件是否被其他程序占用 3）杀毒软件是否隔离了游戏文件。', severity: 'medium' },
+          { pattern: 'Failed to download', reason: '下载失败', solution: '游戏文件下载失败。请检查网络连接后重试，如持续失败可尝试切换下载镜像源。', severity: 'medium' },
+          { pattern: 'Could not read file', reason: '无法读取文件', solution: '无法读取游戏资源文件。可能是文件权限问题或文件损坏，尝试修复游戏文件或检查磁盘。', severity: 'medium' },
+          { pattern: 'FileNotFoundException', reason: '文件找不到', solution: '游戏需要但找不到某个文件。可能是杀毒软件误删、文件损坏或磁盘错误，尝试在版本设置中执行文件修复。', severity: 'medium' },
+          { pattern: 'java.nio.file.AccessDeniedException', reason: '文件访问被拒绝', solution: '启动器或游戏无权访问某个文件/目录。检查：1）文件夹权限设置 2）杀毒软件是否拦截 3）文件是否被其他进程锁定。', severity: 'medium' },
+          { pattern: 'IOException', reason: '输入输出错误', solution: '文件读写发生错误。可能是硬盘故障、文件被占用或杀毒软件拦截。尝试关闭杀毒软件后重试，或在版本设置中执行文件修复。', severity: 'medium' },
+
+          // === 网络 ===
+          { pattern: 'Connection refused', reason: '连接被拒绝', solution: '无法连接到目标服务器。检查：1）目标服务器是否在线 2）防火墙是否阻止连接 3）网络代理设置是否正确。', severity: 'low' },
+          { pattern: 'Connection reset', reason: '连接被重置', solution: '网络连接被中断。通常由网络不稳定或防火墙拦截引起，检查网络连接和防火墙设置。', severity: 'low' },
+          { pattern: 'SocketException', reason: '网络套接字异常', solution: '网络连接异常。检查网络稳定性，尝试更换网络或使用加速器。', severity: 'low' },
+          { pattern: 'Unknown host', reason: '无法解析主机名', solution: 'DNS解析失败，无法找到目标服务器地址。检查网络连接和DNS设置。', severity: 'low' },
+          { pattern: 'Connect timed out', reason: '连接超时', solution: '连接服务器超时。服务器可能未开机、网络不稳定或防火墙拦截，请稍后重试。', severity: 'low' },
+
+          // === 通用/其他 ===
+          { pattern: 'KubeJS', reason: 'KubeJS模组错误', solution: 'KubeJS 脚本执行出错。检查 kubejs/server_scripts 或 kubejs/client_scripts 中的脚本语法，或更新 KubeJS 模组。', severity: 'medium' },
+          { pattern: 'Paxi', reason: 'Paxi模组加载错误', solution: 'Paxi（数据包加载模组）出错。检查 paxi_resources 目录中的资源包或数据包文件是否完整。', severity: 'medium' },
+          { pattern: 'Caused by: java.lang.RuntimeException', reason: '运行时异常', solution: '游戏运行时发生了未预料的异常。请查看下方的错误日志摘要获取详细错误信息。', severity: 'medium' },
+          { pattern: 'FATAL', reason: '致命错误', solution: 'Minecraft 遇到了致命错误并停止运行。请查看下方的错误日志摘要获取详细信息。', severity: 'high' },
         ];
 
         // 提取崩溃日志关键行（用于前端展示详细错误报告）
@@ -421,7 +476,7 @@ module.exports = {
             'java.lang.', 'net.minecraft.', 'org.', 'com.', 'FATAL',
             'Error:', 'Exception:', 'Stacktrace', 'Description:'
           ];
-          for (let i = 0; i < lines.length && keyLines.length < 25; i++) {
+          for (let i = 0; i < lines.length && keyLines.length < 100; i++) {
             const line = lines[i].trim();
             if (!line || line.length > 300) continue;
             // 跳过纯空白和分隔线
@@ -439,17 +494,48 @@ module.exports = {
         const logExcerpt = [
           ...extractKeyLines(crashContent, 'crash-report'),
           ...extractKeyLines(hsErrContent, 'hs_err'),
-          ...extractKeyLines(latestLogContent.slice(-200), 'latest.log')
-        ].slice(0, 30);
+          ...extractKeyLines(latestLogContent.slice(-500), 'latest.log')
+        ].slice(0, 80);
 
-        // 提取崩溃报告的 Description 部分（如果有）
-        let crashDescription = '';
-        if (crashContent) {
-          const descMatch = crashContent.match(/Description:\s*([\s\S]*?)(?=\n\s*\n|$)/);
+        // 提取崩溃报告详细描述：包含 Description、完整堆栈、影响模组等
+        function extractCrashDescription(content) {
+          if (!content) return '';
+          const parts = [];
+          // 提取 Description 段落
+          const descMatch = content.match(/Description:\s*([\s\S]*?)(?=\n\S|$)/);
           if (descMatch) {
-            crashDescription = descMatch[1].trim().slice(0, 500);
+            parts.push('【崩溃描述】');
+            parts.push(descMatch[1].trim().slice(0, 600));
           }
+          // 提取 Affected mod 段落（Forge 会列出受影响模组）
+          const modMatch = content.match(/Affected mods?:?\s*([\s\S]*?)(?=\n\n|\n---|$)/);
+          if (modMatch) {
+            const modSection = modMatch[1].trim().slice(0, 500);
+            if (modSection) {
+              parts.push('');
+              parts.push('【受影响模组】');
+              parts.push(modSection);
+            }
+          }
+          // 提取堆栈关键部分（Caused by 链）
+          const causedLines = [];
+          const clines = content.split('\n');
+          for (let i = 0; i < clines.length; i++) {
+            const l = clines[i];
+            if (l.includes('Caused by:') || l.includes('at net.minecraft') || l.includes('at ') && (l.includes('.java:') || l.includes('(Unknown Source)'))) {
+              causedLines.push(l.trim().slice(0, 250));
+              if (causedLines.length >= 30) break;
+            }
+          }
+          if (causedLines.length > 0) {
+            parts.push('');
+            parts.push('【调用堆栈】');
+            parts.push(causedLines.join('\n'));
+          }
+          return parts.join('\n');
         }
+
+        const crashDescription = crashContent ? extractCrashDescription(crashContent) : '';
 
         let result = { found: false };
         for (const rule of crashRules) {
@@ -499,6 +585,51 @@ module.exports = {
             }
           } catch (e) {
             console.error('[CrashAnalyze] CrashAnalyzer fallback failed:', e.message);
+          }
+        }
+
+        // 最终回退：文件系统找不到崩溃日志时（游戏秒崩来不及写 crash-reports），
+        // 用后端收集的 lastGameExitAnalysis 数据（进程退出码分析 + stdout/stderr logBuffer）
+        if (!result.found && ctx.sessions.lastGameExitAnalysis) {
+          const ea = ctx.sessions.lastGameExitAnalysis;
+          if (ea.isCrash) {
+            const bufLines = Array.isArray(ea.logBuffer) ? ea.logBuffer : [];
+            const fallbackExcerpt = bufLines.slice(-80).map((line) => {
+              const trimmed = String(line).trim();
+              if (!trimmed) return null;
+              // 标记来源：含 [VersePC] 的是启动器输出，其余是游戏输出
+              const source = trimmed.startsWith('[VersePC]') ? 'launcher' : 'latest.log';
+              return { source, line: trimmed };
+            }).filter(Boolean);
+
+            // 从进程输出提取错误相关行构造崩溃描述
+            let fallbackDescription = '';
+            const errorLines = bufLines
+              .map(l => String(l).trim())
+              .filter(l => l && (
+                l.includes('Exception') || l.includes('Error') ||
+                l.includes('error') || l.includes('ERROR') ||
+                l.includes('Failed') || l.includes('failed') ||
+                l.includes('at ') || l.includes('Caused by')
+              ));
+            if (errorLines.length > 0) {
+              fallbackDescription = '【进程错误输出】\n' + errorLines.slice(-25).join('\n');
+            }
+            if (ea.code !== undefined) {
+              fallbackDescription = (fallbackDescription ? fallbackDescription + '\n\n' : '') +
+                `【进程信息】\n退出码: ${ea.code}\n${ea.reason ? '退出原因: ' + ea.reason : ''}`;
+            }
+
+            result = {
+              found: true,
+              reason: ea.reason || `游戏异常退出（退出码: ${ea.code}）`,
+              solution: ea.suggestion || '请查看日志获取更多信息，或尝试重新启动游戏。',
+              modName: null,
+              logFile: logFile || '(进程输出)',
+              severity: ea.code === 0 ? 'low' : (ea.code === 137 || /内存|OOM|OutOfMemory/i.test(ea.reason || '') ? 'high' : 'medium'),
+              logExcerpt: fallbackExcerpt,
+              crashDescription: fallbackDescription
+            };
           }
         }
 

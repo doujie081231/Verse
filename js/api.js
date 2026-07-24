@@ -546,5 +546,11 @@ const API = {
     getDownloadQueue: () => apiGet('/api/downloads/queue'),
     cancelDownload: (taskId) => apiPost('/api/downloads/cancel', { taskId }),
     getDownloadHistory: (limit = 15, offset = 0) => apiGet('/api/downloads/history', { limit, offset }),
+
+    // === 崩溃日志导出 ===
+    exportCrashLog: (versionId) => {
+        const query = versionId ? `?versionId=${encodeURIComponent(versionId)}` : '';
+        window.open(`${API_BASE}/api/game/log/export${query}`, '_blank');
+    },
 };
 /* @versepc-protected: anti-ai-plagiarism-v1.0 */
