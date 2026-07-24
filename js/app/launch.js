@@ -392,6 +392,9 @@ async function retryLaunchDepDownload(versionId, sessionId) {
   }
 }
 
+let _gameStatusTimer = null;
+let _gameWasRunning = false;
+
 async function updateGameStatus() {
   try {
     const status = await API.getGameStatus();
@@ -411,14 +414,16 @@ async function updateGameStatus() {
       launchBtn.querySelector('span').textContent = '启动游戏';
 
       updateGameInstanceList(status.instances || []);
+      _gameWasRunning = true;
     } else {
-      const wasRunning = indicator.classList.contains('running');
+      const wasRunning = _gameWasRunning;
       indicator.classList.remove('running');
       statusText.textContent = '就绪';
       launchBtn.classList.remove('running');
       launchBtn.querySelector('span').textContent = '启动游戏';
 
       updateGameInstanceList([]);
+      _gameWasRunning = false;
 
       if (wasRunning) {
         try {
@@ -439,6 +444,10 @@ async function updateGameStatus() {
     }
   } catch (e) {
     console.error('[Launch] 更新游戏状态失败:', e);
+  } finally {
+    // 动态调整轮询间隔：游戏运行时 3 秒，空闲时 15 秒
+    if (_gameStatusTimer) clearTimeout(_gameStatusTimer);
+    _gameStatusTimer = setTimeout(updateGameStatus, _gameWasRunning ? 3000 : 15000);
   }
 }
 

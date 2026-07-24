@@ -141,7 +141,7 @@ Var CONFIG_BACKUP_PATH
         ${If} $0 == "0"
             DetailPrint "数据迁移成功，正在清理 C 盘旧数据..."
             RMDir /r "$PROFILE\.versepc"
-            nsExec::ExecToLog `powershell -NoProfile -Command "[IO.File]::WriteAllText('$INSTDIR\data-config.json', (@{dataDir='$INSTDIR\data'} | ConvertTo-Json -Compress), (New-Object Text.UTF8Encoding $false))"`
+            nsExec::ExecToLog `powershell -NoProfile -Command "[IO.File]::WriteAllText('$INSTDIR\data-config.json', (@{dataDir='$INSTDIR\data'} | ConvertTo-Json -Compress), (New-Object Text.UTF8Encoding $$false))"`
             DetailPrint "数据目录已设置为 $INSTDIR\data"
         ${Else}
             MessageBox MB_OK|MB_ICONEXCLAMATION "数据迁移失败（代码 $0），将继续使用 C 盘数据。$\n$\n你可以稍后在软件设置中手动修改数据目录。"
@@ -167,12 +167,12 @@ Var CONFIG_BACKUP_PATH
         StrCmp $3 "" _create_new_data 0
         StrCmp $3 "$INSTDIR" _create_new_data 0
         IfFileExists "$3\data\*.*" 0 _create_new_data
-            MessageBox MB_YESNO|MB_ICONWARNING "检测到旧安装目录「$3」中存有用户数据。$\n$\n您选择了不同的安装目录「$INSTDIR」，旧数据不会被自动迁移。$\n$\n选「是」返回重选目录，选「否」丢弃旧数据继续安装。" IDYES _abort_for_olddata IDNO _create_new_data
+            MessageBox MB_YESNO|MB_ICONEXCLAMATION "检测到旧安装目录「$3」中存有用户数据。$\n$\n您选择了不同的安装目录「$INSTDIR」，旧数据不会被自动迁移。$\n$\n选「是」返回重选目录，选「否」丢弃旧数据继续安装。" IDYES _abort_for_olddata IDNO _create_new_data
         _abort_for_olddata:
             Abort "用户取消安装以保留旧数据"
         _create_new_data:
         CreateDirectory "$INSTDIR\data"
-        nsExec::ExecToLog `powershell -NoProfile -Command "[IO.File]::WriteAllText('$INSTDIR\data-config.json', (@{dataDir='$INSTDIR\data'} | ConvertTo-Json -Compress), (New-Object Text.UTF8Encoding $false))"`
+        nsExec::ExecToLog `powershell -NoProfile -Command "[IO.File]::WriteAllText('$INSTDIR\data-config.json', (@{dataDir='$INSTDIR\data'} | ConvertTo-Json -Compress), (New-Object Text.UTF8Encoding $$false))"`
         DetailPrint "数据目录设置为 $INSTDIR\data"
     _data_dir_done:
 
@@ -214,7 +214,7 @@ Var CONFIG_BACKUP_PATH
     ; 原因：备份恢复的 data-config.json 内路径可能是旧安装目录，
     ;       换目录安装或路径变化时会导致 resolveDataDir() 解析到错误位置
     ; 修复：始终写入当前 $INSTDIR\data，确保数据目录指向正确路径
-    nsExec::ExecToLog `powershell -NoProfile -Command "[IO.File]::WriteAllText('$INSTDIR\data-config.json', (@{dataDir='$INSTDIR\data'} | ConvertTo-Json -Compress), (New-Object Text.UTF8Encoding $false))"`
+    nsExec::ExecToLog `powershell -NoProfile -Command "[IO.File]::WriteAllText('$INSTDIR\data-config.json', (@{dataDir='$INSTDIR\data'} | ConvertTo-Json -Compress), (New-Object Text.UTF8Encoding $$false))"`
     DetailPrint "data-config.json 已更新: dataDir=$INSTDIR\data"
 !macroend
 

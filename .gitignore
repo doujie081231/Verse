@@ -174,3 +174,26 @@ check-libs-output.txt
 check-ip.js
 check-libs.js
 test-screenshots/
+
+# NSIS 打包调试残留（构建日志、CDP 调试脚本、makensis 调试脚本、测试构建输出）
+build-*.log
+cdp-*.js
+check-7za.js
+check-build.js
+check-lock.js
+check-nsis-tpl.js
+check-temp.js
+debug-makensis-*
+__test_appbuilder/
+__test_appbuilder.7z
+__test_asar.7z
+analyze-build.js
+clean-dist.ps1
+find-lock*.ps1
+dist-clean/
+dist-final/
+dist2/
+dist_nsis/
+dist-v2/
+dist_release/
+dist_old_*/

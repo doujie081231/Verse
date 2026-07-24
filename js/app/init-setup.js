@@ -122,7 +122,6 @@ async function init() {
   }).catch(e => console.error('后台数据加载失败:', e));
 
   updateGameStatus();
-  setManagedInterval(updateGameStatus, 3000, 'updateGameStatus');
   checkJavaOnStartup();
 
   setTimeout(() => {

@@ -723,7 +723,7 @@ setupProtocolHandler({
 });
 try { _bootLog('after top-level IPC registration'); } catch (e) {}
 
-/* GPU 硬件加速 + 高帧率支持 - 默认启用以获得流畅界面 */
+/* GPU 硬件加速 - 默认启用以获得流畅界面 */
 const { DATA_DIR } = require('./main/paths');
 const disableGpuFile = path.join(DATA_DIR, '.disable-gpu');
 const safeMode = process.argv.includes('--safe-mode') || process.argv.includes('--disable-gpu');
@@ -732,14 +732,9 @@ const forceDisableGpu = process.argv.includes('--disable-gpu');
 app.commandLine.appendSwitch('high-dpi-support', '1');
 app.commandLine.appendSwitch('enable-use-zoom-for-dsf', 'true');
 app.commandLine.appendSwitch('force-color-profile', 'srgb');
-app.commandLine.appendSwitch('disable-frame-rate-limit');
 app.commandLine.appendSwitch('enable-gpu-rasterization');
 app.commandLine.appendSwitch('enable-zero-copy');
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
-// 后台节流优化：窗口被遮挡/最小化时不降低定时器和渲染频率
-app.commandLine.appendSwitch('disable-background-timer-throttling');
-app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
-app.commandLine.appendSwitch('disable-renderer-backgrounding');
 
 // 命令行 --safe-mode / --disable-gpu 或存在 .disable-gpu 标记文件时禁用 GPU 加速
 const shouldDisableGpu = forceDisableGpu || safeMode || require('fs').existsSync(disableGpuFile);
@@ -751,7 +746,7 @@ if (shouldDisableGpu) {
   if (safeMode) console.log('[GPU] Hardware acceleration disabled (safe mode)');
   else if (require('fs').existsSync(disableGpuFile)) console.log('[GPU] Hardware acceleration disabled (previous GPU failure)');
 } else {
-  console.log('[GPU] Hardware acceleration enabled (high frame rate mode)');
+  console.log('[GPU] Hardware acceleration enabled');
 }
 
 // GPU 状态变化：若回退到软件渲染，则写入标记下次启动禁用 GPU
@@ -1165,6 +1160,6 @@ const { registerModsIPC } = require('./main/mods-ipc');
 // IS_BETA 占位符 - 在构建时由 generate-integrity.js 替换为 true/false。
 // 保留在 main.js 中（构建脚本只处理 main.js），通过 updaterModule.setup 注入到 updater.js。
 // 使用构建时占位符替换可避免运行时环境检测的误判（beta.flag 曾被错误打包到正式版）。
-let IS_BETA = (() => { try { return false; } catch (_) { return false; } })();
+let IS_BETA = (() => { try { return __IS_BETA__; } catch (_) { return false; } })();
 
 /* @versepc-protected: anti-ai-plagiarism-v1.0 */
