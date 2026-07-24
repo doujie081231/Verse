@@ -118,9 +118,7 @@ const ctx = {
       'https://meta.fabricmc.net/': 'https://bmclapi2.bangbang93.com/fabric-meta/',
       'https://maven.minecraftforge.net/': 'https://bmclapi2.bangbang93.com/maven/',
       'https://maven.neoforged.net/': 'https://bmclapi2.bangbang93.com/maven/',
-      'https://maven.fabricmc.net/': 'https://bmclapi2.bangbang93.com/maven/',
-      'https://edge.forgecdn.net/': 'https://mod.mcimirror.top/',
-      'https://cdn.modrinth.com/': 'https://mod.mcimirror.top/'
+      'https://maven.fabricmc.net/': 'https://bmclapi2.bangbang93.com/maven/'
     },
     MCIM_MIRROR: {},
     JAVA_DOWNLOAD_MIRRORS: [

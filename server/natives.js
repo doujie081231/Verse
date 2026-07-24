@@ -640,14 +640,23 @@ function buildClasspath(versionJson, versionId, externalVersionDir = null) {
     // 此处跳过虚拟库记录的常规查找（避免 fallback 到 universal jar），改为主动查找 patched jar
     if (libName.startsWith('net.neoforged:neoforge:') && libName.endsWith(':client')) {
       const neoVer = libName.split(':')[2];
+      // 优先新命名：minecraft-client-patched-<ver>.jar
       const patchedRelPath = `net/neoforged/minecraft-client-patched/${neoVer}/minecraft-client-patched-${neoVer}.jar`;
       const patchedPath = findLibFile(patchedRelPath);
       if (patchedPath) {
         classpath.push(patchedPath);
         foundCount++;
       } else {
-        missingCount++;
-        missingList.push(libName);
+        // 回退旧命名：neoforge-<ver>-client.jar（NeoForge 21.1.2xx 早期版本）
+        const oldPatchedRelPath = `net/neoforged/neoforge/${neoVer}/neoforge-${neoVer}-client.jar`;
+        const oldPatchedPath = findLibFile(oldPatchedRelPath);
+        if (oldPatchedPath) {
+          classpath.push(oldPatchedPath);
+          foundCount++;
+        } else {
+          missingCount++;
+          missingList.push(libName);
+        }
       }
       continue;
     }
@@ -790,6 +799,14 @@ function buildClasspath(versionJson, versionId, externalVersionDir = null) {
     classpath.push(jar);
     foundCount++;
   }
+
+  /* NeoForge: 不在此处添加 universal jar 到 classpath。
+   * universal jar 必须由 FML 的 PathBasedLocator 通过 --fml.neoForgeVersion 参数
+   * 自动发现并加载为 mod。若手动加入 classpath，PathBasedLocator 会跳过它
+   * （"already located earlier"），导致 neoforge mod 不被加载。
+   * patched jar 通过 neoforge:ver:client 库条目加入 classpath（在 args-builder.js
+   * buildClasspath 调用前已补全库条目），universal jar 保持游离状态由 locator 发现。
+   */
 
   const CORE_JAR_MARKERS = ['fmlcore', 'javafmllanguage', 'mclanguage', 'lowcodelanguage'];
   const hasAnyForgeCoreInCp = CORE_JAR_MARKERS.some((name) => classpath.some((cp) => cp.includes(name)));

@@ -559,7 +559,7 @@ async function installForge(gameVersion, forgeVersion, onProgress = null, mirror
         return { success: false, error: 'version.json not found in installer' };
     }
 
-    const mavenEntries = entries.filter(e => e.startsWith('maven/'));
+    const mavenEntries = entries.filter(e => e.startsWith('maven/') && !e.endsWith('/'));
     let extractedCount = 0;
     for (const entry of mavenEntries) {
         const relativePath = entry.replace('maven/', '');

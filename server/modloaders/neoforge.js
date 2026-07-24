@@ -112,6 +112,31 @@ function findNeoForgeCoreJars(versionJson, searchBases, gameArgs) {
   const result = [];
   const prefix = 'net/neoforged/neoforge';
 
+  // 新版 NeoForge（20.6+/21.x/26.x）使用 --no-mod-manifest 构建 patched jar，
+  // patched jar 只含补丁后的 Minecraft 类，不含 NeoForge mod 类。
+  // 必须同时添加 patched jar + universal jar，否则启动崩溃。
+  // 当 version JSON 有 neoforge:ver:client 库条目时，natives.js 会找 patched jar（新命名）。
+  // 当 version JSON 没有该库条目时（如本例 21.1.234），需要在此主动查找。
+  if (_isNewScheme && !hasPatchedClientLib) {
+    for (const base of searchBases) {
+      if (!base) continue;
+      // 优先新命名：minecraft-client-patched-<ver>.jar
+      const newPatchedPath = path.join(base, 'net/neoforged/minecraft-client-patched', neoForgeVersion, `minecraft-client-patched-${neoForgeVersion}.jar`);
+      if (fs.existsSync(newPatchedPath)) {
+        result.push(newPatchedPath);
+        console.log(`[findNeoForgeCoreJars] 找到 patched jar（新命名）: ${path.basename(newPatchedPath)}`);
+        break;
+      }
+      // 回退旧命名：neoforge-<ver>-client.jar（NeoForge 21.1.2xx 早期版本）
+      const oldPatchedPath = path.join(base, prefix, neoForgeVersion, `neoforge-${neoForgeVersion}-client.jar`);
+      if (fs.existsSync(oldPatchedPath)) {
+        result.push(oldPatchedPath);
+        console.log(`[findNeoForgeCoreJars] 找到 patched jar（旧命名）: ${path.basename(oldPatchedPath)}`);
+        break;
+      }
+    }
+  }
+
   for (const base of searchBases) {
     if (!base) continue;
     const dirPath = path.join(base, prefix, neoForgeVersion);

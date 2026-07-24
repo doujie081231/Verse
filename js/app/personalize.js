@@ -1,4 +1,14 @@
 async function selectWallpaper(element) {
+    // 懒初始化壁纸引擎（若启动时因壁纸为"无"而跳过了初始化）
+    if (typeof wallpaperEngine === 'undefined' || !wallpaperEngine) {
+        if (typeof _lazyLoadScript === 'function') {
+            try { await _lazyLoadScript('js/three.bundle.js'); } catch (e) {}
+        }
+        if (typeof initWallpaper === 'function') {
+            try { initWallpaper(); } catch (e) { console.error('[Wallpaper] init error:', e); }
+        }
+    }
+
     document.querySelectorAll('.wallpaper-option').forEach(opt => opt.classList.remove('active'));
     element.classList.add('active');
 

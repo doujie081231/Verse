@@ -650,6 +650,47 @@ function isJarIntactDeep(filePath) {
   }
 }
 
+/**
+ * 读取 JAR 文件中的模组标识（modId）。
+ * 依次尝试：META-INF/mods.toml（Forge 1.13+）→ mcmod.info（Forge 旧版）→ fabric.mod.json（Fabric）。
+ * @param {string} filePath - JAR 文件路径
+ * @returns {string|null} 第一个 modId，失败返回 null
+ */
+function readJarModId(filePath) {
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    const AdmZip = getAdmZip();
+    const zip = new AdmZip(filePath);
+
+    // Forge 1.13+：mods.toml
+    const modsToml = zip.getEntry('META-INF/mods.toml');
+    if (modsToml) {
+      const text = modsToml.getData().toString('utf8');
+      // TOML 中 [[mods]] 段下的 modId = "xxx"
+      const m = text.match(/\[\[mods\]\][\s\S]*?modId\s*=\s*["']([^"']+)["']/);
+      if (m && m[1]) return m[1].trim();
+    }
+
+    // Forge 旧版：mcmod.info（JSON 数组）
+    const mcmod = zip.getEntry('mcmod.info');
+    if (mcmod) {
+      const text = mcmod.getData().toString('utf8');
+      const data = JSON.parse(text);
+      if (Array.isArray(data) && data[0] && data[0].modid) return String(data[0].modid).trim();
+      if (data && data.modid) return String(data.modid).trim();
+    }
+
+    // Fabric：fabric.mod.json
+    const fabricMod = zip.getEntry('fabric.mod.json');
+    if (fabricMod) {
+      const text = fabricMod.getData().toString('utf8');
+      const data = JSON.parse(text);
+      if (data && data.id) return String(data.id).trim();
+    }
+  } catch (_) {}
+  return null;
+}
+
 /* SHA1 计算 */
 
 /**
@@ -827,6 +868,7 @@ module.exports = {
   crc32,
   isJarIntact,
   isJarIntactDeep,
+  readJarModId,
   calculateSHA1,
   calculateSHA1Sync,
   verifyFileSha1,

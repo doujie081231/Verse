@@ -60,7 +60,7 @@ function getMirrorUrls(originalUrl) {
   const mirrorUrls = [];
   const officialUrl = originalUrl;
 
-  // 收集 BMCLAPI/MCIM 镜像（cdn.modrinth.com → mod.mcimirror.top 等）
+  // 收集 BMCLAPI 镜像
   for (const [original, mirror] of Object.entries(ctx.mirrors.BMCLAPI_MIRROR)) {
     if (originalUrl.startsWith(original)) {
       const mirrored = originalUrl.replace(original, mirror);

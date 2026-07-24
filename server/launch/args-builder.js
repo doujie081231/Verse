@@ -38,6 +38,46 @@ function buildLaunchArguments(versionJson, settings, account, versionId, customG
     }
   }
 
+  // NeoForge: 在 buildClasspath 之前补全 neoforge:ver:client 库条目。
+  // 背景：整合包 version JSON 可能缺少 neoforge:ver:client 库条目（仅含 --fml.neoForgeVersion 参数）。
+  // 若不补全，natives.buildClasspath 的兜底逻辑会把 universal jar 加入 classpath，
+  // 导致 FML 的 PathBasedLocator 跳过它（"already located earlier"），neoforge mod 不被加载。
+  // 正确做法：补全库条目让 buildClasspath 找到 patched jar，universal jar 不加入 classpath，
+  // 由 PathBasedLocator 通过 --fml.neoForgeVersion 参数自动发现并加载为 mod。
+  const _preGameArgs = versionJson.arguments?.game || [];
+  const _preHasNeoClientLib = (versionJson.libraries || []).some((l) =>
+    l.name && /^net\.neoforged:neoforge:[^:]+:client$/.test(l.name)
+  );
+  if (!_preHasNeoClientLib) {
+    const _nvIdx = _preGameArgs.findIndex((a) => typeof a === 'string' && a === '--fml.neoForgeVersion');
+    if (_nvIdx >= 0 && _nvIdx + 1 < _preGameArgs.length) {
+      const _nv = _preGameArgs[_nvIdx + 1];
+      const _newPatchedPath = path.join(ctx.dirs.LIBRARIES_DIR, 'net', 'neoforged', 'minecraft-client-patched', _nv, `minecraft-client-patched-${_nv}.jar`);
+      const _oldPatchedPath = path.join(ctx.dirs.LIBRARIES_DIR, 'net', 'neoforged', 'neoforge', _nv, `neoforge-${_nv}-client.jar`);
+      if (fs.existsSync(_newPatchedPath) || fs.existsSync(_oldPatchedPath)) {
+        const _actualPath = fs.existsSync(_newPatchedPath) ? _newPatchedPath : _oldPatchedPath;
+        let _size = 0, _sha1 = '';
+        try {
+          _size = fs.statSync(_actualPath).size;
+          _sha1 = crypto.createHash('sha1').update(fs.readFileSync(_actualPath)).digest('hex');
+        } catch (e) {}
+        versionJson.libraries = versionJson.libraries || [];
+        versionJson.libraries.push({
+          name: `net.neoforged:neoforge:${_nv}:client`,
+          downloads: {
+            artifact: {
+              path: `net/neoforged/neoforge/${_nv}/neoforge-${_nv}-client.jar`,
+              size: _size,
+              sha1: _sha1,
+              url: `https://maven.neoforged.net/releases/net/neoforged/neoforge/${_nv}/neoforge-${_nv}-client.jar`
+            }
+          }
+        });
+        console.log(`[Launch] NeoForge: buildClasspath 前补全 neoforge:${_nv}:client 库条目 (path=${path.basename(_actualPath)})`);
+      }
+    }
+  }
+
   const classpath = natives.buildClasspath(versionJson, actualVersionId, externalVersionDir);
   const nativesDir = natives.extractNatives(versionJson, actualVersionId, externalVersionDir);
 
@@ -567,7 +607,7 @@ function buildLaunchArguments(versionJson, settings, account, versionId, customG
   //   "Modules neoforge and minecraft export package net.minecraft.client.gui.font.providers"
   // 加入 ignoreList 后 BootstrapLauncher 会跳过 patched jar 不加入 JPMS 模块层，
   // 但它仍在 classpath 中，locator 仍能通过 :client 库条目找到它。
-  const _neoClientLib = (versionJson.libraries || []).find((l) =>
+  let _neoClientLib = (versionJson.libraries || []).find((l) =>
     l.name && /^net\.neoforged:neoforge:[^:]+:client$/.test(l.name)
   );
   if (_neoClientLib) {
@@ -586,7 +626,41 @@ function buildLaunchArguments(versionJson, settings, account, versionId, customG
       jvmArgs.push(`-DignoreList=${_patchedJarName}`);
       console.log(`[Launch] NeoForge: 已创建 ignoreList 并加入 patched jar: ${_patchedJarName}`);
     }
+  } else {
+    // Fallback: version JSON 没有 neoforge:ver:client 库条目时，
+    // 通过 --fml.neoForgeVersion 参数识别 NeoForge 版本，把可能的 patched jar 加入 ignoreList。
+    // patched jar 文件名有两种命名（新/旧），都加入 ignoreList 以覆盖所有情况。
+    const _neoVerIdx = gameArgsForDetection.findIndex((a) => typeof a === 'string' && a === '--fml.neoForgeVersion');
+    if (_neoVerIdx >= 0 && _neoVerIdx + 1 < gameArgsForDetection.length) {
+      const _neoVer = gameArgsForDetection[_neoVerIdx + 1];
+      const _patchedJarNames = [
+        `minecraft-client-patched-${_neoVer}.jar`,
+        `neoforge-${_neoVer}-client.jar`
+      ];
+      const _ignoreListIdx = jvmArgs.findIndex((a) => typeof a === 'string' && a.startsWith('-DignoreList='));
+      const _toAdd = [];
+      if (_ignoreListIdx >= 0) {
+        for (const _jarName of _patchedJarNames) {
+          if (!jvmArgs[_ignoreListIdx].includes(_jarName)) {
+            _toAdd.push(_jarName);
+          }
+        }
+        if (_toAdd.length > 0) {
+          jvmArgs[_ignoreListIdx] = jvmArgs[_ignoreListIdx] + ',' + _toAdd.join(',');
+          console.log(`[Launch] NeoForge (fallback): 已将 patched jar 加入 ignoreList: ${_toAdd.join(', ')}`);
+        }
+      } else {
+        jvmArgs.push(`-DignoreList=${_patchedJarNames.join(',')}`);
+        console.log(`[Launch] NeoForge (fallback): 已创建 ignoreList 并加入 patched jar: ${_patchedJarNames.join(', ')}`);
+      }
+    }
   }
+
+  // NeoForge: neoforge:ver:client 库条目已在 buildClasspath 之前补全（见函数开头）。
+  // 此处只需同步 _neoClientLib 引用，供后续 ignoreList 逻辑使用。
+  _neoClientLib = (versionJson.libraries || []).find((l) =>
+    l.name && /^net\.neoforged:neoforge:[^:]+:client$/.test(l.name)
+  );
 
   // Forge 1.20.1 split package 冲突已在导入流程源头修复（curseforge.js/importer.js
   // 复制继承版本 jar 到新版本目录并命名为 ${versionId}.jar），此处不再需要临时补丁。

@@ -132,12 +132,21 @@ async function init() {
   cacheCommonElements();
 
   if (typeof initWallpaper === 'function') {
-    _lazyLoadScript('js/three.bundle.js').then(() => {
-      try { initWallpaper(); } catch (e) { console.error('[Wallpaper] init error:', e); }
-      loadWallpaperSettings();
-    }).catch(() => console.warn('[Wallpaper] THREE.js load failed'));
+    // 先检查壁纸设置，只有配置了壁纸才加载 THREE.js 和初始化壁纸引擎
+    (async () => {
+      try {
+        const savedWallpaper = await window.electronAPI?.store?.get('versepc_wallpaper');
+        if (savedWallpaper && savedWallpaper !== 'none') {
+          _lazyLoadScript('js/three.bundle.js').then(() => {
+            try { initWallpaper(); } catch (e) { console.error('[Wallpaper] init error:', e); }
+            loadWallpaperSettings();
+          }).catch(() => console.warn('[Wallpaper] THREE.js load failed'));
+        }
+      } catch (e) {}
+    })();
   }
 
+  // 设置页面的壁纸交互（不需要初始化引擎，仅在用户操作时懒加载）
   initWallpaperDropZone();
   initWallpaperAutoAdapt();
 

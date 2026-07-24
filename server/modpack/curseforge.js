@@ -13,7 +13,7 @@ const http = require('../http-client');
 const versions = require('../versions');
 const modloaders = require('../modloaders');
 
-const { _dedupeVersionId, _cleanDownloadingResidue, isModpackPathSafe, _repairCorruptedModJars, relocateMisplacedResourcePacks, resolveConcurrency, computeModTimeout, createProgressUpdater } = require('./shared');
+const { _dedupeVersionId, _cleanDownloadingResidue, isModpackPathSafe, _repairCorruptedModJars, relocateMisplacedResourcePacks, resolveConcurrency, computeModTimeout, createProgressUpdater, _saveModManifest } = require('./shared');
 const { completeModpackDependencies } = require('./dep-completion');
 
 /**
@@ -428,6 +428,22 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
                       agent: _cfAgent
                     });
                     if (utils.isJarIntact(destPath)) {
+                      if (cfModFiles[index]) {
+                        cfModFiles[index]._destPath = destPath;
+                        try { cfModFiles[index]._modId = utils.readJarModId(destPath); } catch (_) {}
+                        try {
+                          const fi = fileInfo && fileInfo.data ? fileInfo.data : (_cfFileInfoMap[fileID] || null);
+                          if (fi) {
+                            cfModFiles[index]._fileInfo = {
+                              id: fi.id || fileID,
+                              fileName: fileName || fi.fileName || '',
+                              downloadUrl: fi.downloadUrl || '',
+                              fileLength: fi.fileLength || 0,
+                              sha1: (fi.hashes || []).find((h) => h.algo === 'Sha1')?.value || ''
+                            };
+                          }
+                        } catch (_) {}
+                      }
                       cfDownloaded = true;
                       break;
                     } else {
@@ -483,6 +499,19 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
                   agent: _cfAgent
                 });
                 if (utils.isJarIntact(destPath)) {
+                  if (cfModFiles[index]) {
+                    cfModFiles[index]._destPath = destPath;
+                    try { cfModFiles[index]._modId = utils.readJarModId(destPath); } catch (_) {}
+                    try {
+                      cfModFiles[index]._fileInfo = {
+                        id: altFile.id || fileID,
+                        fileName: altFile.downloadUrl ? path.basename(altFile.downloadUrl) : (altFile.fileName || path.basename(destPath)),
+                        downloadUrl: altFile.downloadUrl || '',
+                        fileLength: altFile.fileLength || 0,
+                        sha1: (altFile.hashes || []).find((h) => h.algo === 'Sha1')?.value || ''
+                      };
+                    } catch (_) {}
+                  }
                   cfDownloaded = true;
                 } else {
                   try { fs.unlinkSync(destPath); } catch (_) {}
@@ -586,6 +615,28 @@ async function _importCurseForge(zip, manifestEntry, filePath, progress, targetV
       } catch (e) {
         console.warn(`[CurseForge] 保存失败模组列表失败: ${e.message}`);
       }
+    }
+
+    // 保存模组清单，供启动前校验与自动修复
+    try {
+      const manifestMods = [];
+      for (let i = 0; i < cfFiles.length; i++) {
+        const m = cfModFiles[i];
+        if (m && m.status === 'completed' && m._fileInfo) {
+          manifestMods.push({
+            projectID: cfFiles[i].projectID,
+            fileID: cfFiles[i].fileID,
+            fileName: m._fileInfo.fileName || m.name || '',
+            downloadUrl: m._fileInfo.downloadUrl || '',
+            fileLength: m._fileInfo.fileLength || 0,
+            sha1: m._fileInfo.sha1 || '',
+            modId: m._modId || null
+          });
+        }
+      }
+      _saveModManifest(versionDir, manifestMods);
+    } catch (e) {
+      console.warn(`[CurseForge] 保存模组清单失败: ${e.message}`);
     }
 
     progress('repair', '正在修复损坏的模组文件...', 88);

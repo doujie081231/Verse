@@ -309,6 +309,26 @@ async function doLaunch(versionId, versionJson, settings, account, externalVersi
     console.warn(`[Launch] 启动前检查 missing_mods_checker.json 失败: ${e.message}`);
   }
 
+  // 启动前校验整合包模组清单：检测文件缺失、JAR 损坏、内容被替换等问题
+  // 这是导入阶段保存的 mod-manifest.json，包含每个模组的 fileId、期望 modId 等信息
+  try {
+    const modpackShared = require('../modpack/shared');
+    const modIssues = modpackShared._verifyModManifest(gameDir);
+    if (modIssues.length > 0) {
+      console.log(`[Launch] 检测到 ${modIssues.length} 个模组文件异常，启动前自动修复...`);
+      for (const issue of modIssues) {
+        console.log(`[Launch] 模组异常: ${path.basename(issue.filePath)} [${issue.type}] ${issue.detail}`);
+      }
+      const repairResult = await modpackShared._repairModManifest(gameDir, modIssues, settings);
+      console.log(`[Launch] 模组自动修复完成: ${repairResult.fixed} 成功, ${repairResult.failed} 失败`);
+      if (repairResult.failed > 0) {
+        console.warn(`[Launch] 以下模组修复失败: ${repairResult.items.filter((i) => i.status === 'failed').map((i) => i.fileName).join(', ')}`);
+      }
+    }
+  } catch (e) {
+    console.warn(`[Launch] 启动前模组清单校验失败: ${e.message}`);
+  }
+
   // 启动前检查 libraries 完整性：缺失的核心库（如 fabric-loader、intermediary）会导致
   // Java 找不到主类而立即退出，且不会产生游戏日志或 hs_err 文件，难以排查。
   // 这里扫描版本 JSON 中所有 libraries，缺失的自动从镜像补下。

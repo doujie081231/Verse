@@ -39,9 +39,6 @@ const PageModpacks = {
                   </div>
                 </div>
               </div>
-              </div>
-            </div>
-            <div class="filter-row">
               <div class="filter-group">
                 <label class="filter-label">下载源</label>
                 <div class="custom-select custom-select-sm" id="modpack-filter-source-wrapper">

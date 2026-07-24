@@ -155,6 +155,157 @@ async function _repairCorruptedModJars(versionDir) {
     return { repaired, failed };
 }
 
+/**
+ * 保存模组清单到版本目录，供启动前校验使用。
+ * @param {string} versionDir - 版本目录
+ * @param {Array<{projectID:number,fileID:number,fileName:string,downloadUrl:string,fileLength:number,sha1:string,modId:string|null}>} mods - 模组列表
+ * @returns {void}
+ */
+function _saveModManifest(versionDir, mods) {
+    try {
+        const manifestPath = path.join(versionDir, 'mod-manifest.json');
+        fs.writeFileSync(manifestPath, JSON.stringify({
+            generatedAt: new Date().toISOString(),
+            mods: mods || []
+        }, null, 2));
+        logger.info(`已保存模组清单: ${manifestPath} (${(mods || []).length} 个)`);
+    } catch (e) {
+        logger.warn(`保存模组清单失败: ${e.message}`);
+    }
+}
+
+/**
+ * 读取版本目录下的模组清单。
+ * @param {string} versionDir - 版本目录
+ * @returns {{generatedAt:string,mods:Array}|null}
+ */
+function _loadModManifest(versionDir) {
+    try {
+        const manifestPath = path.join(versionDir, 'mod-manifest.json');
+        if (!fs.existsSync(manifestPath)) return null;
+        return JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    } catch (e) {
+        logger.warn(`读取模组清单失败: ${e.message}`);
+        return null;
+    }
+}
+
+/**
+ * 校验模组清单中的文件是否完整且内容正确。
+ * @param {string} versionDir - 版本目录
+ * @returns {Array<{type:'missing'|'corrupted'|'wrong_modId',mod:object,filePath:string,detail:string}>}
+ */
+function _verifyModManifest(versionDir) {
+    const manifest = _loadModManifest(versionDir);
+    if (!manifest || !Array.isArray(manifest.mods)) return [];
+
+    const issues = [];
+    const modsDir = path.join(versionDir, 'mods');
+    for (const mod of manifest.mods) {
+        if (!mod.fileName) continue;
+        // 只校验 mods 目录下的 JAR 文件；资源包 zip 在导入时会被移到 resourcepacks
+        if (!mod.fileName.toLowerCase().endsWith('.jar')) continue;
+        const filePath = path.join(modsDir, mod.fileName);
+        if (!fs.existsSync(filePath)) {
+            issues.push({ type: 'missing', mod, filePath, detail: '文件不存在' });
+            continue;
+        }
+        if (!utils.isJarIntactDeep(filePath)) {
+            issues.push({ type: 'corrupted', mod, filePath, detail: 'JAR 结构损坏' });
+            continue;
+        }
+        if (mod.modId) {
+            const currentModId = utils.readJarModId(filePath);
+            if (currentModId && currentModId !== mod.modId) {
+                issues.push({ type: 'wrong_modId', mod, filePath, detail: `内容不匹配：期望 ${mod.modId}，实际 ${currentModId}` });
+            }
+        }
+    }
+    return issues;
+}
+
+/**
+ * 根据模组清单修复损坏/缺失/内容错误的模组文件。
+ * @param {string} versionDir - 版本目录
+ * @param {Array} issues - _verifyModManifest 返回的问题列表
+ * @param {object} settings - 应用设置（用于获取 CurseForge API Key）
+ * @returns {Promise<{fixed:number,failed:number,items:Array}>}
+ */
+async function _repairModManifest(versionDir, issues, settings) {
+    const result = { fixed: 0, failed: 0, items: [] };
+    if (!Array.isArray(issues) || issues.length === 0) return result;
+
+    const cfApiKey = settings && settings.curseforgeApiKey ? settings.curseforgeApiKey : '$2a$10$bL4bIL5pUWqfcO7KQtnMReakwtfHbNKh6v1uTpKlzhwoueEJQnPnm';
+    const modsDir = path.join(versionDir, 'mods');
+
+    for (const issue of issues) {
+        const mod = issue.mod || {};
+        const filePath = issue.filePath;
+        if (!mod.projectID || !mod.fileID) {
+            result.failed++;
+            result.items.push({ fileName: mod.fileName, status: 'skipped', reason: '缺少 projectID/fileID，无法重新下载' });
+            continue;
+        }
+
+        let fixed = false;
+        try {
+            // 先删除损坏/错误的旧文件
+            if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+
+            let fileInfo = null;
+            try {
+                const res = await http.fetchJSON(`${ctx.urls.CURSEFORGE_API}/mods/${mod.projectID}/files/${mod.fileID}`, { 'x-api-key': cfApiKey });
+                if (res && res.data) fileInfo = res.data;
+            } catch (e) {
+                logger.warn(`重新获取文件信息失败 ${mod.projectID}/${mod.fileID}: ${e.message}`);
+            }
+
+            const targetName = fileInfo && fileInfo.fileName ? fileInfo.fileName : mod.fileName;
+            const targetPath = path.join(modsDir, targetName);
+            const downloadUrl = fileInfo && fileInfo.downloadUrl ? fileInfo.downloadUrl : (mod.downloadUrl || null);
+
+            if (!downloadUrl) {
+                result.failed++;
+                result.items.push({ fileName: targetName, status: 'failed', reason: '无可用下载链接' });
+                continue;
+            }
+
+            // 如果目标文件名和原路径不同，先删除原路径
+            if (targetPath !== filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+
+            await http._dlSingle(downloadUrl, targetPath, { retries: 2, timeout: 300000 });
+
+            if (!utils.isJarIntactDeep(targetPath)) {
+                try { fs.unlinkSync(targetPath); } catch (_) {}
+                result.failed++;
+                result.items.push({ fileName: targetName, status: 'failed', reason: '下载后 JAR 校验失败' });
+                continue;
+            }
+
+            if (mod.modId) {
+                const currentModId = utils.readJarModId(targetPath);
+                if (currentModId && currentModId !== mod.modId) {
+                    try { fs.unlinkSync(targetPath); } catch (_) {}
+                    result.failed++;
+                    result.items.push({ fileName: targetName, status: 'failed', reason: `modId 仍不匹配：期望 ${mod.modId}，实际 ${currentModId}` });
+                    continue;
+                }
+            }
+
+            fixed = true;
+            result.fixed++;
+            result.items.push({ fileName: targetName, status: 'fixed', reason: issue.detail });
+            logger.info(`模组清单修复成功: ${targetName} (${issue.detail})`);
+        } catch (e) {
+            result.failed++;
+            result.items.push({ fileName: mod.fileName, status: 'failed', reason: e.message });
+            logger.warn(`模组清单修复失败 ${mod.fileName}: ${e.message}`);
+        }
+    }
+
+    return result;
+}
+
 const _WIN_RESERVED_NAMES = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\.|$)/i;
 function isModpackPathSafe(entryPath) {
     if (!entryPath) return false;
@@ -768,4 +919,8 @@ module.exports = {
     createProgressUpdater,
     _downloadMissingModsCheckerFiles,
     _normalizeMissingModsItems,
+    _saveModManifest,
+    _loadModManifest,
+    _verifyModManifest,
+    _repairModManifest,
 };

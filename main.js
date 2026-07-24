@@ -794,7 +794,7 @@ app.whenReady().then(async () => {
         loadServerModule();
         loadOk = true;
       } catch (e) {
-        console.error('[Server] Load failed:', e.message);
+        console.error('[Server] Load failed:', e.message, '\nStack:', e.stack);
       }
       // 只有加载成功才标记 _serverReady，避免后续调用 NPE
       if (loadOk) {
