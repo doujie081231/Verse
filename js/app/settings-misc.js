@@ -50,6 +50,88 @@ async function doMemoryOptimize() {
     }
 }
 
+// === 性能诊断：显示各进程 CPU/内存占用 ===
+let _perfDiagTimer = null;
+const _PROCESS_TYPE_LABELS = {
+    'Browser': '主进程',
+    'GPU': 'GPU 进程',
+    'Renderer': '渲染进程',
+    'Zygote': 'Zygote',
+    'Utility': '工具进程',
+    'tab': '标签页',
+    'service': '服务'
+};
+
+async function refreshProcessMetrics() {
+    try {
+        const metrics = await window.electronAPI.getProcessMetrics();
+        const rowsEl = document.getElementById('perf-diag-rows');
+        const statusEl = document.getElementById('perf-diag-status');
+        if (!rowsEl) return;
+
+        if (!metrics || metrics.length === 0) {
+            rowsEl.innerHTML = '<div style="padding: 12px; color: var(--text-tertiary); text-align: center;">无法获取进程信息</div>';
+            if (statusEl) statusEl.textContent = '获取失败';
+            return;
+        }
+
+        const html = metrics.map((m) => {
+            const typeLabel = _PROCESS_TYPE_LABELS[m.type] || m.type || '未知';
+            const namePart = m.name ? ` <span style="color: var(--text-tertiary); font-size: 11px;">${m.name}</span>` : '';
+            const cpuColor = m.cpuPercent > 30 ? '#ef4444' : (m.cpuPercent > 10 ? '#f59e0b' : 'var(--text-primary)');
+            const memMB = (m.memoryKB / 1024).toFixed(1);
+            return `<div style="display: grid; grid-template-columns: 2fr 1fr 1fr 1.5fr; padding: 6px 12px; border-bottom: 1px solid var(--border); align-items: center;">
+                <span>${typeLabel}${namePart}</span>
+                <span style="text-align:right; color: ${cpuColor}; font-weight: 600;">${m.cpuPercent}%</span>
+                <span style="text-align:right;">${memMB} MB</span>
+                <span style="text-align:right; color: var(--text-tertiary);">${m.idleWakeups || 0}</span>
+            </div>`;
+        }).join('');
+        rowsEl.innerHTML = html;
+
+        if (statusEl) {
+            const top = metrics[0];
+            const topLabel = _PROCESS_TYPE_LABELS[top.type] || top.type;
+            statusEl.textContent = `更新于 ${new Date().toLocaleTimeString()} | 最高: ${topLabel} ${top.cpuPercent}%`;
+        }
+    } catch (e) {
+        const statusEl = document.getElementById('perf-diag-status');
+        if (statusEl) statusEl.textContent = '错误: ' + e.message;
+    }
+}
+
+function startPerfDiagAutoRefresh() {
+    stopPerfDiagAutoRefresh();
+    const cb = document.getElementById('perf-diag-autorefresh');
+    if (!cb || !cb.checked) return;
+    refreshProcessMetrics();
+    _perfDiagTimer = setInterval(refreshProcessMetrics, 2000);
+}
+
+function stopPerfDiagAutoRefresh() {
+    if (_perfDiagTimer) {
+        clearInterval(_perfDiagTimer);
+        _perfDiagTimer = null;
+    }
+}
+
+// 初始化性能诊断：绑定自动刷新开关
+function initPerfDiag() {
+    const cb = document.getElementById('perf-diag-autorefresh');
+    if (cb) {
+        cb.addEventListener('change', () => {
+            if (cb.checked) startPerfDiagAutoRefresh();
+            else stopPerfDiagAutoRefresh();
+        });
+    }
+    // 延迟启动，等卡片渲染完
+    setTimeout(() => {
+        if (document.getElementById('perf-diag-rows')) {
+            startPerfDiagAutoRefresh();
+        }
+    }, 500);
+}
+
 async function exportSettings() {
     try {
         const allSettings = {

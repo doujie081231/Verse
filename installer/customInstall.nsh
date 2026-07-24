@@ -118,14 +118,11 @@ Var CONFIG_BACKUP_PATH
 
 !macro customInit
     SetAutoClose false
-    ${nsProcess::KillProcess} "VersePC.exe" $R0
-    Sleep 300
-    ${nsProcess::KillProcess} "VersePC.exe" $R0
-    Sleep 300
-    ${nsProcess::KillProcess} "VersePC.exe" $R0
-    Sleep 300
+    ; 使用 taskkill 替代 nsProcess 插件（nsProcess 不在 electron-builder 默认 NSIS 中）
     nsExec::ExecToStack 'taskkill /F /IM VersePC.exe /T'
     Sleep 500
+    nsExec::ExecToStack 'taskkill /F /IM VersePC.exe /T'
+    Sleep 300
     nsExec::ExecToStack 'taskkill /F /IM VersePC.exe /T'
     Sleep 300
 
@@ -191,9 +188,9 @@ Var CONFIG_BACKUP_PATH
         MessageBox MB_YESNO|MB_ICONQUESTION "检测到系统缺少 VC++ 运行库（Microsoft Visual C++ Redistributable）。$\n$\n这是运行 VersePC 的必要组件，是否现在自动安装？" IDYES _vcpp_install IDNO _vcpp_found
     _vcpp_install:
         DetailPrint "正在下载 VC++ 运行库..."
-        inetc::get /QUESTION "N" /Resume "正在下载 VC++ 运行库..." "https://aka.ms/vs/17/release/vc_redist.x64.exe" "$TEMP\vc_redist.x64.exe"
+        NSISdl::download "https://aka.ms/vs/17/release/vc_redist.x64.exe" "$TEMP\vc_redist.x64.exe"
         Pop $0
-        StrCmp $0 "OK" _vcpp_download_ok _vcpp_download_fail
+        StrCmp $0 "success" _vcpp_download_ok _vcpp_download_fail
     _vcpp_download_fail:
         MessageBox MB_OK|MB_ICONEXCLAMATION "VC++ 运行库下载失败。$\n$\n请手动安装：https://aka.ms/vs/17/release/vc_redist.x64.exe$\n$\n安装将继续，但启动器可能无法正常运行。"
         Goto _vcpp_found
@@ -217,7 +214,7 @@ Var CONFIG_BACKUP_PATH
     ; 原因：备份恢复的 data-config.json 内路径可能是旧安装目录，
     ;       换目录安装或路径变化时会导致 resolveDataDir() 解析到错误位置
     ; 修复：始终写入当前 $INSTDIR\data，确保数据目录指向正确路径
-    nsExec::ExecToLog `powershell -NoProfile -Command "[IO.File]::WriteAllText('$INSTDIR\data-config.json', (@{dataDir='$INSTDIR\data'} | ConvertToJson -Compress), (New-Object Text.UTF8Encoding $false))"`
+    nsExec::ExecToLog `powershell -NoProfile -Command "[IO.File]::WriteAllText('$INSTDIR\data-config.json', (@{dataDir='$INSTDIR\data'} | ConvertTo-Json -Compress), (New-Object Text.UTF8Encoding $false))"`
     DetailPrint "data-config.json 已更新: dataDir=$INSTDIR\data"
 !macroend
 
@@ -274,12 +271,11 @@ Var CONFIG_BACKUP_PATH
 
 !macro customUnInit
     SetAutoClose false
-    ${nsProcess::KillProcess} "VersePC.exe" $R0
-    Sleep 300
-    ${nsProcess::KillProcess} "VersePC.exe" $R0
-    Sleep 300
+    ; 使用 taskkill 替代 nsProcess 插件（nsProcess 不在 electron-builder 默认 NSIS 中）
     nsExec::ExecToStack 'taskkill /F /IM VersePC.exe /T'
     Sleep 500
+    nsExec::ExecToStack 'taskkill /F /IM VersePC.exe /T'
+    Sleep 300
 
     ; 静默卸载时（如覆盖安装调用旧卸载器）不弹窗，默认保留用户数据
     IfSilent _keep_versions _ask_keep_versions

@@ -163,6 +163,7 @@ module.exports = {
             const rdType = rdData.projectType || 'mod';
             const rdSavePath = rdData.savePath || '';
             const rdCustomName = rdData.customName || '';
+            const rdSource = rdData.source || 'modrinth';
 
             if (!rdVersionId && !rdProjectId) { sendError(res, 'Missing versionId or projectId', 400); return; }
 
@@ -206,18 +207,57 @@ module.exports = {
                 // 之前两次 await fetchJSON 是串行的，UI 实测前 3-4 秒 chunks=0/0 空等
                 // modpack 场景下 projectInfo 只是为了拿 title，完全可以和 versionData 并行
                 const _isModpackFetch = rdType === 'modpack';
-                let _versionPromise;
-                if (rdVersionId) {
-                    _versionPromise = http.fetchJSON(`${MODRINTH_API}/version/${rdVersionId}`);
-                } else {
-                    _versionPromise = http.fetchJSON(`${MODRINTH_API}/project/${rdProjectId}/version?limit=1`)
-                        .then(versions => versions?.[0]);
-                }
-                const _projectInfoPromise = _isModpackFetch
-                    ? http.fetchJSON(`${MODRINTH_API}/project/${rdProjectId}`).catch(() => null)
-                    : Promise.resolve(null);
+                let versionData, projectInfo;
 
-                const [versionData, projectInfo] = await Promise.all([_versionPromise, _projectInfoPromise]);
+                if (rdSource === 'curseforge') {
+                    // CurseForge：用 /mods/{modId}/files/{fileId} 获取单个文件，
+                    // /mods/{modId} 获取项目标题（整合包场景才需要）
+                    const cfApiKey = settings.curseforgeApiKey || '$2a$10$bL4bIL5pUWqfcO7KQtnMReakwtfHbNKh6v1uTpKlzhwoueEJQnPnm';
+                    const cfHeaders = { 'x-api-key': cfApiKey };
+
+                    const _cfFilePromise = rdVersionId
+                        ? http.fetchJSON(`${CURSEFORGE_API}/mods/${rdProjectId}/files/${rdVersionId}`, cfHeaders)
+                            .then(r => r.data || r).catch(() => null)
+                        : http.fetchJSON(`${CURSEFORGE_API}/mods/${rdProjectId}/files?pageSize=1`, cfHeaders)
+                            .then(r => (r.data || [])[0]).catch(() => null);
+
+                    const _cfProjectPromise = _isModpackFetch
+                        ? http.fetchJSON(`${CURSEFORGE_API}/mods/${rdProjectId}`, cfHeaders)
+                            .then(r => r.data || r).catch(() => null)
+                        : Promise.resolve(null);
+
+                    const [cfFile, cfMod] = await Promise.all([_cfFilePromise, _cfProjectPromise]);
+
+                    if (!cfFile) { sendError(res, '未找到版本信息，该资源可能已被下架或不存在'); return; }
+
+                    // 统一转换为类似 Modrinth 的 versionData 结构，复用后续逻辑
+                    const sha1 = (cfFile.hashes || []).find(h => h.algo === 1)?.value || '';
+                    versionData = {
+                        files: [{
+                            url: cfFile.downloadUrl || '',
+                            filename: cfFile.fileName || '',
+                            size: cfFile.fileLength || 0,
+                            primary: true,
+                            hashes: sha1 ? { sha1 } : {}
+                        }],
+                        game_versions: (cfFile.gameVersions || []).filter(v => /^\d+\.\d+/.test(v))
+                    };
+                    projectInfo = cfMod ? { title: cfMod.name || rdProjectId } : null;
+                } else {
+                    // Modrinth：原有逻辑
+                    let _versionPromise;
+                    if (rdVersionId) {
+                        _versionPromise = http.fetchJSON(`${MODRINTH_API}/version/${rdVersionId}`);
+                    } else {
+                        _versionPromise = http.fetchJSON(`${MODRINTH_API}/project/${rdProjectId}/version?limit=1`)
+                            .then(versions => versions?.[0]);
+                    }
+                    const _projectInfoPromise = _isModpackFetch
+                        ? http.fetchJSON(`${MODRINTH_API}/project/${rdProjectId}`).catch(() => null)
+                        : Promise.resolve(null);
+
+                    [versionData, projectInfo] = await Promise.all([_versionPromise, _projectInfoPromise]);
+                }
 
                 if (!versionData) { sendError(res, '未找到版本信息，请检查网络连接或稍后重试'); return; }
 

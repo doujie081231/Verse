@@ -576,7 +576,7 @@ async function quickInstallResource(projectId, type) {
     showImportNameModal(defaultName, async function(customName) {
       showToast('正在下载整合包，将创建为新版本...', 'info');
       try {
-        const result = await API.downloadResource('', projectId, type, '', '', customName);
+        const result = await API.downloadResource('', projectId, type, '', '', customName, currentModDetailSource);
         if (result.success) {
           showModpackInstallModal(result.fileName, result.sessionId);
         } else {
@@ -604,7 +604,7 @@ async function quickInstallResource(projectId, type) {
       }
       localStorage.setItem('lastResourceSavePath_' + type, savePath);
       showToast(`正在安装${typeNames[type]}...`, 'info');
-      const result = await API.downloadResource('', projectId, type, '', savePath);
+      const result = await API.downloadResource('', projectId, type, '', savePath, '', currentModDetailSource);
       if (result.success) {
         showModDownloadModal(result.fileName, result.sessionId);
       } else {

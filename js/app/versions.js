@@ -406,6 +406,9 @@ async function navigateToPage(pageName) {
     return;
   }
 
+  // 离开设置-其他页面时停止性能诊断自动刷新，避免定时器泄漏
+  if (typeof stopPerfDiagAutoRefresh === 'function') stopPerfDiagAutoRefresh();
+
   if (pageName === 'downloads' && window.DynamicIsland && typeof window.DynamicIsland.isEnabled === 'function' && window.DynamicIsland.isEnabled()) {
     return;
   }
@@ -523,7 +526,7 @@ async function navigateToPage(pageName) {
     modDetailHistory = [];
     setTimeout(() => loadResourcePage('modpack'), 100);
   } else if (pageName === 'settings-other') {
-    setTimeout(() => refreshMemoryInfo(), 200);
+    setTimeout(() => { refreshMemoryInfo(); initPerfDiag(); }, 200);
   } else if (pageName === 'datapacks') {
     setTimeout(() => loadResourcePage('datapack'), 100);
   } else if (pageName === 'resourcepacks') {

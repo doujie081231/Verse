@@ -172,6 +172,29 @@ const PageSettingsOther = {
             </div>
 
             <div class="card">
+              <h3>性能诊断</h3>
+              <p class="form-hint" style="margin-bottom: 12px;">显示 VersePC 各个进程的 CPU 和内存占用，用于排查卡顿或 CPU 异常占用问题。每 2 秒自动刷新。</p>
+              <div class="form-group">
+                <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+                  <label class="checkbox-label" style="margin: 0;">
+                    <input type="checkbox" id="perf-diag-autorefresh" checked>
+                    <span>自动刷新</span>
+                  </label>
+                  <button class="btn btn-secondary btn-sm" id="perf-diag-refresh-btn" onclick="refreshProcessMetrics()">立即刷新</button>
+                  <span id="perf-diag-status" style="font-size: 12px; color: var(--text-tertiary);">等待数据...</span>
+                </div>
+                <div id="perf-diag-table" style="font-size: 13px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden;">
+                  <div style="display: grid; grid-template-columns: 2fr 1fr 1fr 1.5fr; padding: 8px 12px; background: var(--bg-active); font-weight: 600; color: var(--text-secondary); border-bottom: 1px solid var(--border);">
+                    <span>进程</span><span style="text-align:right;">CPU%</span><span style="text-align:right;">内存</span><span style="text-align:right;">唤醒/秒</span>
+                  </div>
+                  <div id="perf-diag-rows" style="min-height: 40px;">
+                    <div style="padding: 12px; color: var(--text-tertiary); text-align: center;">点击"立即刷新"或勾选自动刷新</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
               <h3>数据管理</h3>
               <div class="btn-group">
                 <button class="btn btn-secondary" onclick="openFolder('data')">打开数据目录</button>
