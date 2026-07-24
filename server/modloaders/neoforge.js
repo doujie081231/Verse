@@ -79,16 +79,6 @@ function findNeoForgeCoreJars(versionJson, searchBases, gameArgs) {
   console.log(`[findNeoForgeCoreJars] neoForgeVersion=${neoForgeVersion} mcVersion=${mcVersion}`);
 
   // 检查 version JSON 的 libraries 是否已有 neoforge:<version>:client 库条目（patched jar）。
-  // 对于旧版 NeoForge（47.x/48.x/49.x 等 MC 1.20.4 及以前），patched jar 包含完整的 NeoForge mod
-  // 元数据（mods.toml + automatic-module-name），如果同时添加 universal jar 会导致 JPMS 冲突：
-  // "Module konkrete reads more than one module named neoforge"
-  // 因为两个 jar 的 JPMS 自动模块名都是 'neoforge'（从文件名 neoforge-<version>-*.jar 推导）。
-  //
-  // 但 NeoForge 20.6+（新版本号方案，对应 MC 1.20.6/1.21.x/26.x）使用 --no-mod-manifest 标志
-  // 构建 patched jar，patched jar 不再包含 NeoForge mod 类（NeoForgeMod.class 等），
-  // 只包含补丁后的 Minecraft 类。此时必须额外添加 universal jar 来提供 NeoForge mod 类，
-  // 否则启动时 FML 找不到 NeoForge mod 导致崩溃。JPMS 冲突由 args-builder.js 的
-  // ignoreList 机制处理（patched jar 被加入 ignoreList 不作为 JPMS 模块加载）。
   const hasPatchedClientLib = (versionJson.libraries || []).some((l) =>
     l.name === `net.neoforged:neoforge:${neoForgeVersion}:client`
   );
@@ -96,46 +86,35 @@ function findNeoForgeCoreJars(versionJson, searchBases, gameArgs) {
   const _neoMajor = parseInt(_neoVerParts[0], 10) || 0;
   const _neoMinor = parseInt(_neoVerParts[1], 10) || 0;
   const _isNewScheme = (_neoMajor === 20 && _neoMinor >= 6) || _neoMajor >= 21;
-  if (hasPatchedClientLib && !_isNewScheme) {
+
+  // 新版 NeoForge（20.6+/21.x/26.x）：不向 classpath 添加任何 neoforge-*-client.jar 或
+  // neoforge-*-universal.jar。这两个 jar 由 NeoForge 的 ProductionClientProviderLocator
+  // 通过 -DlibraryDirectory + --fml.neoForgeVersion 参数自动查找并加载：
+  //   - patched jar（minecraft-client-patched-<ver>.jar 或 neoforge-<ver>-client.jar）→ minecraft 模块
+  //   - universal jar（neoforge-<ver>-universal.jar）→ neoforge mod
+  // 若手动加入 classpath，会导致 JPMS 模块层冲突：
+  //   "Module l2serial._4 reads more than one module named neoforge"
+  // 因为 classpath 中的 jar 和 locator 加载的 jar 都会被 JPMS 解析为同名的 'neoforge' 自动模块。
+  // 参考 PCL 启动命令：classpath 中不包含这两个 neoforge-*-client.jar 和 neoforge-*-universal.jar。
+  if (_isNewScheme) {
+    console.log(`[findNeoForgeCoreJars] NeoForge ${neoForgeVersion} (new scheme): 不向 classpath 添加 neoforge jar，由 locator 通过 -DlibraryDirectory 自动查找`);
+    return [];
+  }
+
+  // 旧版 NeoForge（47.x/48.x/49.x 等 MC 1.20.4 及以前）：
+  // patched jar 包含完整的 NeoForge mod 元数据（mods.toml + automatic-module-name），
+  // 如果同时添加 universal jar 会导致 JPMS 冲突：
+  // "Module konkrete reads more than one module named neoforge"
+  // 因为两个 jar 的 JPMS 自动模块名都是 'neoforge'。
+  if (hasPatchedClientLib) {
     console.log(`[findNeoForgeCoreJars] version JSON 已有 neoforge:${neoForgeVersion}:client 库条目（patched jar），跳过添加 universal jar 以避免 JPMS 模块冲突`);
     return [];
   }
-  if (hasPatchedClientLib && _isNewScheme) {
-    // NeoForge 20.6+（含 21.x/26.x）使用 --no-mod-manifest 构建 patched jar：
-    // patched jar 只含补丁后的 Minecraft 类，不含 NeoForge mod 类（NeoForgeMod.class 等）。
-    // universal jar 提供 NeoForge mod 类，必须加入 classpath，否则启动时
-    // RequiredSystemFiles 检查找不到 NeoForgeMod.class 会崩溃。
-    // JPMS 冲突由 args-builder.js 的 ignoreList 处理（patched jar 被加入 ignoreList 不作为模块加载）。
-    console.log(`[findNeoForgeCoreJars] NeoForge ${neoForgeVersion} 使用 --no-mod-manifest，需要将 universal jar 加入 classpath 以提供 NeoForge mod 类`);
-  }
 
+  // 旧版 NeoForge 且 version JSON 没有 patched client 库条目时，
+  // 添加 universal jar 到 classpath（旧版行为，保留兼容性）
   const result = [];
   const prefix = 'net/neoforged/neoforge';
-
-  // 新版 NeoForge（20.6+/21.x/26.x）使用 --no-mod-manifest 构建 patched jar，
-  // patched jar 只含补丁后的 Minecraft 类，不含 NeoForge mod 类。
-  // 必须同时添加 patched jar + universal jar，否则启动崩溃。
-  // 当 version JSON 有 neoforge:ver:client 库条目时，natives.js 会找 patched jar（新命名）。
-  // 当 version JSON 没有该库条目时（如本例 21.1.234），需要在此主动查找。
-  if (_isNewScheme && !hasPatchedClientLib) {
-    for (const base of searchBases) {
-      if (!base) continue;
-      // 优先新命名：minecraft-client-patched-<ver>.jar
-      const newPatchedPath = path.join(base, 'net/neoforged/minecraft-client-patched', neoForgeVersion, `minecraft-client-patched-${neoForgeVersion}.jar`);
-      if (fs.existsSync(newPatchedPath)) {
-        result.push(newPatchedPath);
-        console.log(`[findNeoForgeCoreJars] 找到 patched jar（新命名）: ${path.basename(newPatchedPath)}`);
-        break;
-      }
-      // 回退旧命名：neoforge-<ver>-client.jar（NeoForge 21.1.2xx 早期版本）
-      const oldPatchedPath = path.join(base, prefix, neoForgeVersion, `neoforge-${neoForgeVersion}-client.jar`);
-      if (fs.existsSync(oldPatchedPath)) {
-        result.push(oldPatchedPath);
-        console.log(`[findNeoForgeCoreJars] 找到 patched jar（旧命名）: ${path.basename(oldPatchedPath)}`);
-        break;
-      }
-    }
-  }
 
   for (const base of searchBases) {
     if (!base) continue;

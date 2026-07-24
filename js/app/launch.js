@@ -8,7 +8,7 @@ async function handleLaunch() {
     return;
   }
   window._versepc_launching = true;
-  setTimeout(() => { window._versepc_launching = false; }, 30000);
+  setTimeout(() => { window._versepc_launching = false; }, 300000);
 
   const versionId = (typeof currentLaunchVersionId !== 'undefined' && currentLaunchVersionId) || (launchVersionCustomSelect ? launchVersionCustomSelect.getValue() : '');
   if (!versionId) { showToast('请选择游戏版本', 'error'); window._versepc_launching = false; return; }
@@ -163,8 +163,8 @@ async function handleLaunch() {
     setLaunchStep('build-args', 'success', '启动参数构建完成');
 
     setLaunchStep('launching', 'running', '正在启动 Minecraft...');
-    
-    const result = await API.launchGame(versionId);
+
+    const result = await API.launchGame(versionId, {}, 300000);
 
     if (result.needDownload && result.sessionId) {
       pollLaunchDownload(result.sessionId, versionId, requiredJava);
@@ -209,6 +209,10 @@ async function handleLaunch() {
     launchBtn.disabled = false;
     homeLaunchBtn.disabled = false;
     window._versepc_launching = false;
+    // 超时后游戏可能已在后台启动，延迟关闭模态框让用户看到错误提示
+    setTimeout(() => {
+      if (typeof closeLaunchModal === 'function') closeLaunchModal();
+    }, 5000);
   }
 }
 

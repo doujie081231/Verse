@@ -38,45 +38,11 @@ function buildLaunchArguments(versionJson, settings, account, versionId, customG
     }
   }
 
-  // NeoForge: 在 buildClasspath 之前补全 neoforge:ver:client 库条目。
-  // 背景：整合包 version JSON 可能缺少 neoforge:ver:client 库条目（仅含 --fml.neoForgeVersion 参数）。
-  // 若不补全，natives.buildClasspath 的兜底逻辑会把 universal jar 加入 classpath，
-  // 导致 FML 的 PathBasedLocator 跳过它（"already located earlier"），neoforge mod 不被加载。
-  // 正确做法：补全库条目让 buildClasspath 找到 patched jar，universal jar 不加入 classpath，
-  // 由 PathBasedLocator 通过 --fml.neoForgeVersion 参数自动发现并加载为 mod。
-  const _preGameArgs = versionJson.arguments?.game || [];
-  const _preHasNeoClientLib = (versionJson.libraries || []).some((l) =>
-    l.name && /^net\.neoforged:neoforge:[^:]+:client$/.test(l.name)
-  );
-  if (!_preHasNeoClientLib) {
-    const _nvIdx = _preGameArgs.findIndex((a) => typeof a === 'string' && a === '--fml.neoForgeVersion');
-    if (_nvIdx >= 0 && _nvIdx + 1 < _preGameArgs.length) {
-      const _nv = _preGameArgs[_nvIdx + 1];
-      const _newPatchedPath = path.join(ctx.dirs.LIBRARIES_DIR, 'net', 'neoforged', 'minecraft-client-patched', _nv, `minecraft-client-patched-${_nv}.jar`);
-      const _oldPatchedPath = path.join(ctx.dirs.LIBRARIES_DIR, 'net', 'neoforged', 'neoforge', _nv, `neoforge-${_nv}-client.jar`);
-      if (fs.existsSync(_newPatchedPath) || fs.existsSync(_oldPatchedPath)) {
-        const _actualPath = fs.existsSync(_newPatchedPath) ? _newPatchedPath : _oldPatchedPath;
-        let _size = 0, _sha1 = '';
-        try {
-          _size = fs.statSync(_actualPath).size;
-          _sha1 = crypto.createHash('sha1').update(fs.readFileSync(_actualPath)).digest('hex');
-        } catch (e) {}
-        versionJson.libraries = versionJson.libraries || [];
-        versionJson.libraries.push({
-          name: `net.neoforged:neoforge:${_nv}:client`,
-          downloads: {
-            artifact: {
-              path: `net/neoforged/neoforge/${_nv}/neoforge-${_nv}-client.jar`,
-              size: _size,
-              sha1: _sha1,
-              url: `https://maven.neoforged.net/releases/net/neoforged/neoforge/${_nv}/neoforge-${_nv}-client.jar`
-            }
-          }
-        });
-        console.log(`[Launch] NeoForge: buildClasspath 前补全 neoforge:${_nv}:client 库条目 (path=${path.basename(_actualPath)})`);
-      }
-    }
-  }
+  // NeoForge: 不补全 neoforge:ver:client 库条目，不把 patched/universal jar 加入 classpath。
+  // 参考 PCL 启动命令：classpath 中不包含 neoforge-*-client.jar 和 neoforge-*-universal.jar。
+  // 这些 jar 由 NeoForge 的 ProductionClientProviderLocator 通过 -DlibraryDirectory +
+  // --fml.neoForgeVersion 参数自动查找并加载（SRG client jar 作为 minecraft 模块，
+  // universal jar 作为 neoforge mod）。手动加入 classpath 反而会导致 locator 跳过。
 
   const classpath = natives.buildClasspath(versionJson, actualVersionId, externalVersionDir);
   const nativesDir = natives.extractNatives(versionJson, actualVersionId, externalVersionDir);
@@ -600,71 +566,12 @@ function buildLaunchArguments(versionJson, settings, account, versionId, customG
     jvmArgs.unshift('-XstartOnFirstThread');
   }
 
-  // NeoForge: 把 patched jar (neoforge-<version>-client.jar) 加入 ignoreList。
-  // patched jar 在 classpath 中会被 JPMS 加载为 'neoforge' 自动模块，同时
-  // production client provider locator 通过 :client 库条目加载 SRG client jar
-  // 为 'minecraft' 模块，两者都导出 net.minecraft.* 包，触发 split package 冲突：
-  //   "Modules neoforge and minecraft export package net.minecraft.client.gui.font.providers"
-  // 加入 ignoreList 后 BootstrapLauncher 会跳过 patched jar 不加入 JPMS 模块层，
-  // 但它仍在 classpath 中，locator 仍能通过 :client 库条目找到它。
-  let _neoClientLib = (versionJson.libraries || []).find((l) =>
-    l.name && /^net\.neoforged:neoforge:[^:]+:client$/.test(l.name)
-  );
-  if (_neoClientLib) {
-    // 注意：虚拟库记录的 downloads.artifact.path 指向 neoforge-<ver>-client.jar（官方 Maven 404）
-    // 实际启动用的是 minecraft-client-patched-<ver>.jar（installer 本地生成）
-    const _neoVer = _neoClientLib.name.split(':')[2];
-    const _patchedJarName = `minecraft-client-patched-${_neoVer}.jar`;
-    const _ignoreListIdx = jvmArgs.findIndex((a) => typeof a === 'string' && a.startsWith('-DignoreList='));
-    if (_ignoreListIdx >= 0) {
-      if (!jvmArgs[_ignoreListIdx].includes(_patchedJarName)) {
-        jvmArgs[_ignoreListIdx] = jvmArgs[_ignoreListIdx] + ',' + _patchedJarName;
-        console.log(`[Launch] NeoForge: 已将 patched jar 加入 ignoreList: ${_patchedJarName}`);
-      }
-    } else {
-      // version JSON 未自带 -DignoreList=，主动创建以避免 patched jar 被 JPMS 加载触发 split package 冲突
-      jvmArgs.push(`-DignoreList=${_patchedJarName}`);
-      console.log(`[Launch] NeoForge: 已创建 ignoreList 并加入 patched jar: ${_patchedJarName}`);
-    }
-  } else {
-    // Fallback: version JSON 没有 neoforge:ver:client 库条目时，
-    // 通过 --fml.neoForgeVersion 参数识别 NeoForge 版本，把可能的 patched jar 加入 ignoreList。
-    // patched jar 文件名有两种命名（新/旧），都加入 ignoreList 以覆盖所有情况。
-    const _neoVerIdx = gameArgsForDetection.findIndex((a) => typeof a === 'string' && a === '--fml.neoForgeVersion');
-    if (_neoVerIdx >= 0 && _neoVerIdx + 1 < gameArgsForDetection.length) {
-      const _neoVer = gameArgsForDetection[_neoVerIdx + 1];
-      const _patchedJarNames = [
-        `minecraft-client-patched-${_neoVer}.jar`,
-        `neoforge-${_neoVer}-client.jar`
-      ];
-      const _ignoreListIdx = jvmArgs.findIndex((a) => typeof a === 'string' && a.startsWith('-DignoreList='));
-      const _toAdd = [];
-      if (_ignoreListIdx >= 0) {
-        for (const _jarName of _patchedJarNames) {
-          if (!jvmArgs[_ignoreListIdx].includes(_jarName)) {
-            _toAdd.push(_jarName);
-          }
-        }
-        if (_toAdd.length > 0) {
-          jvmArgs[_ignoreListIdx] = jvmArgs[_ignoreListIdx] + ',' + _toAdd.join(',');
-          console.log(`[Launch] NeoForge (fallback): 已将 patched jar 加入 ignoreList: ${_toAdd.join(', ')}`);
-        }
-      } else {
-        jvmArgs.push(`-DignoreList=${_patchedJarNames.join(',')}`);
-        console.log(`[Launch] NeoForge (fallback): 已创建 ignoreList 并加入 patched jar: ${_patchedJarNames.join(', ')}`);
-      }
-    }
-  }
-
-  // NeoForge: neoforge:ver:client 库条目已在 buildClasspath 之前补全（见函数开头）。
-  // 此处只需同步 _neoClientLib 引用，供后续 ignoreList 逻辑使用。
-  _neoClientLib = (versionJson.libraries || []).find((l) =>
-    l.name && /^net\.neoforged:neoforge:[^:]+:client$/.test(l.name)
-  );
+  // NeoForge: patched jar 不在 classpath 中（由 -DlibraryDirectory 让 locator 自动查找），
+  // 因此不需要把 patched jar 加入 ignoreList。version JSON 自带的 -DignoreList 已正确配置。
+  // 参考 PCL 启动命令：-DignoreList=client-extra,${version_name}.jar
 
   // Forge 1.20.1 split package 冲突已在导入流程源头修复（curseforge.js/importer.js
   // 复制继承版本 jar 到新版本目录并命名为 ${versionId}.jar），此处不再需要临时补丁。
-  // 保留 NeoForge patched jar 的 ignoreList 处理（下方），因其处理的是另一种场景。
 
   // Forge 1.20.6+/NeoForge: 把 module-path (-p) 中的引导 JAR 加入 ignoreList，
   // 避免 BootstrapLauncher 从 classpath 重复加载这些 JAR 为 JPMS 模块，
@@ -703,18 +610,11 @@ function buildLaunchArguments(versionJson, settings, account, versionId, customG
   const classpathStr = Array.isArray(classpath) ? classpath.join(cpSeparator) : classpath;
   jvmArgs.push('-cp', classpathStr);
 
-  // NeoForge: 添加 -DlibraryDirectory 参数，告诉 NeoForge 的 locator 去哪里查找库文件。
-  // 背景：NeoForge 的 ProductionClientProviderLocator 通过 --fml.neoForgeVersion 参数
-  // 在 libraryDirectory 中查找 neoforge-<ver>-universal.jar（含 neoforge mod manifest），
-  // 加载为 neoforge mod。若缺少此参数，locator 找不到 universal jar，报 "neoforge [MISSING]"。
-  // 参考 PCL 的启动命令，该参数必须在 -cp 之后、mainClass 之前。
-  const _isNeoForge = (versionJson.mainClass || '').includes('bootstraplauncher') ||
-    (versionJson.arguments?.game || []).some((a) => typeof a === 'string' && a === '--fml.neoForgeVersion');
-  if (_isNeoForge) {
-    const _libDir = isExternal && externalRoot ? path.join(externalRoot, 'libraries') : ctx.dirs.LIBRARIES_DIR;
-    jvmArgs.push(`-DlibraryDirectory=${_libDir}`);
-    console.log(`[Launch] NeoForge: 已添加 -DlibraryDirectory=${_libDir}`);
-  }
+  // NeoForge: -DlibraryDirectory 和 -DignoreList 由 version JSON 的 arguments.jvm 自带，
+  // 会在上方 "收集版本 JSON 中的 JVM 参数" 逻辑中通过变量替换自动处理。
+  // 不在此处重复添加，避免覆盖 version JSON 的正确配置。
+  // NeoForge 的 ProductionClientProviderLocator 通过 -DlibraryDirectory +
+  // --fml.neoForgeVersion 参数自动查找 neoforge-<ver>-universal.jar 并加载为 mod。
 
   // 第三方登录：注入 authlib-injector javaagent
   if (account?.type === 'thirdparty' && account?.serverUrl) {

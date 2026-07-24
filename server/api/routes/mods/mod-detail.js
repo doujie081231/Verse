@@ -144,8 +144,8 @@ module.exports = {
           sendJSON(res, detail);
         } else if (modSource === 'curseforge') {
           const settings = versions.loadSettingsCached();
-          const cfApiKey = settings.curseforgeApiKey || '';
-          const cfHeaders = cfApiKey ? { 'x-api-key': cfApiKey } : {};
+          const cfApiKey = settings.curseforgeApiKey || '$2a$10$bL4bIL5pUWqfcO7KQtnMReakwtfHbNKh6v1uTpKlzhwoueEJQnPnm';
+          const cfHeaders = { 'x-api-key': cfApiKey };
           const cfProject = await http.fetchJSON(`${CURSEFORGE_API}/mods/${modProjectId}`, cfHeaders);
           const mod = cfProject.data || cfProject;
           const detail = {
@@ -207,10 +207,15 @@ module.exports = {
           try {
             versions = await http.cachedFetchJSON(versionUrl, 600000, 3, 25000);
           } catch (mirrorErr) {
-            // 镜像失败时回退到官方 API
-            console.warn(`[Modrinth] 镜像请求失败，直接请求官方API: ${mirrorErr.message}`);
-            const officialUrl = `${MODRINTH_API}/project/${encodedId}/version${params.length > 0 ? '?' + params.join('&') : ''}`;
-            versions = await http.fetchJSON(officialUrl, 2, 30000);
+            // 缓存请求失败（镜像 404 或超时），回退到官方 API
+            console.warn(`[Modrinth] 镜像请求失败，尝试官方API: ${mirrorErr.message}`);
+            try {
+              const officialUrl = `${MODRINTH_API}/project/${encodedId}/version${params.length > 0 ? '?' + params.join('&') : ''}`;
+              versions = await http.fetchJSON(officialUrl, 2, 30000);
+            } catch (officialErr) {
+              // 官方 API 也失败，返回空版本列表（避免 500 错误）
+              console.warn(`[Modrinth] 官方API也失败: ${officialErr.message}`);
+            }
           }
           const result = (versions || []).map((v) => ({
             id: v.id,
@@ -240,75 +245,80 @@ module.exports = {
           sendJSON(res, { versions: result });
         } else if (mvSource === 'curseforge') {
           const settings = versions.loadSettingsCached();
-          const cfApiKey = settings.curseforgeApiKey || '';
-          const cfHeaders = cfApiKey ? { 'x-api-key': cfApiKey } : {};
+          const cfApiKey = settings.curseforgeApiKey || '$2a$10$bL4bIL5pUWqfcO7KQtnMReakwtfHbNKh6v1uTpKlzhwoueEJQnPnm';
+          const cfHeaders = { 'x-api-key': cfApiKey };
 
-          // CurseForge 分页拉取所有文件
-          let allCfFiles = [];
-          let cfPageIndex = 0;
-          const cfPageSize = 1000;
-          let cfHasMore = true;
+          let cfVersions = [];
+          try {
+            // CurseForge 分页拉取所有文件
+            let allCfFiles = [];
+            let cfPageIndex = 0;
+            const cfPageSize = 1000;
+            let cfHasMore = true;
 
-          while (cfHasMore) {
-            let cfUrl = `${CURSEFORGE_API}/mods/${mvProjectId}/files?pageSize=${cfPageSize}&index=${cfPageIndex}`;
-            const cfParams = [];
-            if (mvGameVer) cfParams.push(`gameVersion=${mvGameVer}`);
-            if (mvLoader) {
-              const loaderMap = { fabric: 4, forge: 1, neoforge: 6, quilt: 5 };
-              const loaderType = loaderMap[mvLoader.toLowerCase()];
-              if (loaderType) cfParams.push(`modLoaderType=${loaderType}`);
+            while (cfHasMore) {
+              let cfUrl = `${CURSEFORGE_API}/mods/${mvProjectId}/files?pageSize=${cfPageSize}&index=${cfPageIndex}`;
+              const cfParams = [];
+              if (mvGameVer) cfParams.push(`gameVersion=${mvGameVer}`);
+              if (mvLoader) {
+                const loaderMap = { fabric: 4, forge: 1, neoforge: 6, quilt: 5 };
+                const loaderType = loaderMap[mvLoader.toLowerCase()];
+                if (loaderType) cfParams.push(`modLoaderType=${loaderType}`);
+              }
+              if (cfParams.length > 0) cfUrl += '&' + cfParams.join('&');
+
+              const cfRes = await http.fetchJSON(cfUrl, cfHeaders, 25000);
+              const cfBatch = cfRes.data || [];
+              allCfFiles = allCfFiles.concat(cfBatch);
+
+              const pagination = cfRes.pagination;
+              if (pagination && pagination.totalCount > cfPageIndex + cfPageSize) {
+                cfPageIndex += cfPageSize;
+              } else {
+                cfHasMore = false;
+              }
+              if (cfBatch.length < cfPageSize) cfHasMore = false;
             }
-            if (cfParams.length > 0) cfUrl += '&' + cfParams.join('&');
 
-            const cfRes = await http.fetchJSON(cfUrl, cfHeaders, 25000);
-            const cfBatch = cfRes.data || [];
-            allCfFiles = allCfFiles.concat(cfBatch);
-
-            const pagination = cfRes.pagination;
-            if (pagination && pagination.totalCount > cfPageIndex + cfPageSize) {
-              cfPageIndex += cfPageSize;
-            } else {
-              cfHasMore = false;
-            }
-            if (cfBatch.length < cfPageSize) cfHasMore = false;
-          }
-
-          // 按游戏版本分组文件
-          const cfFiles = allCfFiles;
-          const byVersion = new Map();
-          for (const f of cfFiles) {
-            const gv = (f.gameVersions || []).find((v) => /^\d+\.\d+/.test(v)) || (f.gameVersions || [])[0] || '';
-            const key = gv || f.id;
-            if (!byVersion.has(key)) {
-              byVersion.set(key, {
+            // 按游戏版本分组文件
+            const byVersion = new Map();
+            for (const f of allCfFiles) {
+              const gv = (f.gameVersions || []).find((v) => /^\d+\.\d+/.test(v)) || (f.gameVersions || [])[0] || '';
+              const key = gv || f.id;
+              if (!byVersion.has(key)) {
+                byVersion.set(key, {
+                  id: String(f.id),
+                  versionNumber: f.displayName || f.fileName || '',
+                  versionName: f.displayName || f.fileName || '',
+                  gameVersions: f.gameVersions || [],
+                  loaders: (f.gameVersions || []).filter((v) => ['fabric','forge','neoforge','quilt','fabric-loader','forge-loader'].includes(v.toLowerCase())).map((v) => v.toLowerCase().replace('-loader','')),
+                  releaseType: f.releaseType === 1 ? 'release' : f.releaseType === 2 ? 'beta' : 'alpha',
+                  datePublished: f.fileDate || '',
+                  downloads: 0,
+                  changelog: '',
+                  files: [],
+                  dependencies: (f.dependencies || []).map((d) => ({
+                    projectId: String(d.modId || ''),
+                    versionId: String(d.fileId || ''),
+                    dependencyType: d.relationType === 3 ? 'required' : d.relationType === 5 ? 'required' : d.relationType === 2 ? 'optional' : d.relationType === 1 ? 'optional' : 'incompatible',
+                    modName: ''
+                  }))
+                });
+              }
+              byVersion.get(key).files.push({
                 id: String(f.id),
-                versionNumber: f.displayName || f.fileName || '',
-                versionName: f.displayName || f.fileName || '',
-                gameVersions: f.gameVersions || [],
-                loaders: (f.gameVersions || []).filter((v) => ['fabric','forge','neoforge','quilt','fabric-loader','forge-loader'].includes(v.toLowerCase())).map((v) => v.toLowerCase().replace('-loader','')),
-                releaseType: f.releaseType === 1 ? 'release' : f.releaseType === 2 ? 'beta' : 'alpha',
-                datePublished: f.fileDate || '',
-                downloads: 0,
-                changelog: '',
-                files: [],
-                dependencies: (f.dependencies || []).map((d) => ({
-                  projectId: String(d.modId || ''),
-                  versionId: String(d.fileId || ''),
-                  dependencyType: d.relationType === 3 ? 'required' : d.relationType === 5 ? 'required' : d.relationType === 2 ? 'optional' : d.relationType === 1 ? 'optional' : 'incompatible',
-                  modName: ''
-                }))
+                url: f.downloadUrl || '',
+                filename: f.fileName || '',
+                size: f.fileLength || 0,
+                primary: byVersion.get(key).files.length === 0,
+                sha1: ''
               });
             }
-            byVersion.get(key).files.push({
-              id: String(f.id),
-              url: f.downloadUrl || '',
-              filename: f.fileName || '',
-              size: f.fileLength || 0,
-              primary: byVersion.get(key).files.length === 0,
-              sha1: ''
-            });
+            cfVersions = Array.from(byVersion.values());
+          } catch (e) {
+            console.warn(`[CurseForge] 获取版本列表失败: ${e.message}`);
           }
-          sendJSON(res, { versions: Array.from(byVersion.values()) });
+          sendJSON(res, { versions: cfVersions });
         } else {
           sendError(res, 'Unsupported source', 400);
         }

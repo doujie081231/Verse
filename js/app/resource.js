@@ -403,7 +403,7 @@ async function loadResourceList(type) {
       }
     } else {
       container.innerHTML = hits.map(item => `
-        <div class="mod-item mod-item-clickable" onclick="openResourceDetail('${item.id}', '${type}')" onmouseenter="preloadModVersions('${item.id}', 'modrinth')">
+        <div class="mod-item mod-item-clickable" onclick="openResourceDetail('${item.id}', '${type}', '${item.source || 'modrinth'}')" onmouseenter="preloadModVersions('${item.id}', '${item.source || 'modrinth'}')">
           ${item.icon ? `<div class="mod-icon"><img src="${item.icon}" alt="" onerror="this.parentElement.remove()"></div>` : ''}
           <div class="mod-info">
             <div class="mod-name">${escapeHtml(formatModNameWithChinese(item.slug || item.id, item.title))}
@@ -432,9 +432,9 @@ async function loadResourceList(type) {
   }
 }
 
-async function openResourceDetail(projectId, type) {
+async function openResourceDetail(projectId, type, source) {
   currentModDetailId = projectId;
-  currentModDetailSource = 'modrinth';
+  currentModDetailSource = source || 'modrinth';
   currentModDetailType = type;
 
   navigateToPage('mod-detail');
@@ -500,9 +500,9 @@ async function openResourceDetail(projectId, type) {
   try {
     const versionsPromise = _hasPreloaded
       ? Promise.resolve(_versionPreloadCache.get(projectId))
-      : API.getModVersions(projectId, 'modrinth').catch(e => { console.error('[ResDetail] getModVersions failed:', e); return null; });
+      : API.getModVersions(projectId, source || 'modrinth').catch(e => { console.error('[ResDetail] getModVersions failed:', e); return null; });
     _versionPreloadCache.delete(projectId);
-    const detailPromise = cached ? Promise.resolve(cached) : API.getModDetail(projectId, 'modrinth').catch(e => { console.error('[ResDetail] getModDetail failed:', e); return null; });
+    const detailPromise = cached ? Promise.resolve(cached) : API.getModDetail(projectId, source || 'modrinth').catch(e => { console.error('[ResDetail] getModDetail failed:', e); return null; });
 
     const [detail, data] = await Promise.all([detailPromise, versionsPromise]);
     if (_resLoadingTimer) { clearTimeout(_resLoadingTimer); _resLoadingTimer = null; }

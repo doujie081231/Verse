@@ -890,26 +890,13 @@ function buildClasspath(versionJson, versionId, externalVersionDir = null) {
   const jarPath = versions.findMainJar(versionJson, actualVersionId, externalVersionDir);
 
   const hasNeoforgeLib = dedupedClasspath.some((cp) => cp.includes('neoforge') && cp.includes('universal'));
-  // 若已注册 neoforge:<ver>:client (patched jar) 库条目，不再添加 universal jar。
-  // 否则两者 JPMS 自动模块名均为 'neoforge'，触发 "reads more than one module named neoforge" 冲突。
-  const hasNeoClientLib = (versionJson.libraries || []).some((l) =>
-    l.name && /^net\.neoforged:neoforge:[^:]+:client$/.test(l.name)
-  );
-  if (!hasNeoforgeLib && !hasNeoClientLib) {
-    const isNeoForge = (versionJson.mainClass || '').includes('neoforge') || (versionJson.mainClass || '').includes('bootstraplauncher');
-    if (isNeoForge || (versionJson.libraries || []).some((l) => (l.name || '').includes('neoforged'))) {
-      const neoforgeVersion = (versionJson.id || '').match(/NeoForge[_-]?([\d.]+)/i)?.[1] || '';
-      if (neoforgeVersion) {
-        for (const base of searchBases) {
-          const uniJar = path.join(base, 'net', 'neoforged', 'neoforge', neoforgeVersion, `neoforge-${neoforgeVersion}-universal.jar`);
-          if (fs.existsSync(uniJar)) {
-            dedupedClasspath.push(uniJar);
-            break;
-          }
-        }
-      }
-    }
-  }
+  // NeoForge: 不在此处添加 universal jar 到 classpath。
+  // universal jar 由 NeoForge 的 ProductionClientProviderLocator 通过
+  // -DlibraryDirectory + --fml.neoForgeVersion 参数自动查找并加载为 mod。
+  // 若手动加入 classpath，PathBasedLocator 会跳过它（"already located earlier"），
+  // 导致 neoforge mod 不被加载。参考 PCL 启动命令：classpath 不含 universal jar。
+  // -- 旧兜底逻辑已移除（曾通过 versionId 正则提取版本号添加 universal jar，但中文
+  // versionId 不匹配正则，且与 -DlibraryDirectory 机制冲突）。
 
   if (jarPath && fs.existsSync(jarPath)) {
     // NeoForge/Forge: 若 classpath 中已存在 patched jar，跳过 mainJar 避免重复
